@@ -1242,6 +1242,8 @@ function buildTableSaisies(jours, filtre, collabId) {
   const td = (c,x) => '<td style="padding:6px 10px;border-bottom:1px solid #f0f4f8;'+(x||'')+'">'+c+'</td>';
   const modeEdit = window._paie_mode_edit || false;
   const types = ['travaillée','CP','AT','CS'];
+  const collabPaie = (window.collabsData||[]).find(c => c.collabId === collabId) || {};
+  const collabPaie = (window.collabsData||[]).find(c => c.collabId === collabId) || {};
   const fmtH = v => v && v!=='--:--' ? v : '—';
   return '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'
     + th('Date')+th('Type')+th('Matin')+th('Après-midi')+th('Créneau 3')+th('Total')+th('Sem.')+th('Commentaire')
