@@ -1208,9 +1208,9 @@ async function ouvrirSaisiesPaie(collabId, btn) {
 function renderSaisiesPaie(jours, collabId) {
   const body = document.getElementById('saisies-body');
   if (!jours.length) { body.innerHTML = '<div style="text-align:center;color:var(--texte3);padding:40px">Aucune saisie.</div>'; return; }
-  const typeLabel = t => ({travaille:'Travaillé',conge:'Congé',absence:'Absence',ferie:'Férié',travaillée:'Travaillé',CP:'CP',AT:'AT'}[t]||t||'—');
+  const typeLabel = t => ({travaille:'Travaillé',conge:'Congé',absence:'Absence',ferie:'Férié',travaillée:'Travaillé',CP:'CP',AT:'AT',CS:'Congé spécial'}[t]||t||'—');
   const typeBadge = t => {
-    const cls = (t==='travaille'||t==='travaillée')?'badge-actif':t==='CP'?'badge-attente':t==='AT'?'badge-inactif':'badge-inactif';
+    const cls = (t==='travaille'||t==='travaillée')?'badge-actif':t==='CP'?'badge-attente':t==='AT'?'badge-inactif':t==='CS'?'badge-attente':'badge-inactif';
     return '<span class="badge '+cls+'">'+typeLabel(t)+'</span>';
   };
   const th = s => '<th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);border-bottom:1px solid #e8f0f8;background:#fafcff;white-space:nowrap">'+s+'</th>';
@@ -1220,7 +1220,7 @@ function renderSaisiesPaie(jours, collabId) {
   window._collab_paie_current = collabId;
 
   document.getElementById('filtres-paie').innerHTML =
-    ['tous','travaillée','CP','AT'].map(v =>
+    ['tous','travaillée','CP','AT','CS'].map(v =>
       '<button class="filter-btn'+(v==='tous'?' active':'')+'" onclick="filtrerSaisiesPaie(this,\''+v+'\')" data-filtre="'+v+'">'+
       (v==='tous'?'Tous':v)+'</button>').join('');
 
@@ -1240,7 +1240,7 @@ function buildTableSaisies(jours, filtre, collabId) {
   const th = s => '<th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);border-bottom:1px solid #e8f0f8;background:#fafcff;white-space:nowrap">'+s+'</th>';
   const td = (c,x) => '<td style="padding:6px 10px;border-bottom:1px solid #f0f4f8;'+(x||'')+'">'+c+'</td>';
   const modeEdit = window._paie_mode_edit || false;
-  const types = ['travaillée','CP','AT'];
+  const types = ['travaillée','CP','AT','CS'];
   const fmtH = v => v && v!=='--:--' ? v : '—';
   return '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'
     + th('Date')+th('Type')+th('Matin')+th('Après-midi')+th('Créneau 3')+th('Total')+th('Sem.')+th('Commentaire')
@@ -1311,6 +1311,12 @@ async function toggleHeuresEdit() {
 }
 
 function majTotalPaie(idx) {
+  const typeEl = document.getElementById('jp'+idx+'-type');
+  if (typeEl && (typeEl.value === 'CP' || typeEl.value === 'CS')) {
+    const totalEl = document.getElementById('jp'+idx+'-total');
+    if (totalEl) totalEl.textContent = '0.00h';
+    return;
+  }
   const toMin = t => { if (!t) return 0; const [h,m] = t.split(':').map(Number); return h*60+m; };
   const type = document.getElementById('jp'+idx+'-type')?.value;
   let total = 0;
