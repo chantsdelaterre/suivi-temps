@@ -1591,7 +1591,6 @@ function renderRecapFiltered() {
   // Recalcul des stats sur la sélection
   const totalH = result.reduce((s,c) => s+c.totalHeures, 0);
   const nbSaisis = result.reduce((s,c) => s+c.nbSaisis, 0);
-  const nbManquants = result.reduce((s,c) => s+c.nbNonSaisis, 0);
   const statsEl = document.getElementById('recap-stats');
   if (statsEl && result.length > 0) {
     statsEl.innerHTML = `<div class="recap-grid">
@@ -1600,22 +1599,17 @@ function renderRecapFiltered() {
       <div class="stat-card"><div class="stat-num">${nbSaisis}</div><div class="stat-lbl">Jours saisis</div></div>
 </div>`;
   }
-  const sorted = [...result].sort((a, b) => {
-    if (a.alerte && !b.alerte) return -1;
-    if (!a.alerte && b.alerte) return 1;
-    return a.nomAffiche.localeCompare(b.nomAffiche);
-  });
+  const sorted = [...result].sort((a, b) => a.nomAffiche.localeCompare(b.nomAffiche));
   document.getElementById('recap-tbody').innerHTML = sorted.length === 0
     ? '<tr><td colspan="10" style="text-align:center;color:var(--texte3);padding:32px">Aucun résultat</td></tr>'
     : sorted.map(c => `
-      <tr class="${c.alerte ? 'alerte-row' : ''}">
+      <tr>
         <td><strong>${c.nomAffiche}</strong></td>
         <td>${c.structure || '—'}</td>
         <td>${c.typeContrat || '—'}</td>
         <td>${c.heuresHebdo ? c.heuresHebdo + 'h' : '—'}</td>
         <td><span style="font-family:monospace;font-weight:500">${c.totalHeures.toFixed(2)}h</span></td>
         <td>${c.nbSaisis}</td>
-
         <td style="font-size:13px;color:var(--texte2)">${fmtDate(c.derniereSaisie) || '—'}</td>
         <td><button class="btn btn-warning btn-sm" onclick="ouvrirSaisies('${c.collabId}', this)">📋 Voir</button></td>
       </tr>
@@ -1634,7 +1628,6 @@ async function chargerRecap(periodeId) {
     document.getElementById('recap-titre').textContent = 'Récap — ' + d.periode.nomPeriode;
     const totalH = d.recap.reduce((s,c) => s+c.totalHeures, 0);
     const nbSaisis = d.recap.reduce((s,c) => s+c.nbSaisis, 0);
-    const nbManquants = d.recap.reduce((s,c) => s+c.nbNonSaisis, 0);
     document.getElementById('recap-stats').innerHTML = `
       <div class="recap-grid">
         <div class="stat-card"><div class="stat-num">${totalH.toFixed(1)}h</div><div class="stat-lbl">Heures totales</div></div>
