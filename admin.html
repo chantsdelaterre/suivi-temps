@@ -841,7 +841,13 @@ async function toggleValidationModal() {
       + '&collabId=' + encodeURIComponent(_paieCurrentCollab)
       + '&note=' + encodeURIComponent(note));
     if (d.ok) {
-      await chargerDetailCollab(_paieCurrentCollab, paieCurrentPeriode);
+      try {
+        const url2 = API_URL + '?action=bo_getJoursCollab&token=' + encodeURIComponent(ADMIN_TOKEN)
+          + '&collabId=' + encodeURIComponent(_paieCurrentCollab)
+          + '&periodeId=' + encodeURIComponent(paieCurrentPeriode);
+        const d2 = await jsonpFetch(url2);
+        if (d2.ok) renderSaisiesPaie(d2.jours || [], _paieCurrentCollab);
+      } catch(e) {}
     } else {
       alert('Erreur validation : ' + (d.error||'inconnue'));
     }
