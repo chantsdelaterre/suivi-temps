@@ -841,7 +841,20 @@ async function toggleValidationModal() {
       + '&collabId=' + encodeURIComponent(_paieCurrentCollab)
       + '&note=' + encodeURIComponent(note));
     if (d.ok) {
-      await new Promise(r => setTimeout(r, 1000));
+      // Mettre à jour le badge
+      const badge = document.getElementById('badge-validation-paie');
+      if (badge) badge.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;background:#e8f8ee;color:#2d7a4f;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#2d7a4f;display:inline-block"></span>Validé</span>';
+      // Repasser en mode consultation
+      window._paie_mode_edit = false;
+      const btnC = document.getElementById('btn-pill-consult');
+      const btnM = document.getElementById('btn-pill-modif');
+      if (btnC && btnM) {
+        btnC.classList.add('pill-active'); btnC.textContent = '👁 Consultation ✓';
+        btnM.classList.remove('pill-active'); btnM.textContent = '✏️ Modification';
+      }
+      // Mettre à jour le bouton valider
+      if (btnVal) { btnVal.textContent = '✅ Valider'; btnVal.disabled = true; btnVal.style.opacity = '0.45'; }
+      // Recharger les jours
       await new Promise(r => setTimeout(r, 1000));
       try {
         const url2 = API_URL + '?action=bo_getJoursCollab&token=' + encodeURIComponent(ADMIN_TOKEN)
@@ -851,9 +864,13 @@ async function toggleValidationModal() {
         if (d2.ok) renderSaisiesPaie(d2.jours || [], _paieCurrentCollab);
       } catch(e) {}
     } else {
+      if (btnVal) { btnVal.disabled = false; btnVal.textContent = '✅ Valider'; btnVal.style.opacity = '1'; }
       alert('Erreur validation : ' + (d.error||'inconnue'));
     }
-  } catch(e) { alert('Erreur réseau'); }
+  } catch(e) {
+    if (btnVal) { btnVal.disabled = false; btnVal.textContent = '✅ Valider'; btnVal.style.opacity = '1'; }
+    alert('Erreur réseau');
+  }
 }
 
 function fermerModal(id) {
