@@ -841,6 +841,8 @@ async function toggleValidationModal() {
       + '&collabId=' + encodeURIComponent(_paieCurrentCollab)
       + '&note=' + encodeURIComponent(note));
     if (d.ok) {
+      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 1000));
       try {
         const url2 = API_URL + '?action=bo_getJoursCollab&token=' + encodeURIComponent(ADMIN_TOKEN)
           + '&collabId=' + encodeURIComponent(_paieCurrentCollab)
