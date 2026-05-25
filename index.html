@@ -792,7 +792,7 @@
     const API_URL = 'https://script.google.com/macros/s/AKfycbx1BTyA9scZnOy7cFKoif9KuV_PuEmotXtO5yCheB-IUESExdG5v5l3maZ-Wn-XBowwbg/exec';
     const SUPABASE_URL = 'https://oldkmapumqnibdcniecd.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_sMySTPpkgaiUtnban8uCtw_HQFxmsgv';
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     function jsonpFetch(url) {
         return new Promise((resolve, reject) => {
             const cb = 'cb_' + Math.random().toString(36).slice(2);
@@ -843,7 +843,7 @@
         }
         try {
             // Supabase — récupérer le collab
-            const { data: collab, error: collabErr } = await supabase
+            const { data: collab, error: collabErr } = await sb
                 .from('collaborateurs')
                 .select('*')
                 .eq('token', COLLAB_ID)
@@ -856,18 +856,18 @@
             // Récupérer le jour du jour
             const today = new Date();
             const todayISO = today.toISOString().slice(0, 10);
-            const { data: jour, error: jourErr } = await supabase
+            const { data: jour, error: jourErr } = await sb
                 .from('jours')
                 .select('*')
                 .eq('collab_id', collab.collab_id)
                 .eq('date_jour', todayISO)
                 .single();
             if (jourErr || !jour) {
-                document.getElementById('journee-content').innerHTML = '<div class="error-box">Aucun jour trouvé pour aujourd'hui.</div>';
+                document.getElementById('journee-content').innerHTML = '<div class="error-box">Aucun jour trouvé pour aujourd\'hui.</div>';
                 return;
             }
             // Récupérer la période
-            const { data: periode } = await supabase
+            const { data: periode } = await sb
                 .from('periodes')
                 .select('*')
                 .eq('periode_id', jour.periode_id)
@@ -875,7 +875,7 @@
             // Récupérer le manager_token si responsable
             let equipeManagerToken = '';
             if (collab.role === 'responsable' && collab.equipe_id) {
-                const { data: equipe } = await supabase
+                const { data: equipe } = await sb
                     .from('equipes')
                     .select('manager_token')
                     .eq('equipe_id', collab.equipe_id)
