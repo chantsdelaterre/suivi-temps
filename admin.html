@@ -1291,16 +1291,17 @@ function buildTableSaisies(jours, filtre, collabId) {
         const bgWeekend = _dow===6 ? 'background:#fff8f0;' : _dow===0 ? 'background:#fff0f0;' : '';
         const creneauTxt = (d,f) => '<span style="font-family:monospace;font-size:12px">'+fmtH(d)+' → '+fmtH(f)+'</span>';
         const creneauInput = (i1,v1,i2,v2) => '<div style="display:flex;align-items:center;gap:4px"><input type="time" id="'+i1+'" value="'+fmtHeure(v1)+'" onchange="majTotalPaie('+idx+')" style="width:55px;font-size:12px;padding:3px 4px"> <span style="color:var(--texte3)">→</span> <input type="time" id="'+i2+'" value="'+fmtHeure(v2)+'" onchange="majTotalPaie('+idx+')" style="width:55px;font-size:12px;padding:3px 4px"></div>';
-        const matin = modeEdit ? creneauInput('jp'+idx+'-c1d',j.c1Debut,'jp'+idx+'-c1f',j.c1Fin) : creneauTxt(j.c1Debut,j.c1Fin);
-        const aprem = modeEdit ? creneauInput('jp'+idx+'-c2d',j.c2Debut,'jp'+idx+'-c2f',j.c2Fin) : creneauTxt(j.c2Debut,j.c2Fin);
-        const cren3 = modeEdit ? creneauInput('jp'+idx+'-c3d',j.c3Debut,'jp'+idx+'-c3f',j.c3Fin) : creneauTxt(j.c3Debut,j.c3Fin);
+        const isATCS = j.typeJour==='AT' || j.typeJour==='CS';
+        const matin = isATCS ? td('') : (modeEdit ? creneauInput('jp'+idx+'-c1d',j.c1Debut,'jp'+idx+'-c1f',j.c1Fin) : creneauTxt(j.c1Debut,j.c1Fin));
+        const aprem = isATCS ? td('') : (modeEdit ? creneauInput('jp'+idx+'-c2d',j.c2Debut,'jp'+idx+'-c2f',j.c2Fin) : creneauTxt(j.c2Debut,j.c2Fin));
+        const cren3 = isATCS ? td('') : (modeEdit ? creneauInput('jp'+idx+'-c3d',j.c3Debut,'jp'+idx+'-c3f',j.c3Fin) : creneauTxt(j.c3Debut,j.c3Fin));
         return '<tr id="jpr-'+idx+'" style="'+bgWeekend+'">' 
           + td('<strong>'+fmtDP(j.dateJour)+'</strong>','white-space:nowrap')
           + td(typeSelect)
           + td(matin,'white-space:nowrap')
           + td(aprem,'white-space:nowrap')
           + td(cren3,'white-space:nowrap')
-          + (modeEdit && (j.typeJour==='AT'||j.typeJour==='CS') ? td('<input type="number" id="jp'+idx+'-total-input" value="" placeholder="h" min="0" max="24" step="0.25" style="width:55px;font-size:12px;padding:3px 6px;font-family:monospace;font-weight:600;color:var(--bleu)">') : td('<span id="jptot-'+idx+'" style="font-family:monospace;font-weight:600;color:var(--bleu)">'+tot+'</span>'))
+          + (modeEdit && isATCS ? td('<input type="text" id="jp'+idx+'-total-input" value="" inputmode="decimal" style="width:45px;font-size:13px;padding:2px 4px;font-family:monospace;font-weight:600;color:var(--bleu);border:none;border-bottom:1.5px solid #aac4e8;outline:none;background:transparent;">') : td('<span id="jptot-'+idx+'" style="font-family:monospace;font-weight:600;color:var(--bleu)">'+tot+'</span>'))
           + td('<span style="font-size:11px;color:var(--texte3)">'+semTot+'</span>')
           + td('<input type="text" id="jp'+idx+'-comm" value="'+(j.commentaire||'').replace(/"/g,"&quot;")+('" placeholder="Commentaire…" style="width:140px;font-size:12px;padding:3px 6px">'))
           + '</tr>';
