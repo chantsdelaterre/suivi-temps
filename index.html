@@ -12,6 +12,7 @@
     <link rel="manifest" href="/suivi-temps/manifest.json">
     <link rel="apple-touch-icon" href="/suivi-temps/icon-192.png">
     <title>Suivi du temps</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@500&display=swap" rel="stylesheet">
     <style>
@@ -789,6 +790,9 @@
     const _savedTheme = getCookie('cdt_theme') || 'vert';
     setTheme(_savedTheme);
     const API_URL = 'https://script.google.com/macros/s/AKfycbx1BTyA9scZnOy7cFKoif9KuV_PuEmotXtO5yCheB-IUESExdG5v5l3maZ-Wn-XBowwbg/exec';
+    const SUPABASE_URL = 'https://oldkmapumqnibdcniecd.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_sMySTPpkgaiUtnban8uCtw_HQFxmsgv';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     function jsonpFetch(url) {
         return new Promise((resolve, reject) => {
             const cb = 'cb_' + Math.random().toString(36).slice(2);
@@ -838,22 +842,70 @@
             return;
         }
         try {
-            const d = await jsonpFetch(API_URL + '?action=getJourDuJour&token=' + COLLAB_ID);
-            if (!d.ok) {
-                const msg = d.error === 'Collaborateur introuvable' ? 'Lien invalide — contacte ton responsable.' : d.error;
-                document.getElementById('journee-content').innerHTML = '<div class="error-box">' + msg + '</div>';
+            // Supabase — récupérer le collab
+            const { data: collab, error: collabErr } = await supabase
+                .from('collaborateurs')
+                .select('*')
+                .eq('token', COLLAB_ID)
+                .eq('actif', true)
+                .single();
+            if (collabErr || !collab) {
+                document.getElementById('journee-content').innerHTML = '<div class="error-box">Lien invalide — contacte ton responsable.</div>';
                 return;
             }
-            jourData = d.jour;
-            document.getElementById('hdr-name').textContent = (d.collab && d.collab.nomAffiche) || '';
-            document.getElementById('hdr-company').textContent = d.employeur || 'Chants de la Terre';
-            COLLAB_ROLE = (d.collab && d.collab.role) || 'collab';
-            COLLAB_EQUIPE_ID = (d.collab && d.collab.equipeId) || '';
+            // Récupérer le jour du jour
+            const today = new Date();
+            const todayISO = today.toISOString().slice(0, 10);
+            const { data: jour, error: jourErr } = await supabase
+                .from('jours')
+                .select('*')
+                .eq('collab_id', collab.collab_id)
+                .eq('date_jour', todayISO)
+                .single();
+            if (jourErr || !jour) {
+                document.getElementById('journee-content').innerHTML = '<div class="error-box">Aucun jour trouvé pour aujourd'hui.</div>';
+                return;
+            }
+            // Récupérer la période
+            const { data: periode } = await supabase
+                .from('periodes')
+                .select('*')
+                .eq('periode_id', jour.periode_id)
+                .single();
+            // Récupérer le manager_token si responsable
+            let equipeManagerToken = '';
+            if (collab.role === 'responsable' && collab.equipe_id) {
+                const { data: equipe } = await supabase
+                    .from('equipes')
+                    .select('manager_token')
+                    .eq('equipe_id', collab.equipe_id)
+                    .single();
+                if (equipe) equipeManagerToken = equipe.manager_token || '';
+            }
+            jourData = {
+                jourId: jour.jour_id,
+                dateJour: jour.date_jour,
+                jourSemaine: jour.jour_semaine,
+                periodeId: jour.periode_id,
+                typeJour: jour.type_jour,
+                c1Debut: jour.c1_debut || '',
+                c1Fin: jour.c1_fin || '',
+                c2Debut: jour.c2_debut || '',
+                c2Fin: jour.c2_fin || '',
+                c3Debut: jour.c3_debut || '',
+                c3Fin: jour.c3_fin || '',
+                commentaire: jour.commentaire || '',
+                totalHeures: jour.total_heures || 0
+            };
+            document.getElementById('hdr-name').textContent = collab.nom_affiche || (collab.prenom + ' ' + collab.nom);
+            document.getElementById('hdr-company').textContent = collab.employeur || 'Chants de la Terre';
+            COLLAB_ROLE = collab.role || 'collab';
+            COLLAB_EQUIPE_ID = equipeManagerToken;
             if (COLLAB_ROLE === 'responsable' && COLLAB_EQUIPE_ID) {
               const btnEquipe = document.getElementById('btn-mon-equipe');
               if (btnEquipe) { btnEquipe.style.display = 'flex'; btnEquipe.dataset.href = 'https://chantsdelaterre.github.io/suivi-temps/manager.html?token=' + COLLAB_EQUIPE_ID; }
             }
-            document.getElementById('hdr-periode').textContent = d.jour && d.jour.periodeId ? 'Période en cours' : 'Période en cours';
+            document.getElementById('hdr-periode').textContent = periode ? periode.nom_periode : 'Période en cours';
             renderJournee();
         } catch (e) {
             document.getElementById('journee-content').innerHTML = '<div class="error-box">Impossible de charger la journée.<br>' + e.message + '</div>';
