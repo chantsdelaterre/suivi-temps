@@ -1093,7 +1093,8 @@
             // Calculer total_heures
             const totalH = calculTotal(payload);
             // Calculer total_hebdo_prog — lire les jours de la semaine depuis Supabase
-            const dateJour = new Date(jourData.dateJour);
+            const _pDate = (jourData.dateJour||'').split('/');
+            const dateJour = _pDate.length===3 ? new Date(_pDate[2], _pDate[1]-1, _pDate[0]) : new Date(jourData.dateJour);
             const dow = dateJour.getDay() === 0 ? 6 : dateJour.getDay() - 1;
             const lundi = new Date(dateJour);
             lundi.setDate(dateJour.getDate() - dow);
@@ -1144,7 +1145,12 @@
             jourData = {
                 ...jourData,
                 nbModifications: nbModifs + 1,
-                totalHeures: totalH,
+                totalHeures: isAbsence ? 0 : totalH,
+                typeJour: payload.typeJour,
+                c1Debut: isAbsence ? '' : (payload.c1Debut || ''),
+                c1Fin: isAbsence ? '' : (payload.c1Fin || ''),
+                c2Debut: isAbsence ? '' : (payload.c2Debut || ''),
+                c2Fin: isAbsence ? '' : (payload.c2Fin || ''),
             };
             renderJournee();
             prefetchMesJours();
@@ -1302,15 +1308,35 @@
         showVue('journee');
         document.getElementById('journee-content').innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
         try {
-            const d = await jsonpFetch(API_URL + '?action=getJourById&jourId=' + encodeURIComponent(jourId) + '&token=' + COLLAB_ID);
-            if (!d.ok) {
-                document.getElementById('journee-content').innerHTML = '<div class="error-box">' + d.error + '</div>';
+            const { data: jour, error } = await sb
+                .from('jours')
+                .select('*')
+                .eq('jour_id', jourId)
+                .single();
+            if (error || !jour) {
+                document.getElementById('journee-content').innerHTML = '<div class="error-box">Jour introuvable.</div>';
                 return;
             }
-            jourData = d.jour;
-            if (!modifiable)
-                jourData.verrouillee = true;
-            const _p=( jourData.dateJour||'').split('/'); const dh = _p.length===3?new Date(_p[2],_p[1]-1,_p[0]):new Date(jourData.dateJour);
+            const fmtISO = iso => { if (!iso) return ''; const d = new Date(iso); return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear(); };
+            jourData = {
+                jourId: jour.jour_id,
+                dateJour: fmtISO(jour.date_jour),
+                jourSemaine: jour.jour_semaine,
+                periodeId: jour.periode_id,
+                typeJour: jour.type_jour,
+                c1Debut: jour.c1_debut || '',
+                c1Fin: jour.c1_fin || '',
+                c2Debut: jour.c2_debut || '',
+                c2Fin: jour.c2_fin || '',
+                c3Debut: jour.c3_debut || '',
+                c3Fin: jour.c3_fin || '',
+                commentaire: jour.commentaire || '',
+                totalHeures: jour.total_heures || 0,
+                nbModifications: jour.nb_modifications || 0
+            };
+            if (!modifiable) jourData.verrouillee = true;
+            const _p = (jourData.dateJour||'').split('/');
+            const dh = _p.length===3 ? new Date(_p[2],_p[1]-1,_p[0]) : new Date(jourData.dateJour);
             document.getElementById('hdr-date').textContent = JOURS[dh.getDay()] + ' ' + dh.getDate() + ' ' + MOIS[dh.getMonth()] + ' ' + dh.getFullYear();
             renderJournee();
         } catch (e) {
