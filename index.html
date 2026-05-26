@@ -1164,13 +1164,44 @@
     }
     async function prefetchMesJours() {
         try {
-            const d = await jsonpFetch(API_URL + '?action=getMesJours&token=' + COLLAB_ID);
-            if (d.ok) {
-                mesJoursCache = d;
-                if (d.periode && d.periode.dateDebut && d.periode.dateFin)
-                    document.getElementById('hdr-periode').textContent = 'Du ' + d.periode.dateDebut + ' au ' + d.periode.dateFin;
+            const cache = await fetchMesJoursSupabase();
+            if (cache) {
+                mesJoursCache = cache;
+                if (cache.periode && cache.periode.dateDebut && cache.periode.dateFin)
+                    document.getElementById('hdr-periode').textContent = 'Du ' + cache.periode.dateDebut + ' au ' + cache.periode.dateFin;
             }
         } catch (e) {}
+    }
+    async function fetchMesJoursSupabase() {
+        const { data: collab } = await sb.from('collaborateurs').select('collab_id, equipe_id').eq('token', COLLAB_ID).single();
+        if (!collab) return null;
+        const { data: jours } = await sb.from('jours').select('*').eq('collab_id', collab.collab_id).order('date_jour', {ascending: false}).limit(30);
+        const { data: periode } = await sb.from('periodes').select('*').eq('statut', 'ouverte').single();
+        const fmtISO = iso => { if (!iso) return ''; const d = new Date(iso); return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear(); };
+        const joursFormates = (jours||[]).map(j => ({
+            jourId: j.jour_id,
+            dateJour: fmtISO(j.date_jour),
+            jourSemaine: j.jour_semaine,
+            periodeId: j.periode_id,
+            typeJour: j.type_jour,
+            c1Debut: j.c1_debut || '',
+            c1Fin: j.c1_fin || '',
+            c2Debut: j.c2_debut || '',
+            c2Fin: j.c2_fin || '',
+            c3Debut: j.c3_debut || '',
+            c3Fin: j.c3_fin || '',
+            commentaire: j.commentaire || '',
+            totalHeures: j.total_heures || 0,
+            totalHebdoProg: j.total_hebdo_prog || 0,
+            nbModifications: j.nb_modifications || 0
+        }));
+        const periodeFormatee = periode ? {
+            periodeId: periode.periode_id,
+            nomPeriode: periode.nom_periode,
+            dateDebut: fmtISO(periode.date_debut),
+            dateFin: fmtISO(periode.date_fin)
+        } : null;
+        return { ok: true, jours: joursFormates, periode: periodeFormatee };
     }
     function calculTotal(p) {
         let t = 0;
@@ -1194,9 +1225,9 @@
         }
         document.getElementById('mesjours-content').innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
         try {
-            const d = await jsonpFetch(API_URL + '?action=getMesJours&token=' + COLLAB_ID);
-            if (!d.ok) {
-                document.getElementById('mesjours-content').innerHTML = '<div class="error-box">' + d.error + '</div>';
+            const d = await fetchMesJoursSupabase();
+            if (!d) {
+                document.getElementById('mesjours-content').innerHTML = '<div class="error-box">Erreur de chargement.</div>';
                 return;
             }
             mesJoursCache = d;
