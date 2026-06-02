@@ -531,10 +531,7 @@
     #picker-popup {
         display: none;
         position: absolute;
-        top: 360px;            /* approximatif : cale la fenêtre sous le bloc Matin (à ajuster à l'œil) */
         width: 120px;
-        left: 50%;
-        transform: translateX(-50%);
         background: var(--blanc);
         border-radius: 16px;
         z-index: 1000;
@@ -1382,8 +1379,25 @@
             document.getElementById('drum-m').scrollTop = mi * 40;
             updatePreview();
         }, 30);
+        const popup = document.getElementById('picker-popup');
         document.getElementById('picker-overlay').classList.add('open');
-        document.getElementById('picker-popup').classList.add('open');
+        popup.classList.add('open');
+        // Ancrage sous (ou au-dessus) du bouton cliqué
+        const rect = document.getElementById(fieldId).getBoundingClientRect();
+        const popupW = 120, marge = 6;
+        const popupH = popup.offsetHeight;  // hauteur réelle, mesurée une fois le picker affiché
+        // Vertical : sous le bouton s'il y a la place, sinon au-dessus
+        let top;
+        if (rect.bottom + marge + popupH <= window.innerHeight)
+            top = rect.bottom + marge;
+        else
+            top = rect.top - marge - popupH;
+        // Horizontal : centré sous le bouton, borné aux bords de l'écran
+        let left = rect.left + rect.width / 2 - popupW / 2;
+        left = Math.max(marge, Math.min(left, window.innerWidth - popupW - marge));
+        // getBoundingClientRect = coordonnées écran ; on convertit en coordonnées page
+        popup.style.top = (top + window.scrollY) + 'px';
+        popup.style.left = (left + window.scrollX) + 'px';
     }
     function updatePreview() {
         const hi = Math.round(document.getElementById('drum-h').scrollTop / 40),
