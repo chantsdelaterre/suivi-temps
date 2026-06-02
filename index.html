@@ -587,20 +587,6 @@
         position: relative;
     }
 
-    .picker-drums::before {
-        content: '';
-        position: absolute;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 160px;
-        height: 40px;
-        border-top: 2px solid var(--vert);
-        border-bottom: 2px solid var(--vert);
-        border-radius: 4px;
-        z-index: 2;
-        pointer-events: none;
-    }
-
     .picker-drums::after {
         content: ':';
         position: absolute;
@@ -754,7 +740,6 @@
     <div id="picker-overlay" onclick="cancelPicker()"></div>
     <div id="picker-popup">
         <div class="picker-head">
-            <button class="picker-cancel" onclick="cancelPicker()">Annuler</button>
             <span class="picker-preview" id="picker-preview">08:00</span>
             <button class="picker-ok" onclick="confirmPicker()">OK</button>
         </div>
