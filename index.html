@@ -1382,17 +1382,16 @@
         const popup = document.getElementById('picker-popup');
         document.getElementById('picker-overlay').classList.add('open');
         popup.classList.add('open');
-        // Ancrage sous (ou au-dessus) du bouton cliqué
+        // Ancrage SUR le bouton : centre des molettes aligné sur le centre du bouton
         const rect = document.getElementById(fieldId).getBoundingClientRect();
         const popupW = 120, marge = 6;
-        const popupH = popup.offsetHeight;  // hauteur réelle, mesurée une fois le picker affiché
-        // Vertical : sous le bouton s'il y a la place, sinon au-dessus
-        let top;
-        if (rect.bottom + marge + popupH <= window.innerHeight)
-            top = rect.bottom + marge;
-        else
-            top = rect.top - marge - popupH;
-        // Horizontal : centré sous le bouton, borné aux bords de l'écran
+        const popupH = popup.offsetHeight;                                 // hauteur totale du picker
+        const drumsH = popup.querySelector('.picker-drums').offsetHeight;  // hauteur de la zone des molettes
+        // décalage du centre des molettes par rapport au haut du picker (bandeau + demi-molettes)
+        const centreMolettes = popupH - drumsH / 2;
+        // Vertical : le centre des molettes tombe au centre du bouton cliqué
+        const top = (rect.top + rect.height / 2) - centreMolettes;
+        // Horizontal : centré sur le bouton, borné aux bords de l'écran
         let left = rect.left + rect.width / 2 - popupW / 2;
         left = Math.max(marge, Math.min(left, window.innerWidth - popupW - marge));
         // getBoundingClientRect = coordonnées écran ; on convertit en coordonnées page
