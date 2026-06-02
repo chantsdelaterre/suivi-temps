@@ -583,7 +583,7 @@
         display: flex;
         justify-content: center;
         align-items: center;
-        height: 220px;
+        height: 160px;
         position: relative;
     }
 
@@ -593,7 +593,7 @@
         top: 50%;
         transform: translateY(-50%);
         width: 160px;
-        height: 52px;
+        height: 40px;
         border-top: 2px solid var(--vert);
         border-bottom: 2px solid var(--vert);
         border-radius: 4px;
@@ -628,19 +628,19 @@
     }
 
     .drum-item {
-        height: 52px;
+        height: 40px;
         display: flex;
         align-items: center;
         justify-content: center;
         font-family: 'DM Mono', monospace;
-        font-size: 28px;
+        font-size: 22px;
         font-weight: 500;
         scroll-snap-align: center;
         color: var(--texte);
     }
 
     .drum-spacer {
-        height: 84px;
+        height: 60px;
     }
     #toast-msg {
         position: fixed;
@@ -1391,16 +1391,16 @@
         const hi = HOURS.indexOf(h),
             mi = MINS.indexOf(m) === -1 ? 0 : MINS.indexOf(m);
         setTimeout(() => {
-            document.getElementById('drum-h').scrollTop = hi * 52;
-            document.getElementById('drum-m').scrollTop = mi * 52;
+            document.getElementById('drum-h').scrollTop = hi * 40;
+            document.getElementById('drum-m').scrollTop = mi * 40;
             updatePreview();
         }, 30);
         document.getElementById('picker-overlay').classList.add('open');
         document.getElementById('picker-popup').classList.add('open');
     }
     function updatePreview() {
-        const hi = Math.round(document.getElementById('drum-h').scrollTop / 52),
-            mi = Math.round(document.getElementById('drum-m').scrollTop / 52);
+        const hi = Math.round(document.getElementById('drum-h').scrollTop / 40),
+            mi = Math.round(document.getElementById('drum-m').scrollTop / 40);
         document.getElementById('picker-preview').textContent = (HOURS[Math.min(hi, 23)] || '08') + ':' + (MINS[Math.min(mi, 3)] || '00');
     }
     function confirmPicker() {
