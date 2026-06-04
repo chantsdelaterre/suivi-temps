@@ -34,6 +34,16 @@ La saisie d'un jour par un collaborateur est possible **si et seulement si les 4
 
 `index.html` ne vérifie aujourd'hui que les **3 premières conditions** (existence du jour, max 3 enregistrements, fenêtre 5 jours). Il **ne vérifie PAS encore le statut de la période** (condition 4) : prendre en compte `ouverte` / `gelee` / `cloturee` pour autoriser/bloquer la saisie est un **chantier à venir**.
 
+### Règle de génération des périodes (cadré le 03/06/2026)
+
+- **CIVILES** : un **mois calendaire**. `date_debut` = 1er du mois, `date_fin` = dernier jour du mois. **Pas de calage hebdo.**
+- **DÉCALÉES** (**calage lundi→dimanche, automatique**) :
+  - `date_fin` = le **premier dimanche ≥ 15** du mois (le 1er dimanche au-delà du 15, ou le 15 lui-même s'il tombe un dimanche).
+  - `date_debut` = le **lundi suivant la `date_fin` de la période précédente** (= `date_fin` précédente + 1 jour). **Périodes jointives** par construction.
+  - La **durée (4 ou 5 semaines) découle automatiquement** du calendrier — plus aucune décision manuelle.
+  - **Vérifié sur 2026** : fins les **19/07, 16/08, 20/09, 18/10**.
+- **Génération** : maintenir **2 périodes `planifiee` d'avance par type** (méthode A). La **génération annuelle du 15/11 est reportée** (pas pour l'instant).
+
 ## Méthode de travail
 - **Éditions chirurgicales uniquement** : ne jamais réécrire un fichier entier.
 - **Une seule modification à la fois** : on discute, on valide, ensuite on code.
