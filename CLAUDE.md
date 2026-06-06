@@ -86,10 +86,34 @@ Les types de jour se répartissent en **deux catégories distinctes** :
   naît d'une **décision admin**, il **vit donc au niveau de la table
   paie / ajustements**, pas dans la saisie collab.
 
+### Règles de calcul de la paie (cadré le 06/06/2026)
+
+**Calcul par collaborateur et par période — totaux SÉPARÉS** (pas
+d'addition entre eux) :
+
+- **Heures travaillées** = somme des `total_heures` des jours de type
+  `'travaillée'` (**en heures**).
+- **Heures AT** = somme des jours `'AT'` (**7 h par défaut, MODIFIABLE par
+  l'admin**) — **en heures**.
+- **Heures CS** = somme des jours `'CS'` (**7 h par défaut, MODIFIABLE par
+  l'admin**) — **en heures**.
+- **CP** = **nombre de jours** `'CP'` (comptés **en JOURS**, valent **0 h** ; le
+  **détail des dates est conservé jour par jour**).
+
+`AT` et `CS` partagent la **même mécanique** : 7 h par défaut, ajustable par
+l'admin. Les **valeurs ajustées vivent au niveau de la table paie-détail**.
+
+**Simplification assumée** : le « 7 h par défaut » ne gère **pas
+automatiquement** les temps partiels / jours variables (collabs à 4 jours,
+2 jours…). **L'admin ajuste manuellement.** Choix **volontaire** pour éviter
+une usine à gaz (**pas de table de répartition hebdomadaire**).
+
+**Pour Silae (plus tard)** : les `CP` doivent ressortir en **PLAGES de dates**
+(« CP du … au … »), **reconstituées depuis le détail jour par jour**. Cela
+**confirme l'intérêt de stocker le détail**.
+
 ### Questions encore ouvertes
 
-- **Règles de calcul de la paie** : `AT` = **7 h** pour un temps plein ;
-  comptage `CP` ; totaux.
 - **Infos contractuelles exactes** à figer.
 - **Ajustements de `recap_paie`** (structure à faire évoluer).
 
@@ -120,6 +144,12 @@ Les types de jour se répartissent en **deux catégories distinctes** :
 8. **Édition PDF** des relevés détaillés.
 9. **Plus tard** : export **Silae**, **annualisation**, **signature**, **front
    manager (`manager.html`)** — souhaité avant le 15 si possible, sinon après.
+   - **Suivi annuel des CP** (règle métier à ne pas perdre) : dotation de
+     **5 semaines = 5 de CHAQUE jour de semaine** (5 lundis, 5 mardis… 5
+     vendredis). Empêche qu'un collab pose **tous** ses CP sur son jour le plus
+     lourd. **Contrôle ANNUEL** (lié à l'annualisation), à **plafonner par jour
+     de semaine**. Cas **temps partiel à préciser** (dotation =
+     5 × nombre de jours travaillés ?). **PAS sur le chemin du 15/06.**
 
 ### Filet de sécurité
 
