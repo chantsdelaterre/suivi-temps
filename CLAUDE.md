@@ -200,3 +200,43 @@ Si Supabase n'est **pas prêt à temps**, la paie de juin se fait sur
 - ⚠️ **Vigilance** : exporter le CSV **APRÈS la dernière saisie du 14**.
   Sinon une saisie tardive serait **écrasée** par le `delete + insert` du script
   d'import.
+
+## Architecture de déploiement & bascule du 15
+
+### PROD ACTUELLE (vérifié dans Settings → Pages)
+
+GitHub Pages sert la branche **`main`** — mode **« Deploy from a branch »**,
+dossier **`/ (root)`**. Donc **`main` = 100 % GAS/Sheets** : c'est ce que les
+collègues utilisent en ce moment.
+Site live : **https://chantsdelaterre.github.io/suivi-temps/**
+
+### BRANCHE `supabase`
+
+Préparation de la bascule : **saisie sur Supabase** + tables/cron/import +
+correctifs (verrous, #3, #4). **~35 commits d'avance sur `main`**, **non
+déployée** (rien de Supabase n'est servi en prod tant que Pages pointe sur
+`main`).
+
+### BASCULE DU 15 — geste recommandé
+
+Dans **Settings → Pages → Build and deployment**, changer la **branche servie**
+de `main` à **`supabase`**, puis **Save**.
+- **Avantage : `main` reste intacte = ROLLBACK IMMÉDIAT.** En cas de problème,
+  il suffit de **remettre `main`** dans le menu pour revenir à la prod GAS/Sheets.
+- **Alternative** : merger `supabase` → `main` — mais ça **touche `main`** et
+  c'est **moins facile à annuler**. Non retenu par défaut.
+
+### À VÉRIFIER LE 14
+
+Que **`supabase` est bien à jour** (tout poussé sur `origin/supabase`) **avant**
+de pointer Pages dessus.
+
+### Hors périmètre de la bascule collab du 15
+
+`admin.html` et `manager.html` sont **encore sur GAS** — **non concernés** par
+cette bascule (qui ne porte que sur la saisie collaborateur `index.html`).
+
+### RÈGLE
+
+**Pas de commit/push sur `main`.** La bascule (changement de la branche servie
+par Pages) **revient à Guillaume**.
