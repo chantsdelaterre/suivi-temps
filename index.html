@@ -1167,10 +1167,10 @@
         } catch (e) {}
     }
     async function fetchMesJoursSupabase() {
-        const { data: collab } = await sb.from('collaborateurs').select('collab_id, equipe_id').eq('token', COLLAB_ID).single();
+        const { data: collab } = await sb.from('collaborateurs').select('collab_id, equipe_id, type_periode').eq('token', COLLAB_ID).single();
         if (!collab) return null;
         const { data: jours } = await sb.from('jours').select('*').eq('collab_id', collab.collab_id).order('date_jour', {ascending: false}).limit(30);
-        const { data: periode } = await sb.from('periodes').select('*').eq('statut', 'ouverte').single();
+        const { data: periode } = await sb.from('periodes').select('*').eq('statut', 'ouverte').eq('type_periode', collab.type_periode).maybeSingle();
         const fmtISO = iso => { if (!iso) return ''; const d = new Date(iso); return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear(); };
         const joursFormates = (jours||[]).map(j => ({
             jourId: j.jour_id,
