@@ -880,6 +880,7 @@
                 c3Fin: jour.c3_fin || '',
                 commentaire: jour.commentaire || '',
                 totalHeures: jour.total_heures || 0,
+                nbModifications: jour.nb_modifications || 0,
                 periodeStatut: periode ? periode.statut : null,
                 verrouillee: !(periode && periode.statut === 'ouverte')
             };
