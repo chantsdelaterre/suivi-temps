@@ -1,0 +1,76 @@
+-- =============================================================================
+-- recap_paie.sql
+-- Date       : 2026-06-07
+-- Rôle       : Niveau 3 de l'architecture paie — SYNTHÈSE AGRÉGÉE. Une seule
+--              ligne par collaborateur / période. Totaux RECOPIÉS depuis le
+--              calcul de paie (séparés : heures travaillées / AT / CS, nombre
+--              de CP, nombre de jours travaillés) + workflow (validation,
+--              signature, note admin).
+--
+--              Source de vérité = `paie_detail` (détail jour par jour figé) +
+--              `historique_contrats` (contexte contractuel à la date). Cette
+--              table n'est qu'une AGRÉGATION figée pour consultation / export.
+--
+-- NE stocke PAS le contexte contractuel (structure, type_contrat, heures_hebdo,
+--   matricule_silae…) : il vit dans `historique_contrats`.
+--
+-- collab_id : clé étrangère vers `collaborateurs` (saisie manuelle, garde-fou).
+-- Unicité   : (periode_id, collab_id) — une seule ligne de récap par collab et
+--             par période.
+--
+-- ⚠️ RLS NON ACTIVÉE — donnée sensible (paie). RLS à activer IMPÉRATIVEMENT
+--    avant la mise en production de l'écran admin (comme `paie_detail` et
+--    `historique_contrats`).
+--
+-- Déploiement : MANUEL, copier-coller dans le SQL Editor de Supabase.
+--              ⚠️ Recrée la table : exécuter les 3 étapes DANS L'ORDRE et
+--              S'ARRÊTER si l'étape 1 renvoie un count > 0 (table non vide).
+--              (ce fichier n'est qu'une copie de référence versionnée du dépôt)
+-- =============================================================================
+
+
+-- -----------------------------------------------------------------------------
+-- ÉTAPE 1 — RAPPEL DE SÉCURITÉ : vérifier que la table est VIDE avant le drop.
+--           Si le résultat est > 0, NE PAS continuer (ne pas exécuter l'étape 2).
+-- -----------------------------------------------------------------------------
+select count(*) from public.recap_paie;
+
+
+-- -----------------------------------------------------------------------------
+-- ÉTAPE 2 — SUPPRESSION de l'ancienne table (à lancer SEULEMENT si count = 0).
+-- -----------------------------------------------------------------------------
+drop table public.recap_paie;
+
+
+-- -----------------------------------------------------------------------------
+-- ÉTAPE 3 — CRÉATION de la nouvelle structure.
+-- -----------------------------------------------------------------------------
+create table public.recap_paie (
+  -- Identité
+  id                   bigint generated always as identity primary key,
+  periode_id           text        not null,
+  collab_id            text        not null,
+  nom_affiche          text,
+
+  -- Totaux recopiés depuis paie_detail (calcul de paie)
+  heures_travaillees   numeric,
+  heures_at            numeric,
+  heures_cs            numeric,
+  nb_cp                integer,
+  nb_jours_travailles  integer,
+
+  -- Workflow
+  statut_validation    text,
+  date_validation      text,
+  statut_signature     text,
+  note_admin           text,
+
+  created_at           timestamptz default now(),
+
+  constraint recap_paie_collab_id_fkey
+    foreign key (collab_id)
+    references public.collaborateurs (collab_id),
+
+  constraint recap_paie_unique
+    unique (periode_id, collab_id)
+);
