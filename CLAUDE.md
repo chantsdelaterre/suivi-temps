@@ -158,6 +158,45 @@ Si Supabase n'est **pas prêt à temps**, la paie de juin se fait sur
 
 ### Contexte front (rappel)
 
-`index.html` ne gère **pas encore** le verrou de période (`gelee` / `cloturee`)
-ni la consultation de **toute** la période ; le chantier « **espace collab
-transparent** » est **reporté après la paie**.
+`index.html` gère **désormais** le verrou de période (branché dans
+`loadJourDuJour` **et** `ouvrirJourPasse`), avec **messages précis**, **P3**
+(sauvegarde pessimiste) et **P4** (`nbModifications` du jour courant). Reste
+**non géré** : la consultation de **toute** la période ; le chantier
+« **espace collab transparent** » est **reporté après la paie**.
+
+## Bascule collab du 15/06 — reste à faire
+
+**OBJECTIF** : le **15/06**, les saisies collaborateur se font sur **Supabase**
+(`index.html`).
+
+### FAIT
+
+- Saisie collab déjà sur Supabase.
+- Verrou de période (condition #4) dans `loadJourDuJour` **et** `ouvrirJourPasse`.
+- Messages de verrouillage précis (3 modifs / gelée-clôturée / délai 5 j / neutre).
+- **P4** : `nbModifications` chargé pour le jour courant (`loadJourDuJour`).
+- **P3** : sauvegarde **pessimiste** (« Enregistré » seulement après UPDATE confirmé).
+- Script d'import Sheets → Supabase **testé à blanc**.
+
+### RESTE AVANT LE 15
+
+- **#3 (IMPORTANT)** : `fetchMesJoursSupabase` fait `.single()` sur la période
+  `ouverte` (~l.1171) → **casse s'il y a 0 ou >1 période ouverte**. Or il y a
+  **2 périodes ouvertes en parallèle** (civile + décalée). À corriger
+  (`.maybeSingle()` ou filtrage par type/collab) et **tester avec un collègue
+  civil ET un décalé**.
+- **#4** : le calcul hebdo dans `sauvegarder` (~l.1095-1099) n'a **pas de borne
+  de fin de semaine** → il agrège des jours **futurs**. À **borner**.
+- **#1 (cosmétique, pas urgent)** : ménage du **code mort GAS** (`API_URL`,
+  `jsonpFetch`, `action:'saveHoraires'`).
+
+### CALENDRIER DE BASCULE (dim 14 → lun 15)
+
+- **Dimanche 14 au soir** : import réel **DEC_2026_06** (période **encore
+  ouverte**) — ré-export CSV → script → **test rollback** → commit.
+- **Nuit du 14 au 15** : le cron **gèle `DEC_2026_06` automatiquement**
+  (`date_fin` au 14 désormais passée → `ouverte` → `gelee`).
+- **Lundi 15** : bascule équipe — **tout le monde saisit sur Supabase**.
+- ⚠️ **Vigilance** : exporter le CSV **APRÈS la dernière saisie du 14**.
+  Sinon une saisie tardive serait **écrasée** par le `delete + insert` du script
+  d'import.
