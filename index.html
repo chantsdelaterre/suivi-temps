@@ -879,7 +879,9 @@
                 c3Debut: jour.c3_debut || '',
                 c3Fin: jour.c3_fin || '',
                 commentaire: jour.commentaire || '',
-                totalHeures: jour.total_heures || 0
+                totalHeures: jour.total_heures || 0,
+                periodeStatut: periode ? periode.statut : null,
+                verrouillee: !(periode && periode.statut === 'ouverte')
             };
             document.getElementById('hdr-name').textContent = collab.nom_affiche || (collab.prenom + ' ' + collab.nom);
             document.getElementById('hdr-company').textContent = collab.employeur || 'Chants de la Terre';
