@@ -773,24 +773,9 @@
     }
     const _savedTheme = getCookie('cdt_theme') || 'vert';
     setTheme(_savedTheme);
-    const API_URL = 'https://script.google.com/macros/s/AKfycbx1BTyA9scZnOy7cFKoif9KuV_PuEmotXtO5yCheB-IUESExdG5v5l3maZ-Wn-XBowwbg/exec';
     const SUPABASE_URL = 'https://oldkmapumqnibdcniecd.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_sMySTPpkgaiUtnban8uCtw_HQFxmsgv';
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    function jsonpFetch(url) {
-        return new Promise((resolve, reject) => {
-            const cb = 'cb_' + Math.random().toString(36).slice(2);
-            const script = document.createElement('script');
-            window[cb] = (data) => {
-                delete window[cb];
-                document.head.removeChild(script);
-                resolve(data);
-            };
-            script.src = url + '&callback=' + cb;
-            script.onerror = () => reject(new Error('Erreur réseau'));
-            document.head.appendChild(script);
-        });
-    }
     const JOURS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
     const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
     const HOURS = Array.from({
@@ -1044,9 +1029,6 @@
             }
         }
         const payload = {
-            action: 'saveHoraires',
-            jourId: jourData.jourId,
-            token: COLLAB_ID,
             typeJour,
             c1Debut: c1d,
             c1Fin: c1f,
