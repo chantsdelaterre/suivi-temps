@@ -1305,6 +1305,12 @@
                 document.getElementById('journee-content').innerHTML = '<div class="error-box">Jour introuvable.</div>';
                 return;
             }
+            // Récupérer la période pour connaître son statut (verrou #4)
+            const { data: periode } = await sb
+                .from('periodes')
+                .select('*')
+                .eq('periode_id', jour.periode_id)
+                .single();
             const fmtISO = iso => { if (!iso) return ''; const d = new Date(iso); return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear(); };
             jourData = {
                 jourId: jour.jour_id,
@@ -1320,9 +1326,13 @@
                 c3Fin: jour.c3_fin || '',
                 commentaire: jour.commentaire || '',
                 totalHeures: jour.total_heures || 0,
-                nbModifications: jour.nb_modifications || 0
+                nbModifications: jour.nb_modifications || 0,
+                periodeStatut: periode ? periode.statut : null
             };
-            if (!modifiable) jourData.verrouillee = true;
+            // Verrouillé si verrou 5j/3modifs (!modifiable) OU période non 'ouverte'
+            // (période introuvable ⇒ verrouillé par défaut, comme loadJourDuJour)
+            const periodeOuverte = periode && periode.statut === 'ouverte';
+            if (!modifiable || !periodeOuverte) jourData.verrouillee = true;
             const _p = (jourData.dateJour||'').split('/');
             const dh = _p.length===3 ? new Date(_p[2],_p[1]-1,_p[0]) : new Date(jourData.dateJour);
             document.getElementById('hdr-date').textContent = JOURS[dh.getDay()] + ' ' + dh.getDate() + ' ' + MOIS[dh.getMonth()] + ' ' + dh.getFullYear();
