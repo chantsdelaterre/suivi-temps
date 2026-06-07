@@ -905,10 +905,16 @@
         const maxModifs = j.nbModifications >= 3;
         const verrouille = j.verrouillee || maxModifs;
         let html = '';
-        if (j.verrouillee)
-            html += '<div class="alert alert-warn">🔒 Période clôturée — saisie verrouillée</div>';
-        else if (maxModifs)
-            html += '<div class="alert alert-max">✋ 3 modifications effectuées — c\'est le maximum.</div>';
+        if (verrouille) {
+            if (maxModifs)
+                html += '<div class="alert alert-max">✋ 3 modifications effectuées — c\'est le maximum.</div>';
+            else if (j.periodeStatut === 'cloturee' || j.periodeStatut === 'gelee')
+                html += '<div class="alert alert-warn">🔒 Période clôturée — saisie verrouillée</div>';
+            else if (j.periodeStatut === 'ouverte')
+                html += '<div class="alert alert-warn">⏱ Modification impossible — délai de 5 jours dépassé</div>';
+            else
+                html += '<div class="alert alert-warn">🔒 Saisie verrouillée</div>';
+        }
         const typeMap = {
             travaillée: 'pill-travaillee',
             CP: 'pill-cp',
