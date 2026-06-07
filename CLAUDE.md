@@ -240,3 +240,66 @@ cette bascule (qui ne porte que sur la saisie collaborateur `index.html`).
 
 **Pas de commit/push sur `main`.** La bascule (changement de la branche servie
 par Pages) **revient à Guillaume**.
+
+## Moteur de paie — règles de calcul (conception)
+
+### Cadre du moteur de PÉRIODE
+
+Pour une période + un collab : (1) prend ses **jours** (saisie brute), (2) résout
+le **contrat en vigueur à la date de chaque jour** via `historique_contrats`,
+(3) applique les règles ci-dessous, (4) produit les **totaux** (heures
+travaillées, heures AT, heures CS, CP ventilés par jour, nb jours travaillés),
+(5) **fige le tout** (`paie_detail` + `recap_paie`) à la **validation**.
+
+### Règles par type de jour (VERROUILLÉES)
+
+- **`travaillée`** : heures = somme des créneaux (`total_heures` de la saisie
+  collab). Comptées **en heures**.
+- **`AT`** (arrêt de travail : maladie, accident) : heures = **valeur saisie par
+  l'admin**, **PRÉ-REMPLIE à 7 h**, à **confirmer/corriger SYSTÉMATIQUEMENT, jour
+  par jour**. Le 7 h « mâche le travail » dans ~80 % des cas (temps plein, jour
+  travaillé) mais **ne dispense jamais de vérifier** — y compris mettre **0 h**
+  les jours non travaillés (ex : collab qui ne bosse jamais le mercredi → 3 j AT
+  = 7+7+0). Comptées **en heures**.
+- **`CS`** (congé spécial : naissance, décès, maternité) : **même règle que
+  `AT`** (7 h par défaut, à confirmer, jour par jour). Comptées **en heures**.
+- **`CP`** (congé payé) : comptés **en JOURS**, **0 h**. **VENTILÉS PAR JOUR DE
+  LA SEMAINE** (lundi/mardi/…/samedi). Règle métier : chaque salarié (temps plein
+  **OU** partiel) a droit à **5 occurrences de CHAQUE jour de semaine par an**,
+  **NON TRANSFÉRABLES** d'un jour à l'autre (le temps partiel sans mercredi doit
+  quand même poser ses 5 mercredis). **Pas de prorata**, pas de « 1,25 j » : le
+  quota par jour **rétablit l'équité mécaniquement** et empêche le saucissonnage
+  favorable. Le moteur de période se contente de **compter/ventiler les CP du
+  mois par `jour_semaine`** (colonne déjà présente dans `jours`).
+
+### Séparation CRUCIALE : moteur de période ≠ compteur annuel de CP
+
+- Le **MOTEUR DE PÉRIODE** (ci-dessus) est **borné à une période**. Simple.
+- Le **COMPTEUR ANNUEL DE CP** est un **chantier DISTINCT, plus tard** : cumule
+  les CP de **toutes les périodes de l'année**, affiche les **droits restants par
+  jour de semaine** (5 − pris), **alerte au dépassement**. Touche à l'**année
+  entière** + **reprise de l'existant** (combien pris depuis janvier ?).
+  = « **chantier annualisation** », **APRÈS** le moteur de période.
+
+### Questions ouvertes (à trancher plus tard, PAS seul)
+
+- **Quota SAMEDI de CP** : certains travaillent le samedi (mais toujours
+  5 jours/sem). Combien de samedis ? Tous les collabs ou seulement ceux du
+  samedi ? → **À VOIR AVEC PAULINE ET LES GESTIONNAIRES DE PAIE**.
+- **Garde-fou AT/CS temps partiel** : signaler **visuellement** à l'admin les
+  AT/CS encore à 7 h **non confirmés** (sujet d'affichage, phase Paie).
+- **Distinguer AT/CS « 7 h auto » de « confirmé admin »** : flag
+  `heures_confirmees`, OU la validation du collab = « tout vérifié » ?
+  (phase Paie).
+
+### Prochain gros morceau : greffe de `historique_contrats`
+
+C'est **LA partie délicate** de l'admin (**pas technique, conceptuelle**) : on
+**AJOUTE une logique absente** de l'ancien système (`sauverCollab` GAS n'écrit
+que l'**état courant**). Un **changement de contrat** doit : **clôturer
+l'ancienne ligne** (poser `date_fin`) + **ouvrir une nouvelle** (`date_debut`,
+`date_fin` NULL) + **mettre à jour `collaborateurs`** (état courant) = **un
+geste, deux écritures coordonnées**. **QUESTION À TRANCHER** : quels champs
+**déclenchent une nouvelle ligne d'historique** (contractuels : heures,
+structure, `type_periode`, matricule Silae) vs quels champs se **corrigent sur
+place sans historiser** (administratifs : email, équipe) ?
