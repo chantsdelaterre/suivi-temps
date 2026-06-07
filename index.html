@@ -1081,12 +1081,16 @@
             const dow = dateJour.getDay() === 0 ? 6 : dateJour.getDay() - 1;
             const lundi = new Date(dateJour);
             lundi.setDate(dateJour.getDate() - dow);
-            const lundiISO = lundi.toISOString().slice(0, 10);
+            // Format ISO en heure LOCALE (évite le décalage d'un jour de toISOString/UTC)
+            const isoLocal = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+            const lundiISO = isoLocal(lundi);
+            const dateJourISO = isoLocal(dateJour);
             const { data: joursSemaine } = await sb
                 .from('jours')
                 .select('total_heures, jour_id')
                 .eq('collab_id', jourData.jourId.split('_')[0])
-                .gte('date_jour', lundiISO);
+                .gte('date_jour', lundiISO)
+                .lte('date_jour', dateJourISO);
             let hebdoProg = totalH;
             if (joursSemaine) {
                 joursSemaine.forEach(j => {
@@ -1238,6 +1242,7 @@
         const now = new Date(),
             today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const parseDMY = s => { const p=(s||'').split('/'); return p.length===3?p[2]+p[1]+p[0]:''; };
+        const keyLocal = dt => String(dt.getFullYear()) + String(dt.getMonth()+1).padStart(2,'0') + String(dt.getDate()).padStart(2,'0');
         const sorted = [...jours].filter(j => j.dateJour).sort((a, b) => parseDMY(b.dateJour).localeCompare(parseDMY(a.dateJour)));
         const passes = sorted.filter(j => {
             const p=(j.dateJour||'').split('/');
@@ -1264,6 +1269,18 @@
             const _p=(j.dateJour||'').split('/');
             const d = _p.length===3 ? new Date(_p[2],_p[1]-1,_p[0]) : new Date(j.dateJour);
             const djour = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            // Cumul hebdo progressif (lundi → ce jour inclus), calculé sur sorted
+            const dowJ = djour.getDay() === 0 ? 6 : djour.getDay() - 1;
+            const lundiJ = new Date(djour);
+            lundiJ.setDate(djour.getDate() - dowJ);
+            const lundiKey = keyLocal(lundiJ);
+            const jourKey = keyLocal(djour);
+            let cumulHebdo = 0;
+            for (const s of sorted) {
+                const k = parseDMY(s.dateJour);
+                if (k && k >= lundiKey && k <= jourKey)
+                    cumulHebdo += Number(s.totalHeures) || 0;
+            }
             const isToday = djour.getTime() === today.getTime(),
                 joursDepuis = Math.round((today - djour) / 86400000),
                 modifiable = joursDepuis <= 5 && (j.nbModifications || 0) < 3;
@@ -1277,9 +1294,7 @@
                 statutHtml = '<span style="font-size:13px;color:var(--texte2);font-weight:500;">' + typeIcon[t] + ' ' + typeLabel[t] + '</span>';
             else
                 statutHtml = '<span style="font-family:monospace;font-size:16px;font-weight:500;color:var(--texte2);">' + Number(j.totalHeures).toFixed(2) + 'h</span>';
-            const hebdoHtml = (j.totalHebdoProg != null && j.totalHebdoProg !== '')
-                ? '<div style="font-size:11px;color:var(--texte3);margin-top:2px;">sem. ' + Number(j.totalHebdoProg).toFixed(2).replace('.', ',') + ' h</div>'
-                : '';
+            const hebdoHtml = '<div style="font-size:11px;color:var(--texte3);margin-top:2px;">sem. ' + cumulHebdo.toFixed(2).replace('.', ',') + ' h</div>';
             html += '<div class="jour-item" onclick="ouvrirJourPasse(\'' + j.jourId + '\', ' + modifiable + ')">';
             html += '<span class="jour-dot ' + (saisi ? (nonTravaillee ? 'dot-special' : 'dot-ok') : 'dot-vide') + '"></span>';
             html += '<div class="jour-info"><div class="jour-nom">' + JOURS[d.getDay()] + (isToday ? ' <span style="font-size:11px;background:#e8f2e8;color:var(--vert);border-radius:8px;padding:1px 6px;">Auj.</span>' : '') + (modifiable && !isToday ? ' <span style="font-size:11px;color:var(--texte3);">✏️</span>' : '') + '</div>';
