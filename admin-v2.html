@@ -507,6 +507,7 @@ async function login() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   document.getElementById('header-admin').textContent = 'Admin connecté';
+  await chargerEquipes();
   chargerCollabs();
 }
 
@@ -526,19 +527,23 @@ function showTab(nom, el) {
 }
 
 async function chargerEquipes() {
-  try {
-    const d = await jsonpFetch(API_URL + '?action=bo_getEquipes&token=' + encodeURIComponent(ADMIN_TOKEN));
-    if (!d.ok) return;
-    equipesData = d.equipes || [];
-    const sel = document.getElementById('f-equipe');
-    sel.innerHTML = '<option value="">— Aucune équipe —</option>';
-    equipesData.forEach(e => {
-      const o = document.createElement('option');
-      o.value = e.equipeId;
-      o.textContent = e.nomEquipe + (e.nomManager ? ' (' + e.nomManager + ')' : '');
-      sel.appendChild(o);
-    });
-  } catch(e) {}
+  const { data, error } = await sb.from('equipes').select('*').order('nom_equipe');
+  if (error) return;
+  // Mapping snake_case → camelCase (cache lu par nomEquipe + le select modale)
+  equipesData = (data || []).map(e => ({
+    equipeId: e.equipe_id,
+    nomEquipe: e.nom_equipe,
+    nomManager: e.nom_manager,
+    managerToken: e.manager_token
+  }));
+  const sel = document.getElementById('f-equipe');
+  sel.innerHTML = '<option value="">— Aucune équipe —</option>';
+  equipesData.forEach(e => {
+    const o = document.createElement('option');
+    o.value = e.equipeId;
+    o.textContent = e.nomEquipe + (e.nomManager ? ' (' + e.nomManager + ')' : '');
+    sel.appendChild(o);
+  });
 }
 
 function nomEquipe(equipeId) {
@@ -681,27 +686,37 @@ Chants de la Terre`;
 
 async function chargerVueEquipes() {
   document.getElementById('equipes-tbody').innerHTML = '<tr><td colspan="5"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
-  try {
-    const [de, dc] = await Promise.all([
-      jsonpFetch(API_URL + '?action=bo_getEquipes&token=' + encodeURIComponent(ADMIN_TOKEN)),
-      jsonpFetch(API_URL + '?action=bo_getCollabs&token=' + encodeURIComponent(ADMIN_TOKEN))
-    ]);
-    if (!de.ok) return;
-    const equipes = de.equipes || [];
-    const collabs = dc.ok ? (dc.collabs || []) : [];
-    document.getElementById('equipes-tbody').innerHTML = equipes.length === 0
-      ? '<tr><td colspan="5" style="text-align:center;color:var(--texte3);padding:32px">Aucune équipe.</td></tr>'
-      : equipes.map(e => {
-          const membres = collabs.filter(c => c.equipeId === e.equipeId && c.statut !== 'inactif');
-          const lienManager = e.managerToken ? 'https://chantsdelaterre.github.io/suivi-temps/manager.html?token=' + e.managerToken : '';
-          const btnLien = lienManager ? '<button class="token-link" onclick="copierLienManager(this)" data-lien="' + lienManager + '">📋 Copier lien</button>' : '—';
-          const btnVoir = '<button class="btn btn-warning btn-sm" onclick="voirCollabsEquipe(this)" data-equipe-id="' + e.equipeId + '" data-equipe-nom="' + (e.nomEquipe||'') + '">👁 Voir</button>';
-          return '<tr><td><strong>' + (e.nomEquipe||'—') + '</strong></td><td>' + (e.nomManager||'—') + '</td><td><span style="font-weight:600">' + membres.length + '</span></td><td>' + btnLien + '</td><td>' + btnVoir + '</td></tr>';
-        }).join('');
-    window._equipes_collabs = collabs;window._equipes_collabs = collabs;
-  } catch(e) {
-    document.getElementById('equipes-tbody').innerHTML = '<tr><td colspan="5" style="color:var(--rouge);padding:24px">Erreur réseau.</td></tr>';
+  const [re, rc] = await Promise.all([
+    sb.from('equipes').select('*').order('nom_equipe'),
+    sb.from('collaborateurs').select('*')
+  ]);
+  if (re.error) {
+    document.getElementById('equipes-tbody').innerHTML = '<tr><td colspan="5" style="color:var(--rouge);padding:24px">Erreur de chargement.</td></tr>';
+    return;
   }
+  const equipes = (re.data || []).map(e => ({
+    equipeId: e.equipe_id,
+    nomEquipe: e.nom_equipe,
+    nomManager: e.nom_manager,
+    managerToken: e.manager_token
+  }));
+  const collabs = (rc.error ? [] : (rc.data || [])).map(c => ({
+    equipeId: c.equipe_id,
+    nomAffiche: c.nom_affiche,
+    typeContrat: c.type_contrat,
+    heuresHebdo: c.heures_hebdo,
+    statut: c.statut
+  }));
+  document.getElementById('equipes-tbody').innerHTML = equipes.length === 0
+    ? '<tr><td colspan="5" style="text-align:center;color:var(--texte3);padding:32px">Aucune équipe.</td></tr>'
+    : equipes.map(e => {
+        const membres = collabs.filter(c => c.equipeId === e.equipeId && c.statut !== 'inactif');
+        const lienManager = e.managerToken ? 'https://chantsdelaterre.github.io/suivi-temps/manager.html?token=' + e.managerToken : '';
+        const btnLien = lienManager ? '<button class="token-link" onclick="copierLienManager(this)" data-lien="' + lienManager + '">📋 Copier lien</button>' : '—';
+        const btnVoir = '<button class="btn btn-warning btn-sm" onclick="voirCollabsEquipe(this)" data-equipe-id="' + e.equipeId + '" data-equipe-nom="' + (e.nomEquipe||'') + '">👁 Voir</button>';
+        return '<tr><td><strong>' + (e.nomEquipe||'—') + '</strong></td><td>' + (e.nomManager||'—') + '</td><td><span style="font-weight:600">' + membres.length + '</span></td><td>' + btnLien + '</td><td>' + btnVoir + '</td></tr>';
+      }).join('');
+  window._equipes_collabs = collabs;
 }
 
 function copierLienManager(btn) {
