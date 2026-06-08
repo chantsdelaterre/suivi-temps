@@ -67,6 +67,8 @@ tr:hover td { background: #fafcff; }
 .badge-inactif::before { background: #bbb; }
 .badge-attente { background: var(--orange-pale); color: var(--orange); }
 .badge-attente::before { background: var(--orange); }
+.badge-gelee { background: var(--bleu-pale); color: var(--bleu-clair); }
+.badge-gelee::before { background: var(--bleu-clair); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group.full { grid-column: 1 / -1; }
@@ -521,6 +523,7 @@ function showTab(nom, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('vue-' + nom).classList.add('active');
   el.classList.add('active');
+  if (nom === 'periodes') chargerPeriodes();
   if (nom === 'recap') chargerRecap();
   if (nom === 'paie') chargerPeriodes();
   if (nom === 'equipes') chargerVueEquipes();
@@ -1589,39 +1592,59 @@ function verifierAlertePeriodes(periodes) {
 }
 
 async function chargerPeriodes() {
-  try {
-    const d = await jsonpFetch(API_URL + '?action=bo_getPeriodes&token=' + encodeURIComponent(ADMIN_TOKEN));
-    if (!d.ok) return;
-    const sel = document.getElementById('recap-periode-select');
-    sel.innerHTML = '<option value="">Période en cours</option>';
-    d.periodes.forEach(p => {
-      const o = document.createElement('option');
-      o.value = p.periodeId;
-      o.textContent = p.nomPeriode + ' (' + p.statut + ')';
-      sel.appendChild(o);
-    });
-    periodesData = d.periodes;
-    verifierAlertePeriodes(d.periodes);
-    // Alimenter le select Paie avec les périodes clôturées
-    const selPaie = document.getElementById('paie-periode-select');
-    selPaie.innerHTML = '<option value="">— Sélectionner une période clôturée —</option>';
-    d.periodes.filter(p => p.statut === 'cloturee').forEach(p => {
-      const o = document.createElement('option');
-      o.value = p.periodeId;
-      o.textContent = p.nomPeriode;
-      selPaie.appendChild(o);
-    });
-    const tbody = document.getElementById('periodes-tbody');
-    if (!d.periodes.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--texte3);padding:32px">Aucune période</td></tr>'; return; }
-    tbody.innerHTML = d.periodes.map(p => {
-      const sC = p.statut==='ouverte' ? 'badge-actif' : p.statut==='cloturee' ? 'badge-inactif' : 'badge-attente';
-      const sL = p.statut==='ouverte' ? 'Ouverte' : p.statut==='cloturee' ? 'Clôturée' : 'Planifiée';
-      const canEdit = p.statut === 'planifiee';
-      const btnSuppr = canEdit ? `<button class="btn btn-danger btn-sm" onclick="supprimerPeriode('${p.periodeId}','${p.nomPeriode}')">Supprimer</button>` : '';
-      const btnEdit = canEdit ? `<button class="btn btn-primary btn-sm" onclick="modifierPeriode('${p.periodeId}')">Modifier</button>` : '';
-      return `<tr><td><strong>${p.nomPeriode}</strong></td><td>${p.typePeriode||'—'}</td><td>${fmtDate(p.dateDebut)}</td><td>${fmtDate(p.dateFin)}</td><td><span class="badge ${sC}">${sL}</span></td><td style="display:flex;gap:6px">${btnEdit}${btnSuppr}</td></tr>`;
-    }).join('');
-  } catch(e) {}
+  const { data, error } = await sb.from('periodes').select('*').order('date_debut', {ascending:false});
+  if (error) {
+    const tb = document.getElementById('periodes-tbody');
+    if (tb) tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
+    return;
+  }
+  // Mapping snake_case → camelCase
+  const periodes = (data || []).map(p => ({
+    periodeId: p.periode_id,
+    nomPeriode: p.nom_periode,
+    typePeriode: p.type_periode,
+    dateDebut: p.date_debut,
+    dateFin: p.date_fin,
+    dateCloture: p.date_cloture,
+    statut: p.statut
+  }));
+  periodesData = periodes;
+  // 1) select Récap
+  const sel = document.getElementById('recap-periode-select');
+  sel.innerHTML = '<option value="">Période en cours</option>';
+  periodes.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.periodeId;
+    o.textContent = p.nomPeriode + ' (' + p.statut + ')';
+    sel.appendChild(o);
+  });
+  // 2) alerte « < 2 planifiées »
+  verifierAlertePeriodes(periodes);
+  // 3) select Paie : périodes clôturées uniquement
+  const selPaie = document.getElementById('paie-periode-select');
+  selPaie.innerHTML = '<option value="">— Sélectionner une période clôturée —</option>';
+  periodes.filter(p => p.statut === 'cloturee').forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.periodeId;
+    o.textContent = p.nomPeriode;
+    selPaie.appendChild(o);
+  });
+  // 4) tableau des périodes
+  const tbody = document.getElementById('periodes-tbody');
+  if (!periodes.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--texte3);padding:32px">Aucune période</td></tr>'; return; }
+  const stMap = {
+    ouverte:   { cls: 'badge-actif',   lbl: 'Ouverte' },
+    planifiee: { cls: 'badge-attente', lbl: 'Planifiée' },
+    gelee:     { cls: 'badge-gelee',   lbl: 'Gelée' },
+    cloturee:  { cls: 'badge-inactif', lbl: 'Clôturée' }
+  };
+  tbody.innerHTML = periodes.map(p => {
+    const st = stMap[p.statut] || { cls: 'badge-attente', lbl: p.statut || '—' };
+    const canEdit = p.statut === 'planifiee';
+    const btnSuppr = canEdit ? `<button class="btn btn-danger btn-sm" onclick="supprimerPeriode('${p.periodeId}','${p.nomPeriode}')">Supprimer</button>` : '';
+    const btnEdit = canEdit ? `<button class="btn btn-primary btn-sm" onclick="modifierPeriode('${p.periodeId}')">Modifier</button>` : '';
+    return `<tr><td><strong>${p.nomPeriode}</strong></td><td>${p.typePeriode||'—'}</td><td>${fmtDate(p.dateDebut)}</td><td>${fmtDate(p.dateFin)}</td><td><span class="badge ${st.cls}">${st.lbl}</span></td><td style="display:flex;gap:6px">${btnEdit}${btnSuppr}</td></tr>`;
+  }).join('');
 }
 
 let periodesData = [];
