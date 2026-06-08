@@ -236,21 +236,36 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
       <div style="padding:12px 0;font-size:13px;color:var(--texte3);">💡 Les périodes sont gérées dans Google Sheets. L'ouverture, clôture et génération des jours sont automatiques via le trigger journalier.</div>
     </div>
     <div class="vue" id="vue-recap">
-      <div class="card" style="margin-bottom:20px">
-        <div class="card-header">
-          <span class="card-title" id="recap-titre">Récapitulatif — période en cours</span>
-          <select id="recap-periode-select" onchange="chargerRecap(this.value)" style="font-size:13px;padding:6px 10px;border-radius:8px;border:1.5px solid #dce6f0;">
-            <option value="">Période en cours</option>
-          </select>
-        </div>
-        <div class="card-body" id="recap-stats"><div class="loader"><div class="spinner"></div>Chargement…</div></div>
-      </div>
       <div class="card">
-        <div class="filter-bar"><div class="filter-group"><button class="filter-btn active" onclick="setFiltreRecap('',this)">Toutes</button><button class="filter-btn" onclick="setFiltreRecap('SCEA',this)">SCEA</button><button class="filter-btn" onclick="setFiltreRecap('SAS',this)">SAS</button><button class="filter-btn" onclick="setFiltreRecap('SARL',this)">SARL</button></div><span class="filter-count" id="recap-filter-count"></span></div>
+        <div class="card-header">
+          <span class="card-title" id="recap-titre">Récapitulatif</span>
+        </div>
+        <div class="filter-bar">
+          <input type="text" class="filter-search" id="search-recap" placeholder="🔍 Rechercher…" oninput="filtrerRecap()">
+          <div class="filter-group">
+            <button class="filter-btn active" onclick="setFiltreRecap('',this)">Toutes</button>
+            <button class="filter-btn" onclick="setFiltreRecap('SCEA',this)">SCEA</button>
+            <button class="filter-btn" onclick="setFiltreRecap('SAS',this)">SAS</button>
+            <button class="filter-btn" onclick="setFiltreRecap('SARL',this)">SARL</button>
+          </div>
+          <span class="filter-count" id="recap-filter-count"></span>
+        </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Collaborateur</th><th>Structure</th><th>Contrat</th><th>H/sem</th><th>Heures saisies</th><th>Jours saisis</th><th>Dernière saisie</th><th>Saisies</th></tr></thead>
-            <tbody id="recap-tbody"><tr><td colspan="9"><div class="loader"><div class="spinner"></div></div></td></tr></tbody>
+            <thead>
+              <tr>
+                <th class="sortable sort-asc" onclick="trierRecap('nomAffiche',this)">Nom</th>
+                <th class="sortable" onclick="trierRecap('structure',this)" style="white-space:nowrap">Structure</th>
+                <th>Contrat</th>
+                <th>H/sem</th>
+                <th>Équipe</th>
+                <th class="sortable" onclick="trierRecap('derniereSaisie',this)" style="white-space:nowrap">Dernière saisie</th>
+                <th>Saisies</th>
+              </tr>
+            </thead>
+            <tbody id="recap-tbody">
+              <tr><td colspan="7"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>
+            </tbody>
           </table>
         </div>
       </div>
@@ -1662,62 +1677,60 @@ function renderRecapFiltered() {
   let result = filtreRecapStructure ? recapData.filter(c => c.structure === filtreRecapStructure) : recapData;
   const count = document.getElementById('recap-filter-count');
   if (count) count.textContent = result.length + ' / ' + recapData.length + ' collaborateur' + (recapData.length > 1 ? 's' : '');
-  // Recalcul des stats sur la sélection
-  const totalH = result.reduce((s,c) => s+c.totalHeures, 0);
-  const nbSaisis = result.reduce((s,c) => s+c.nbSaisis, 0);
-  const statsEl = document.getElementById('recap-stats');
-  if (statsEl && result.length > 0) {
-    statsEl.innerHTML = `<div class="recap-grid">
-      <div class="stat-card"><div class="stat-num">${totalH.toFixed(1)}h</div><div class="stat-lbl">Heures totales</div></div>
-      <div class="stat-card"><div class="stat-num">${result.length}</div><div class="stat-lbl">Collaborateurs actifs</div></div>
-      <div class="stat-card"><div class="stat-num">${nbSaisis}</div><div class="stat-lbl">Jours saisis</div></div>
-</div>`;
-  }
-  const sorted = [...result].sort((a, b) => a.nomAffiche.localeCompare(b.nomAffiche));
+  const sorted = [...result].sort((a, b) => (a.nomAffiche||'').localeCompare(b.nomAffiche||''));
   document.getElementById('recap-tbody').innerHTML = sorted.length === 0
-    ? '<tr><td colspan="10" style="text-align:center;color:var(--texte3);padding:32px">Aucun résultat</td></tr>'
+    ? '<tr><td colspan="7" style="text-align:center;color:var(--texte3);padding:32px">Aucun résultat</td></tr>'
     : sorted.map(c => `
       <tr>
-        <td><strong>${c.nomAffiche}</strong></td>
+        <td><strong>${c.nomAffiche || ((c.prenom||'')+' '+(c.nom||'')).trim()}</strong></td>
         <td>${c.structure || '—'}</td>
         <td>${c.typeContrat || '—'}</td>
         <td>${c.heuresHebdo ? c.heuresHebdo + 'h' : '—'}</td>
-        <td><span style="font-family:monospace;font-weight:500">${c.totalHeures.toFixed(2)}h</span></td>
-        <td>${c.nbSaisis}</td>
-        <td style="font-size:13px;color:var(--texte2)">${fmtDate(c.derniereSaisie) || '—'}</td>
+        <td style="font-size:13px;color:var(--texte2)">${nomEquipe(c.equipeId)}</td>
+        <td style="font-size:13px;color:var(--texte2)">${c.derniereSaisie ? fmtDate(c.derniereSaisie) : '—'}</td>
         <td><button class="btn btn-warning btn-sm" onclick="ouvrirSaisies('${c.collabId}', this)">📋 Voir</button></td>
       </tr>
     `).join('');
 }
 
-async function chargerRecap(periodeId) {
-  recapPeriodeId = periodeId || '';
-  document.getElementById('recap-stats').innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
-  document.getElementById('recap-tbody').innerHTML = '<tr><td colspan="9"><div class="loader"><div class="spinner"></div></div></td></tr>';
-  try {
-    let url = API_URL + '?action=bo_getRecap&token=' + encodeURIComponent(ADMIN_TOKEN);
-    if (periodeId) url += '&periodeId=' + encodeURIComponent(periodeId);
-    const d = await jsonpFetch(url);
-    if (!d.ok) return;
-    document.getElementById('recap-titre').textContent = 'Récap — ' + d.periode.nomPeriode;
-    const totalH = d.recap.reduce((s,c) => s+c.totalHeures, 0);
-    const nbSaisis = d.recap.reduce((s,c) => s+c.nbSaisis, 0);
-    document.getElementById('recap-stats').innerHTML = `
-      <div class="recap-grid">
-        <div class="stat-card"><div class="stat-num">${totalH.toFixed(1)}h</div><div class="stat-lbl">Heures totales</div></div>
-        <div class="stat-card"><div class="stat-num">${d.recap.length}</div><div class="stat-lbl">Collaborateurs actifs</div></div>
-        <div class="stat-card"><div class="stat-num">${nbSaisis}</div><div class="stat-lbl">Jours saisis</div></div>
-
-      </div>`;
-    recapData = d.recap;
-    filtreRecapStructure = '';
-    document.querySelectorAll('#vue-recap .filter-btn').forEach(b => b.classList.remove('active'));
-    const fb = document.querySelector('#vue-recap .filter-btn');
-    if (fb) fb.classList.add('active');
-    renderRecapFiltered();
-  } catch(e) {
-    document.getElementById('recap-stats').innerHTML = '<div style="color:var(--rouge)">Erreur de chargement</div>';
+async function chargerRecap() {
+  const tbody = document.getElementById('recap-tbody');
+  tbody.innerHTML = '<tr><td colspan="7"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
+  // Dernière saisie : un seul fetch léger (colonnes utiles), trié par date décroissante
+  const { data: jours, error } = await sb
+    .from('jours')
+    .select('collab_id, date_jour, c1_debut, c2_debut, c3_debut, type_jour')
+    .order('date_jour', {ascending:false});
+  if (error) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
+    return;
   }
+  // Pour chaque collab : date_jour la plus récente parmi ses VRAIES saisies.
+  // Ordre décroissant ⇒ la 1ʳᵉ saisie rencontrée par collab est la plus récente.
+  const dern = {};
+  (jours || []).forEach(j => {
+    if (dern[j.collab_id]) return;
+    const saisi = !!(j.c1_debut || j.c2_debut || j.c3_debut) || ['CP','AT','CS'].includes(j.type_jour);
+    if (saisi) dern[j.collab_id] = j.date_jour;
+  });
+  // Contexte contractuel : réutilise collabsData (tous les collabs, déjà mappé camelCase)
+  recapData = (collabsData || []).map(c => ({
+    collabId: c.collabId,
+    nomAffiche: c.nomAffiche,
+    prenom: c.prenom,
+    nom: c.nom,
+    structure: c.structure,
+    typeContrat: c.typeContrat,
+    heuresHebdo: c.heuresHebdo,
+    equipeId: c.equipeId,
+    statut: c.statut,
+    derniereSaisie: dern[c.collabId] || null
+  }));
+  filtreRecapStructure = '';
+  document.querySelectorAll('#vue-recap .filter-btn').forEach(b => b.classList.remove('active'));
+  const fb = document.querySelector('#vue-recap .filter-btn');
+  if (fb) fb.classList.add('active');
+  renderRecapFiltered();
 }
 </script>
 </body>
