@@ -507,6 +507,7 @@ async function login() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   document.getElementById('header-admin').textContent = 'Admin connecté';
+  chargerCollabs();
 }
 
 if (ADMIN_TOKEN) { document.getElementById('login-token').value = ADMIN_TOKEN; login(); }
@@ -548,10 +549,31 @@ function nomEquipe(equipeId) {
 
 async function chargerCollabs() {
   document.getElementById('collabs-tbody').innerHTML = '<tr><td colspan="10"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
-  try {
-    const d = await jsonpFetch(API_URL + '?action=bo_getCollabs&token=' + encodeURIComponent(ADMIN_TOKEN));
-    if (d.ok) renderCollabs(d.collabs);
-  } catch(e) {}
+  const { data, error } = await sb.from('collaborateurs').select('*').order('nom_affiche');
+  if (error) {
+    document.getElementById('collabs-tbody').innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
+    return;
+  }
+  // Mapping snake_case (Supabase) → camelCase (attendu par renderCollabs/filtrerCollabs)
+  const collabs = (data || []).map(c => ({
+    collabId: c.collab_id,
+    prenom: c.prenom,
+    nom: c.nom,
+    nomAffiche: c.nom_affiche,
+    email: c.email,
+    structure: c.structure,
+    typeContrat: c.type_contrat,
+    typePeriode: c.type_periode,
+    heuresHebdo: c.heures_hebdo,
+    statut: c.statut,
+    dateActivation: c.date_activation,
+    equipeId: c.equipe_id,
+    matriculeSilae: c.matricule_silae,
+    role: c.role,
+    token: c.token,
+    lien: c.token ? 'https://chantsdelaterre.github.io/suivi-temps/?id=' + c.token : ''
+  }));
+  renderCollabs(collabs);
 }
 
 function setFilter(type, val, btn) {
