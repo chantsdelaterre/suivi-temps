@@ -59,6 +59,7 @@ th { text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 600; te
 td { padding: 12px 14px; border-bottom: 1px solid #f0f4f8; vertical-align: middle; }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: #fafcff; }
+#saisies-body tr:hover td { background: transparent; }
 .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 12px; font-weight: 500; }
 .badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; }
 .badge-actif { background: var(--vert-pale); color: var(--vert); }
@@ -1136,64 +1137,91 @@ function grouperParSemaine(jours) {
 
 function renderSaisies(jours, collabId) {
   const body = document.getElementById('saisies-body');
-  if (!jours.length) {
-    body.innerHTML = '<div style="text-align:center;color:var(--texte3);padding:40px">Aucune saisie pour cette période.</div>';
+  if (!jours || !jours.length) {
+    body.innerHTML = '<div style="text-align:center;color:var(--texte3);padding:40px">Aucune saisie.</div>';
     return;
   }
-  const typeLabel = t => ({ travaille:'Travaillé', conge:'Congé', absence:'Absence', ferie:'Férié', travaillée:'Travaillé' }[t] || t || '—');
-  const typeBadge = t => {
-    const cls = (t==='travaille'||t==='travaillée')?'badge-actif':t==='conge'?'badge-attente':t==='absence'?'badge-attente':'badge-inactif';
-    return '<span class="badge '+cls+'">'+typeLabel(t)+'</span>';
+  // Helpers date (clé locale, pas de toISOString → pas de décalage UTC)
+  const keyLocal = dt => String(dt.getFullYear()) + String(dt.getMonth()+1).padStart(2,'0') + String(dt.getDate()).padStart(2,'0');
+  const toDate = s => { const p=(s||'').split('/'); return p.length===3 ? new Date(p[2], p[1]-1, p[0]) : new Date(s); };
+  // Cumul hebdo PROGRESSIF à la volée (lundi → jour inclus), par jourId.
+  // Somme par plage de clés [lundiKey, jourKey] : indépendant de l'ordre de tri.
+  const meta = jours.map(j => { const d = toDate(j.dateJour); return { j, d, key: isNaN(d) ? null : keyLocal(d) }; });
+  const cumulById = {};
+  meta.forEach(({ j, d, key }) => {
+    if (!key || isNaN(d)) { cumulById[j.jourId] = null; return; }
+    const dow = d.getDay() === 0 ? 6 : d.getDay() - 1;
+    const lundi = new Date(d); lundi.setDate(d.getDate() - dow);
+    const lundiKey = keyLocal(lundi);
+    let cumul = 0;
+    meta.forEach(m => { if (m.key && m.key >= lundiKey && m.key <= key) cumul += Number(m.j.totalHeures) || 0; });
+    cumulById[j.jourId] = cumul;
+  });
+  // Remap des types (vocabulaire Supabase) + badges cohérents admin
+  const TYPE_INFO = {
+    'travaillée': { cls:'badge-actif',   lbl:'Travaillée' },
+    'CP':         { cls:'badge-attente', lbl:'Congé payé' },
+    'AT':         { cls:'badge-inactif', lbl:'Arrêt travail' },
+    'CS':         { cls:'badge-gelee',   lbl:'Congé spécial' }
   };
+  const typeBadge = t => { const i = TYPE_INFO[t] || { cls:'badge-inactif', lbl: t || '—' }; return '<span class="badge '+i.cls+'">'+i.lbl+'</span>'; };
+  const cren = (deb, fin) => (fmtHeure(deb) && fmtHeure(fin)) ? fmtHeure(deb)+' → '+fmtHeure(fin) : '—';
   const th = s => '<th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);border-bottom:1px solid #e8f0f8;background:#fafcff;white-space:nowrap">'+s+'</th>';
   const td = (content, extra) => '<td style="padding:8px 10px;border-bottom:1px solid #f0f4f8;'+(extra||'')+'">'+content+'</td>';
 
-  const semaines = grouperParSemaine(jours);
-  let rows = '';
-
-  semaines.forEach(sem => {
-    // Ligne séparatrice semaine
-    const totalSem = sem.jours.reduce((s,j) => s + (Number(j.totalHeures)||0), 0);
-    rows += '<tr style="background:var(--bleu-pale,#e8f0f8)">'
-      + '<td colspan="6" style="padding:6px 10px;font-size:12px;font-weight:600;color:var(--bleu)">'
-      + sem.label + '</td>'
-      + '<td style="padding:6px 10px;font-size:12px;font-weight:700;color:var(--bleu);font-family:monospace;text-align:right">'
-      + totalSem.toFixed(2) + 'h</td>'
+  const rows = jours.map(j => {
+    const d = toDate(j.dateJour);
+    const dow = isNaN(d) ? -1 : d.getDay();
+    const bg = dow===6 ? 'background:#fff8f0;' : dow===0 ? 'background:#fff0f0;' : '';
+    const cumul = cumulById[j.jourId];
+    const cumulTxt = cumul != null ? cumul.toFixed(2)+'h' : '—';
+    const totalTxt = (j.totalHeures != null && j.totalHeures !== '') ? Number(j.totalHeures).toFixed(2)+'h' : '—';
+    return '<tr style="'+bg+'">'
+      + td('<strong>'+(j.dateJour||'—')+'</strong><div style="font-size:11px;color:var(--texte3)">'+(j.jourSemaine||'')+'</div>', 'white-space:nowrap')
+      + td(typeBadge(j.typeJour))
+      + td(cren(j.c1Debut,j.c1Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
+      + td(cren(j.c2Debut,j.c2Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
+      + td(cren(j.c3Debut,j.c3Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
+      + td('<span style="font-family:monospace;font-weight:600;color:var(--bleu)">'+totalTxt+'</span>')
+      + td('<span style="font-family:monospace;color:var(--texte2)">'+cumulTxt+'</span>')
+      + td('<span style="font-size:12px;color:var(--texte2)">'+(j.commentaire||'—').replace(/</g,'&lt;')+'</span>')
       + '</tr>';
+  }).join('');
 
-    sem.jours.forEach(j => {
-      const cren = (d, f) => (fmtHeure(d) && fmtHeure(f)) ? fmtHeure(d)+' → '+fmtHeure(f) : '—';
-      const prog = j.totalHebdoProg != null && j.totalHebdoProg !== '' ? Number(j.totalHebdoProg).toFixed(2)+'h' : '—';
-      rows += '<tr>'
-        + td('<strong>'+(j.dateJour||'—')+'</strong><div style="font-size:11px;color:var(--texte3)">'+(j.jourSemaine||'')+'</div>', 'white-space:nowrap')
-        + td(typeBadge(j.typeJour))
-        + td(cren(j.c1Debut,j.c1Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
-        + td(cren(j.c2Debut,j.c2Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
-        + td(cren(j.c3Debut,j.c3Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
-        + td('<span style="font-family:monospace;font-weight:600;color:var(--bleu)">'+(j.totalHeures!=null&&j.totalHeures!==''?Number(j.totalHeures).toFixed(2)+'h':'—')+'</span>')
-        + td('<span style="font-size:11px;color:var(--texte3)">↗ '+prog+'</span> <span style="font-size:12px;color:var(--texte2)">'+(j.commentaire||'').replace(/</g,'&lt;')+'</span>')
-        + '</tr>';
-    });
-  });
-
-  body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead style="position:sticky;top:-1px;z-index:2;box-shadow:0 1px 0 #e8f0f8"><tr>'
-    + th('Date') + th('Type') + th('Créneau 1') + th('Créneau 2') + th('Créneau 3') + th('Jour') + th('Cumul sem.') + th('Commentaire')
+  body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px">'
+    + '<thead style="position:sticky;top:-1px;z-index:2;box-shadow:0 1px 0 #e8f0f8"><tr>'
+    + th('Date') + th('Type') + th('Matin') + th('Après-midi') + th('Créneau 3') + th('Total') + th('Cumul sem.') + th('Commentaire')
     + '</tr></thead><tbody>'
-    + jours.map(j => {
-        const cren = (d, f) => (fmtHeure(d) && fmtHeure(f)) ? fmtHeure(d)+' → '+fmtHeure(f) : '—';
-        const prog = j.totalHebdoProg != null && j.totalHebdoProg !== '' ? Number(j.totalHebdoProg).toFixed(2)+'h' : '—';
-        return '<tr>'
-          + td('<strong>'+(j.dateJour||'—')+'</strong><div style="font-size:11px;color:var(--texte3)">'+(j.jourSemaine||'')+'</div>', 'white-space:nowrap')
-          + td(typeBadge(j.typeJour))
-          + td(cren(j.c1Debut,j.c1Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
-          + td(cren(j.c2Debut,j.c2Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
-          + td(cren(j.c3Debut,j.c3Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
-          + td('<span style="font-family:monospace;font-weight:600;color:var(--bleu)">'+(j.totalHeures!=null&&j.totalHeures!==''?Number(j.totalHeures).toFixed(2)+'h':'—')+'</span>')
-          + td('<span style="font-family:monospace;color:var(--vert)">'+prog+'</span>')
-          + td('<span style="font-size:12px;color:var(--texte2)">'+(j.commentaire||'—').replace(/</g,'&lt;')+'</span>')
-          + '</tr>';
-      }).join('');
+    + rows
     + '</tbody></table>';
+}
+
+// Récupération réutilisable des derniers jours d'un collab (lecture).
+// Lève en cas d'erreur ; le cumul hebdo n'est PAS inclus (calcul à la volée en partie B).
+async function fetchJoursCollab(collabId) {
+  const { data, error } = await sb
+    .from('jours')
+    .select('*')
+    .eq('collab_id', collabId)
+    .order('date_jour', {ascending:false})
+    .limit(60);
+  if (error) throw error;
+  // ISO 'AAAA-MM-JJ' → 'jj/mm/aaaa' (pur string, sans risque de décalage UTC)
+  const fmtISO = iso => { if (!iso) return ''; const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : String(iso); };
+  return (data || []).map(j => ({
+    jourId: j.jour_id,
+    dateJour: fmtISO(j.date_jour),
+    jourSemaine: j.jour_semaine,
+    typeJour: j.type_jour,
+    c1Debut: j.c1_debut || '',
+    c1Fin: j.c1_fin || '',
+    c2Debut: j.c2_debut || '',
+    c2Fin: j.c2_fin || '',
+    c3Debut: j.c3_debut || '',
+    c3Fin: j.c3_fin || '',
+    totalHeures: j.total_heures || 0,
+    commentaire: j.commentaire || ''
+  }));
 }
 
 async function ouvrirSaisies(collabId, btn) {
@@ -1202,18 +1230,15 @@ async function ouvrirSaisies(collabId, btn) {
   document.getElementById('saisies-body').innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
   document.getElementById('modal-saisies').classList.add('open');
   try {
-    let url = API_URL + '?action=bo_getJoursCollab&token=' + encodeURIComponent(ADMIN_TOKEN)
-            + '&collabId=' + encodeURIComponent(collabId);
-    if (recapPeriodeId) url += '&periodeId=' + encodeURIComponent(recapPeriodeId);
-    const d = await jsonpFetch(url);
-    if (!d.ok) { document.getElementById('saisies-body').innerHTML = '<div class="error-banner">Erreur lors du chargement.</div>'; return; }
-    renderSaisies(d.jours || [], collabId);
-    // Mode lecture seule : masquer note et valider
-    const footer = document.querySelector('#modal-saisies .modal-footer');
-    if (footer) footer.style.display = 'none';
+    const jours = await fetchJoursCollab(collabId);
+    renderSaisies(jours, collabId);
   } catch(e) {
-    document.getElementById('saisies-body').innerHTML = '<div class="error-banner">Erreur : ' + e.message + '</div>';
+    document.getElementById('saisies-body').innerHTML = '<div class="error-banner">Erreur lors du chargement.</div>';
+    return;
   }
+  // Mode lecture seule : masquer note et valider
+  const footer = document.querySelector('#modal-saisies .modal-footer');
+  if (footer) footer.style.display = 'none';
 }
 
 async function ouvrirSaisiesPaie(collabId, btn) {
