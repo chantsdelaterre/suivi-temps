@@ -321,20 +321,21 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <thead>
               <tr>
                 <th>Collaborateur</th>
-                <th>Structure</th>
-                <th>Contrat / Période</th>
-                <th>H/sem</th>
-                <th>Heures</th>
-                <th>Jours trav.</th>
-                <th>CP</th>
-                <th>AT</th>
-                <th>Validation</th>
+                <th style="text-align:center">Structure</th>
+                <th style="text-align:center">Contrat</th>
+                <th style="text-align:center">H/sem</th>
+                <th style="text-align:center">Heures trav.</th>
+                <th style="text-align:center">Jours trav.</th>
+                <th style="text-align:center">CP</th>
+                <th style="text-align:center">AT</th>
+                <th style="text-align:center">CS</th>
+                <th style="text-align:center">Validation</th>
                 <th>Note admin</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="paie-tbody">
-              <tr><td colspan="11" style="text-align:center;color:var(--texte3);padding:32px">Sélectionnez une période clôturée puis cliquez sur Initialiser</td></tr>
+              <tr><td colspan="12" style="text-align:center;color:var(--texte3);padding:32px">Sélectionnez une période</td></tr>
             </tbody>
           </table>
         </div>
@@ -1043,7 +1044,7 @@ async function calculerPaiePeriode(periodeId) {
   const typesInconnus = new Set();
   (jours || []).forEach(j => {
     const acc = parCollab[j.collab_id] || (parCollab[j.collab_id] = {
-      heures_travaillees:0, heures_at:0, heures_cs:0, nb_cp:0, nb_jours_travailles:0
+      heures_travaillees:0, heures_at:0, heures_cs:0, nb_at:0, nb_cs:0, nb_cp:0, nb_jours_travailles:0
     });
     const t = j.type_jour;
     if (t === 'travaillée') {
@@ -1052,8 +1053,10 @@ async function calculerPaiePeriode(periodeId) {
       if (saisi) acc.nb_jours_travailles += 1;            // jour travaillé = travaillée AVEC vraie saisie
     } else if (t === 'AT') {
       acc.heures_at += PAIE_DEFAUT_AT_CS;
+      acc.nb_at += 1;
     } else if (t === 'CS') {
       acc.heures_cs += PAIE_DEFAUT_AT_CS;
+      acc.nb_cs += 1;
     } else if (t === 'CP') {
       acc.nb_cp += 1;
     } else if (t) {
@@ -1079,6 +1082,8 @@ async function calculerPaiePeriode(periodeId) {
       heures_travaillees: Math.round(acc.heures_travaillees * 100) / 100,
       heures_at:          acc.heures_at,
       heures_cs:          acc.heures_cs,
+      nb_at:              acc.nb_at,
+      nb_cs:              acc.nb_cs,
       nb_cp:              acc.nb_cp,
       nb_jours_travailles: acc.nb_jours_travailles
     };
@@ -1090,8 +1095,9 @@ async function calculerPaiePeriode(periodeId) {
     'font-weight:bold');
   console.table(resultat.map(r => ({
     Nom: r.nomAffiche, Structure: r.structure, Contrat: r.type_contrat, 'H/sem': r.heures_hebdo,
-    'H. trav.': r.heures_travaillees, 'H. AT': r.heures_at, 'H. CS': r.heures_cs,
-    CP: r.nb_cp, 'J. trav.': r.nb_jours_travailles, 'Δcontrat': r.changement_contrat ? '⚠️' : ''
+    'H. trav.': r.heures_travaillees, CP: r.nb_cp, AT: r.nb_at, CS: r.nb_cs,
+    'J. trav.': r.nb_jours_travailles, 'H.AT': r.heures_at, 'H.CS': r.heures_cs,
+    'Δcontrat': r.changement_contrat ? '⚠️' : ''
   })));
   resultat.filter(r => r.changement_contrat).forEach(r =>
     console.warn('Changement de contrat sur la période — ' + r.nomAffiche, r.segments_contrat));
@@ -1107,12 +1113,9 @@ async function chargerPaie(periodeId) {
   if (!periodeId) { card.style.display='none'; indic.style.display='none'; return; }
   card.style.display='block'; indic.style.display='block';
   document.getElementById('paie-titre').textContent = 'Paie — chargement…';
-  document.getElementById('paie-tbody').innerHTML = '<tr><td colspan="11"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
-  try {
-    const d = await jsonpFetch(API_URL + '?action=bo_getRecapPaie&token=' + encodeURIComponent(ADMIN_TOKEN) + '&periodeId=' + encodeURIComponent(periodeId));
-    if (!d.ok) { document.getElementById('paie-tbody').innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--texte3);padding:32px">Pas encore initialisé — cliquez sur Initialiser / Recalculer</td></tr>'; return; }
-    renderPaie(d.recap, periodeId);
-  } catch(e) { document.getElementById('paie-tbody').innerHTML = '<tr><td colspan="11" style="color:var(--rouge);padding:24px">Erreur réseau.</td></tr>'; }
+  document.getElementById('paie-tbody').innerHTML = '<tr><td colspan="12"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
+  const recap = await calculerPaiePeriode(periodeId);   // moteur Supabase, lecture seule, aucune écriture
+  renderPaie(recap, periodeId);
 }
 
 async function initPaie() {
@@ -1129,47 +1132,17 @@ async function initPaie() {
 
 function renderPaie(recap, periodeId) {
   window._paie_recap_current = recap;
-  const nbTotal = recap.length;
-  const nbValides = recap.filter(r => r.statut_validation === 'valide').length;
-  const nbAttente = nbTotal - nbValides;
+  // Phase LECTURE SEULE : recap_paie non peuplé → pas de statut de validation figé
   const statut = document.getElementById('paie-statut-global');
-  if (nbAttente === 0) {
-    statut.style.background = 'var(--vert-pale)';
-    statut.style.color = 'var(--vert)';
-    statut.textContent = '🟢 Tous les collaborateurs sont validés — virement possible';
-  } else {
-    statut.style.background = 'var(--orange-pale)';
-    statut.style.color = 'var(--orange)';
-    statut.textContent = '🔴 ' + nbAttente + ' collaborateur' + (nbAttente>1?'s':'') + ' en attente de validation';
+  if (statut) {
+    statut.style.background = 'var(--bleu-pale)';
+    statut.style.color = 'var(--bleu)';
+    statut.textContent = 'ℹ️ Calcul en lecture seule — non figé (validation / clôture à venir)';
   }
-  // Récupérer le nom de la période
   const sel = document.getElementById('paie-periode-select');
   const opt = sel.querySelector('option[value="'+periodeId+'"]');
   document.getElementById('paie-titre').textContent = 'Paie — ' + (opt ? opt.textContent : periodeId);
-
-  const sorted = [...recap].sort((a,b) => {
-    if (a.statut_validation==='en_attente' && b.statut_validation!=='en_attente') return -1;
-    if (a.statut_validation!=='en_attente' && b.statut_validation==='en_attente') return 1;
-    return (a.nom_affiche||'').localeCompare(b.nom_affiche||'');
-  });
-
-  document.getElementById('paie-tbody').innerHTML = sorted.map(r => {
-    const valide = r.statut_validation === 'valide';
-    const collabEnc = encodeURIComponent(r.collab_id);
-    return `<tr style="${valide?'background:var(--vert-pale)':''}">
-      <td><strong>${r.nom_affiche||'—'}</strong></td>
-      <td>${r.structure||'—'}</td>
-      <td>${r.type_contrat||'—'}</td>
-      <td>${r.heures_hebdo?r.heures_hebdo+'h':'—'}</td>
-      <td><span style="font-family:monospace;font-weight:600">${Number(r.total_heures||0).toFixed(2)}h</span></td>
-      <td>${r.nb_jours_travailles||0}</td>
-      <td>${r.nb_cp||0}</td>
-      <td>${r.nb_at||0}</td>
-      <td>${valide?'<span class="badge badge-actif">✅ Validé</span>':'<span class="badge badge-attente">⏳ En attente</span>'}</td>
-      <td><span style="font-size:12px;color:var(--texte2)">${r.note_admin||'—'}</span></td>
-      <td><button class="btn btn-primary btn-sm" onclick="ouvrirSaisiesPaie('${collabEnc}', this)">📋 Détail</button></td>
-    </tr>`;
-  }).join('');
+  renderPaieFiltered();
 }
 
 function setFiltrePaie(val, btn) {
@@ -1182,28 +1155,26 @@ function setFiltrePaie(val, btn) {
 function renderPaieFiltered() {
   const recap = window._paie_recap_current || [];
   const filtered = filtrePaieStructure ? recap.filter(r => r.structure === filtrePaieStructure) : recap;
-  const sorted = [...filtered].sort((a,b) => {
-    if (a.statut_validation==='en_attente' && b.statut_validation!=='en_attente') return -1;
-    if (a.statut_validation!=='en_attente' && b.statut_validation==='en_attente') return 1;
-    return (a.nom_affiche||'').localeCompare(b.nom_affiche||'');
-  });
-  document.getElementById('paie-tbody').innerHTML = sorted.map(r => {
-    const valide = r.statut_validation === 'valide';
-    const collabEnc = encodeURIComponent(r.collab_id);
-    return `<tr style="${valide?'background:var(--vert-pale)':''}">
-      <td><strong>${r.nom_affiche||'—'}</strong></td>
-      <td>${r.structure||'—'}</td>
-      <td>${r.type_contrat||'—'}</td>
-      <td>${r.heures_hebdo?r.heures_hebdo+'h':'—'}</td>
-      <td><span style="font-family:monospace;font-weight:600">${Number(r.total_heures||0).toFixed(2)}h</span></td>
-      <td>${r.nb_jours_travailles||0}</td>
-      <td>${r.nb_cp||0}</td>
-      <td>${r.nb_at||0}</td>
-      <td>${valide?'<span class="badge badge-actif">✅ Validé</span>':'<span class="badge badge-attente">⏳ En attente</span>'}</td>
-      <td><span style="font-size:12px;color:var(--texte2)">${r.note_admin||'—'}</span></td>
-      <td><button class="btn btn-primary btn-sm" onclick="ouvrirSaisiesPaie('${collabEnc}', this)">📋 Détail</button></td>
-    </tr>`;
-  }).join('');
+  const sorted = [...filtered].sort((a,b) => (a.nomAffiche||'').localeCompare(b.nomAffiche||''));
+  document.getElementById('paie-tbody').innerHTML = sorted.length === 0
+    ? '<tr><td colspan="12" style="text-align:center;color:var(--texte3);padding:32px">Aucun collaborateur</td></tr>'
+    : sorted.map(r => {
+      const collabEnc = encodeURIComponent(r.collabId);
+      return `<tr>
+        <td><strong>${r.nomAffiche||'—'}</strong></td>
+        <td style="text-align:center">${r.structure||'—'}</td>
+        <td style="text-align:center">${r.type_contrat||'—'}</td>
+        <td style="text-align:center">${r.heures_hebdo?r.heures_hebdo+'h':'—'}</td>
+        <td style="text-align:center"><span style="font-family:monospace;font-weight:600">${Number(r.heures_travaillees||0).toFixed(2)}h</span></td>
+        <td style="text-align:center">${r.nb_jours_travailles||0}</td>
+        <td style="text-align:center">${r.nb_cp||0}</td>
+        <td style="text-align:center">${r.nb_at||0}</td>
+        <td style="text-align:center">${r.nb_cs||0}</td>
+        <td style="text-align:center">—</td>
+        <td>—</td>
+        <td><button class="btn btn-primary btn-sm" onclick="ouvrirSaisiesPaie('${collabEnc}', this)">📋 Détail</button></td>
+      </tr>`;
+    }).join('');
 }
 
 async function toggleValidation(collabId) {
@@ -1770,24 +1741,18 @@ async function chargerPeriodes() {
     statut: p.statut
   }));
   periodesData = periodes;
-  // 1) select Récap
-  const sel = document.getElementById('recap-periode-select');
-  sel.innerHTML = '<option value="">Période en cours</option>';
-  periodes.forEach(p => {
+  // (ancien select Récap #recap-periode-select supprimé du HTML — plus de peuplement ici)
+  // 2) alerte « < 2 planifiées »
+  verifierAlertePeriodes(periodes);
+  // 3) select Paie : périodes travaillables/archivées (gelee + cloturee).
+  //    'ouverte' AJOUTÉ TEMPORAIREMENT pour tester sur une période encore ouverte
+  //    (ex. DECAL_2026_06) — À RETIRER une fois une période réellement gelée.
+  const selPaie = document.getElementById('paie-periode-select');
+  selPaie.innerHTML = '<option value="">— Sélectionner une période —</option>';
+  periodes.filter(p => ['gelee','cloturee','ouverte'].includes(p.statut)).forEach(p => {
     const o = document.createElement('option');
     o.value = p.periodeId;
     o.textContent = p.nomPeriode + ' (' + p.statut + ')';
-    sel.appendChild(o);
-  });
-  // 2) alerte « < 2 planifiées »
-  verifierAlertePeriodes(periodes);
-  // 3) select Paie : périodes clôturées uniquement
-  const selPaie = document.getElementById('paie-periode-select');
-  selPaie.innerHTML = '<option value="">— Sélectionner une période clôturée —</option>';
-  periodes.filter(p => p.statut === 'cloturee').forEach(p => {
-    const o = document.createElement('option');
-    o.value = p.periodeId;
-    o.textContent = p.nomPeriode;
     selPaie.appendChild(o);
   });
   // 4) tableau des périodes
