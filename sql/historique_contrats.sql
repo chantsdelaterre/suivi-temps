@@ -10,7 +10,7 @@
 --              vigueur à sa date (celui dont [date_debut, date_fin] couvre
 --              la date du jour).
 --              Colonnes structure / type_contrat / heures_hebdo /
---              matricule_silae calées sur celles de `collaborateurs`. Le
+--              matricule_silae / type_periode calées sur celles de `collaborateurs`. Le
 --              matricule_silae peut changer avec la structure : il vit donc
 --              ici, dans l'historique.
 -- Pré-requis : `collaborateurs.collab_id` est PRIMARY KEY (vérifié) → la clé
@@ -33,6 +33,7 @@ create table public.historique_contrats (
   heures_hebdo    numeric,
   matricule_silae text,
   created_at      timestamptz default now(),
+  type_periode    text   check (type_periode in ('civil', 'decalee')),
 
   constraint historique_contrats_collab_id_fkey
     foreign key (collab_id)
