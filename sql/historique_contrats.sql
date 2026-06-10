@@ -16,8 +16,10 @@
 -- Pré-requis : `collaborateurs.collab_id` est PRIMARY KEY (vérifié) → la clé
 --              étrangère est possible.
 --
--- ⚠️ RLS NON ACTIVÉE — donnée sensible (contrats). RLS à activer
---    IMPÉRATIVEMENT avant la mise en production de l'écran admin.
+-- ⚠️ RLS ACTIVÉE (rowsecurity = true) — MAIS la policy "lecture
+--    historique_contrats" (using (true)) OUVRE la lecture à `anon`. Donnée
+--    sensible (contrats) : lecture ouverte de phase DEV, à RESÉCURISER avec
+--    l'auth admin avant la mise en production (post-15/06).
 --
 -- Déploiement : MANUEL, copier-coller dans le SQL Editor de Supabase.
 --              (ce fichier n'est qu'une copie de référence versionnée du dépôt)
@@ -44,3 +46,19 @@ create table public.historique_contrats (
 -- (filtrage par collaborateur puis par date de début).
 create index idx_historique_contrats_collab_date
   on public.historique_contrats (collab_id, date_debut);
+
+-- -----------------------------------------------------------------------------
+-- ACCÈS LECTURE (phase DEV) — exécuté en base le 2026-06-10.
+-- RLS activée sur la table ; cette policy + ce grant ouvrent la lecture à la
+-- clé `anon` pour que l'app admin (admin-v2.html) lise le contexte contractuel.
+-- ⚠️ LECTURE OUVERTE (using (true)) — NON sécurisé. À RESÉCURISER avec l'auth
+--    admin APRÈS le 15/06 : restreindre la policy au rôle admin authentifié et
+--    retirer l'accès `anon`.
+-- -----------------------------------------------------------------------------
+grant select on public.historique_contrats to anon;
+
+create policy "lecture historique_contrats"
+  on public.historique_contrats
+  for select
+  to public
+  using (true);
