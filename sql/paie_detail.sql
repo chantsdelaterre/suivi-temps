@@ -24,9 +24,11 @@
 --              d'un même collab dans une même période soit figé en double
 --              (protection contre une double clôture).
 --
--- ⚠️ RLS NON ACTIVÉE — donnée sensible (paie / contrats). RLS à activer
---    IMPÉRATIVEMENT avant la mise en production de l'écran admin
---    (comme `historique_contrats`).
+-- ⚠️ RLS ACTIVÉE (rowsecurity = true) — MAIS des policies de phase DEV
+--    (lecture + insertion + maj, using/with check (true)) OUVRENT l'accès à
+--    `anon`. Donnée TRÈS sensible (ÉCRITURE sur des données de paie) : à
+--    RESÉCURISER IMPÉRATIVEMENT avec l'auth admin avant la mise en production
+--    (post-15/06) — cf. section « ACCÈS LECTURE/ÉCRITURE » en fin de fichier.
 --
 -- Déploiement : MANUEL, copier-coller dans le SQL Editor de Supabase.
 --              (ce fichier n'est qu'une copie de référence versionnée du dépôt)
@@ -73,3 +75,33 @@ create table public.paie_detail (
 -- Retrouve vite toutes les lignes d'une paie (un collab sur une période).
 create index idx_paie_detail_periode_collab
   on public.paie_detail (periode_id, collab_id);
+
+-- -----------------------------------------------------------------------------
+-- ACCÈS LECTURE / ÉCRITURE (phase DEV) — exécuté en base le 2026-06-10.
+-- RLS activée ; ces grants + policies ouvrent SELECT/INSERT/UPDATE à `anon`
+-- pour que l'app admin (admin-v2.html) puisse importer/figer la paie en dev.
+-- ⚠️ LECTURE **ET ÉCRITURE** OUVERTES (using/with check (true)) — NON sécurisé,
+--    et PLUS sensible que historique_contrats (écriture sur des données de paie).
+--    À RESÉCURISER IMPÉRATIVEMENT APRÈS le 15/06 : restreindre au rôle admin
+--    authentifié et retirer l'accès `anon`.
+-- -----------------------------------------------------------------------------
+grant select, insert, update on public.paie_detail to anon;
+
+create policy "lecture paie_detail"
+  on public.paie_detail
+  for select
+  to public
+  using (true);
+
+create policy "insertion paie_detail"
+  on public.paie_detail
+  for insert
+  to public
+  with check (true);
+
+create policy "maj paie_detail"
+  on public.paie_detail
+  for update
+  to public
+  using (true)
+  with check (true);
