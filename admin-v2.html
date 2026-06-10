@@ -203,13 +203,13 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <thead>
               <tr>
                 <th class="sortable sort-asc" onclick="trierCollabs('nom',this)">Nom</th>
-                <th class="sortable" onclick="trierCollabs('structure',this)" style="white-space:nowrap">Struct.</th>
-                <th>Contrat / Période</th>
-                <th>H/sem</th>
-                <th class="sortable" onclick="trierCollabs('statut',this)">Statut</th>
-                <th>Activation</th>
-                <th>Équipe</th>
-                <th>Matricule Silae</th>
+                <th class="sortable" onclick="trierCollabs('structure',this)" style="white-space:nowrap;text-align:center">Struct.</th>
+                <th style="text-align:center">Contrat / Période</th>
+                <th style="text-align:center">H/sem</th>
+                <th class="sortable" onclick="trierCollabs('statut',this)" style="text-align:center">Statut</th>
+                <th style="text-align:center">Activation</th>
+                <th style="text-align:center">Équipe</th>
+                <th style="text-align:center">Matricule Silae</th>
                 <th>Lien</th>
                 <th>Actions</th>
               </tr>
@@ -256,11 +256,11 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <thead>
               <tr>
                 <th class="sortable sort-asc" onclick="trierRecap('nomAffiche',this)">Nom</th>
-                <th class="sortable" onclick="trierRecap('structure',this)" style="white-space:nowrap">Structure</th>
-                <th>Contrat</th>
-                <th>H/sem</th>
-                <th>Équipe</th>
-                <th class="sortable" onclick="trierRecap('derniereSaisie',this)" style="white-space:nowrap">Dernière saisie</th>
+                <th class="sortable" onclick="trierRecap('structure',this)" style="white-space:nowrap;text-align:center">Structure</th>
+                <th style="text-align:center">Contrat</th>
+                <th style="text-align:center">H/sem</th>
+                <th style="text-align:center">Équipe</th>
+                <th class="sortable" onclick="trierRecap('derniereSaisie',this)" style="white-space:nowrap;text-align:center">Dernière saisie</th>
                 <th>Saisies</th>
               </tr>
             </thead>
@@ -659,13 +659,13 @@ function renderCollabsFiltered(collabs) {
     const collabJson = encodeURIComponent(JSON.stringify(c));
     return `<tr>
       <td><strong>${c.nomAffiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim()}</strong></td>
-      <td>${c.structure||'—'}</td>
-      <td>${c.typeContrat||'—'}${c.typePeriode ? ' · <span style="font-size:13px;color:var(--texte2)">' + (c.typePeriode==='decalee'?'déc.':'civ.') + '</span>' : ''}</td>
-      <td>${c.heuresHebdo ? c.heuresHebdo+'h' : '—'}</td>
-      <td style="white-space:nowrap"><span class="badge ${badgeClass}">${badgeLabel}</span>${c.statut==='en_attente'&&!c.dateActivation?' <span title="Date activation manquante" style="color:#c8621a;font-size:13px;">⚠️</span>':''}</td>
-      <td style="font-size:13px;color:var(--texte2)">${fmtDate(c.dateActivation)}</td>
-      <td style="font-size:13px;color:var(--texte2)">${nomEquipe(c.equipeId)}</td>
-      <td style="font-size:13px;color:var(--texte2)">${c.matriculeSilae||'—'}</td>
+      <td style="text-align:center">${c.structure||'—'}</td>
+      <td style="text-align:center">${c.typeContrat||'—'}${c.typePeriode ? ' · <span style="font-size:13px;color:var(--texte2)">' + (c.typePeriode==='decalee'?'déc.':'civ.') + '</span>' : ''}</td>
+      <td style="text-align:center">${c.heuresHebdo ? c.heuresHebdo+'h' : '—'}</td>
+      <td style="white-space:nowrap;text-align:center"><span class="badge ${badgeClass}">${badgeLabel}</span>${c.statut==='en_attente'&&!c.dateActivation?' <span title="Date activation manquante" style="color:#c8621a;font-size:13px;">⚠️</span>':''}</td>
+      <td style="font-size:13px;color:var(--texte2);text-align:center">${fmtDate(c.dateActivation)}</td>
+      <td style="font-size:13px;color:var(--texte2);text-align:center">${nomEquipe(c.equipeId)}</td>
+      <td style="font-size:13px;color:var(--texte2);text-align:center">${c.matriculeSilae||'—'}</td>
       <td>${c.lien ? `<button class="token-link" onclick="copierLien('${c.lien}')" title="${c.lien}">📋 ${c.token}</button>` : '—'}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" onclick="ouvrirModalCollabData('${collabJson}')">✏️</button>
@@ -1828,11 +1828,11 @@ function renderRecapFiltered(list) {
     : result.map(c => `
       <tr>
         <td><strong>${c.nomAffiche || ((c.prenom||'')+' '+(c.nom||'')).trim()}</strong></td>
-        <td>${c.structure || '—'}</td>
-        <td>${c.typeContrat || '—'}</td>
-        <td>${c.heuresHebdo ? c.heuresHebdo + 'h' : '—'}</td>
-        <td style="font-size:13px;color:var(--texte2)">${nomEquipe(c.equipeId)}</td>
-        <td style="font-size:13px;color:var(--texte2)">${c.derniereSaisie ? fmtDate(c.derniereSaisie) : '—'}</td>
+        <td style="text-align:center">${c.structure || '—'}</td>
+        <td style="text-align:center">${c.typeContrat || '—'}</td>
+        <td style="text-align:center">${c.heuresHebdo ? c.heuresHebdo + 'h' : '—'}</td>
+        <td style="font-size:13px;color:var(--texte2);text-align:center">${nomEquipe(c.equipeId)}</td>
+        <td style="font-size:13px;color:var(--texte2);text-align:center">${c.derniereSaisie ? fmtDate(c.derniereSaisie) : '—'}</td>
         <td><button class="btn btn-warning btn-sm" onclick="ouvrirSaisies('${c.collabId}', this)">📋 Voir</button></td>
       </tr>
     `).join('');
