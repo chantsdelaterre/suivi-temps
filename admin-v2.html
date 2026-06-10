@@ -979,6 +979,127 @@ async function toggleCollab(collabId, btn) {
 let paieCurrentPeriode = '';
 let filtrePaieStructure = '';
 
+// ─────────────────────────────────────────────────────────────────────────
+// MOTEUR DE PAIE — PHASE 1 : calcul en LECTURE SEULE (aucune écriture en base).
+// Vérification des chiffres avant de brancher ajustements / validation / clôture.
+// Règles VERROUILLÉES (CLAUDE.md) : travaillée→total_heures ; AT/CS→7 h (défaut,
+// avant tout ajustement admin) ; CP→0 h, compté en jours.
+// ─────────────────────────────────────────────────────────────────────────
+const PAIE_DEFAUT_AT_CS = 7; // heures par défaut AT/CS (forfait, ajustable admin plus tard)
+
+async function calculerPaiePeriode(periodeId) {
+  if (!periodeId) { console.warn('calculerPaiePeriode : periodeId manquant'); return []; }
+
+  // 1) TOUS les jours de la période — un seul fetch
+  const { data: jours, error: ej } = await sb
+    .from('jours')
+    .select('collab_id, date_jour, type_jour, total_heures, c1_debut, c2_debut, c3_debut')
+    .eq('periode_id', periodeId);
+  if (ej) { console.error('Erreur lecture jours :', ej); return []; }
+
+  // Bornes de la période (pour résoudre le contrat en vigueur)
+  const { data: periode } = await sb
+    .from('periodes')
+    .select('periode_id, nom_periode, date_debut, date_fin, statut')
+    .eq('periode_id', periodeId)
+    .maybeSingle();
+  const pDebut = periode ? periode.date_debut : null;
+  const pFin   = periode ? periode.date_fin   : null;
+
+  // 2) Contexte : collaborateurs (réutilise collabsData) + historique_contrats (un fetch)
+  let collabs = (collabsData && collabsData.length) ? collabsData : null;
+  if (!collabs) {
+    const { data } = await sb.from('collaborateurs').select('collab_id, nom_affiche, prenom, nom');
+    collabs = (data || []).map(c => ({ collabId: c.collab_id, nomAffiche: c.nom_affiche, prenom: c.prenom, nom: c.nom }));
+  }
+  const collabById = {};
+  collabs.forEach(c => { collabById[c.collabId] = c; });
+
+  const { data: contrats, error: ec } = await sb
+    .from('historique_contrats')
+    .select('collab_id, date_debut, date_fin, structure, type_contrat, heures_hebdo, type_periode, matricule_silae');
+  if (ec) { console.error('Erreur lecture historique_contrats :', ec); return []; }
+  const contratsByCollab = {};
+  (contrats || []).forEach(k => { (contratsByCollab[k.collab_id] ||= []).push(k); });
+
+  // Résout le(s) contrat(s) chevauchant [pDebut, pFin] (dates ISO comparables en chaîne)
+  const fmtK = k => ({ type_contrat:k.type_contrat, structure:k.structure, heures_hebdo:k.heures_hebdo,
+                       type_periode:k.type_periode, matricule_silae:k.matricule_silae,
+                       date_debut:k.date_debut, date_fin:k.date_fin });
+  const resoudreContrat = (collabId) => {
+    const liste = (contratsByCollab[collabId] || []).slice()
+      .sort((a, b) => (a.date_debut||'').localeCompare(b.date_debut||''));
+    const couvrants = liste.filter(k =>
+      (!pFin || (k.date_debut||'') <= pFin) &&
+      (!k.date_fin || !pDebut || k.date_fin >= pDebut)
+    );
+    if (!couvrants.length) return { contexte:null, changement:false, segments:[] };
+    if (couvrants.length === 1) return { contexte:fmtK(couvrants[0]), changement:false, segments:[fmtK(couvrants[0])] };
+    return { contexte:fmtK(couvrants[couvrants.length-1]), changement:true, segments:couvrants.map(fmtK) };
+  };
+
+  // 3) Agrégation par collab (selon les règles verrouillées)
+  const parCollab = {};
+  const typesInconnus = new Set();
+  (jours || []).forEach(j => {
+    const acc = parCollab[j.collab_id] || (parCollab[j.collab_id] = {
+      heures_travaillees:0, heures_at:0, heures_cs:0, nb_cp:0, nb_jours_travailles:0
+    });
+    const t = j.type_jour;
+    if (t === 'travaillée') {
+      acc.heures_travaillees += Number(j.total_heures) || 0;
+      const saisi = !!(j.c1_debut || j.c2_debut || j.c3_debut) || (Number(j.total_heures) || 0) > 0;
+      if (saisi) acc.nb_jours_travailles += 1;            // jour travaillé = travaillée AVEC vraie saisie
+    } else if (t === 'AT') {
+      acc.heures_at += PAIE_DEFAUT_AT_CS;
+    } else if (t === 'CS') {
+      acc.heures_cs += PAIE_DEFAUT_AT_CS;
+    } else if (t === 'CP') {
+      acc.nb_cp += 1;
+    } else if (t) {
+      typesInconnus.add(t);
+    }
+  });
+
+  // 4) Assemblage — un objet par collab AYANT des jours dans la période
+  const resultat = Object.keys(parCollab).map(collabId => {
+    const c = collabById[collabId] || {};
+    const acc = parCollab[collabId];
+    const r = resoudreContrat(collabId);
+    return {
+      collabId,
+      nomAffiche: c.nomAffiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim() || collabId,
+      structure:        r.contexte ? r.contexte.structure : null,
+      type_contrat:     r.contexte ? r.contexte.type_contrat : null,
+      heures_hebdo:     r.contexte ? r.contexte.heures_hebdo : null,
+      type_periode:     r.contexte ? r.contexte.type_periode : null,
+      matricule_silae:  r.contexte ? r.contexte.matricule_silae : null,
+      changement_contrat: r.changement,
+      segments_contrat:   r.segments,
+      heures_travaillees: Math.round(acc.heures_travaillees * 100) / 100,
+      heures_at:          acc.heures_at,
+      heures_cs:          acc.heures_cs,
+      nb_cp:              acc.nb_cp,
+      nb_jours_travailles: acc.nb_jours_travailles
+    };
+  }).sort((a, b) => (a.nomAffiche||'').localeCompare(b.nomAffiche||''));
+
+  // --- Affichage console pour vérification manuelle ---
+  console.log('%cPaie ' + (periode ? periode.nom_periode : periodeId)
+    + ' (statut: ' + (periode ? periode.statut : '?') + ') — ' + resultat.length + ' collab(s)',
+    'font-weight:bold');
+  console.table(resultat.map(r => ({
+    Nom: r.nomAffiche, Structure: r.structure, Contrat: r.type_contrat, 'H/sem': r.heures_hebdo,
+    'H. trav.': r.heures_travaillees, 'H. AT': r.heures_at, 'H. CS': r.heures_cs,
+    CP: r.nb_cp, 'J. trav.': r.nb_jours_travailles, 'Δcontrat': r.changement_contrat ? '⚠️' : ''
+  })));
+  resultat.filter(r => r.changement_contrat).forEach(r =>
+    console.warn('Changement de contrat sur la période — ' + r.nomAffiche, r.segments_contrat));
+  if (typesInconnus.size) console.warn('type_jour inconnus (ignorés) :', [...typesInconnus]);
+
+  return resultat;
+}
+
 async function chargerPaie(periodeId) {
   paieCurrentPeriode = periodeId || '';
   const card = document.getElementById('paie-card');
