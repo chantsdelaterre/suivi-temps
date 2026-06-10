@@ -303,3 +303,65 @@ geste, deux écritures coordonnées**. **QUESTION À TRANCHER** : quels champs
 **déclenchent une nouvelle ligne d'historique** (contractuels : heures,
 structure, `type_periode`, matricule Silae) vs quels champs se **corrigent sur
 place sans historiser** (administratifs : email, équipe) ?
+
+## Onglet Paie & workflow — avancement (cadré le 10/06/2026)
+
+### Moteur `calculerPaiePeriode` (phase 1 — lecture seule)
+
+Calcule par collab, sur une période : `heures_travaillees` (somme des
+`total_heures`), `AT`/`CS` pré-remplis **7 h** + `nb_at`/`nb_cs` (**nb de
+jours**), `nb_cp`, `nb_jours_travailles`. Résout le **contrat en vigueur** via
+`historique_contrats` (contexte + **détection de changement** en cours de
+période). **Aucune écriture.** Chiffres **validés** (Guillaume : 48 h / 4 CP sur
+`DECAL_2026_06`). Commit `98febd2` (+ SQL d'accès).
+
+### Vue récap Paie (phase 2)
+
+Vue récap **branchée sur le moteur**, tableau **12 colonnes** (CP/AT/CS en
+**NB DE JOURS** dans le récap ; les **heures** vivent dans le détail), sélecteur
+élargi `gelee` / `cloturee` / `ouverte` (**`ouverte` = TEMPORAIRE**, pour
+tester), bandeau **lecture seule**, colonnes centrées. Les **3 tableaux**
+(Collaborateurs / Récap / Paie) sont alignés de façon cohérente.
+
+### Workflow paie (conçu, validé)
+
+`jours` (saisie collab, **figée au gel, intouchable**) → **IMPORT dans
+`paie_detail`** (au **premier accès admin**, détecté par `paie_detail` vide pour
+la période) → l'admin **ajuste / valide** dans `paie_detail` → **CLÔTURE fige
+`recap_paie`** → **Pauline recopie à la main dans Silae** (export fichier =
+plus tard).
+
+- **Statuts période** : `ouverte` → `gelee` → `cloturee` (PAS de statut
+  intermédiaire ; `gelee` = **à traiter par l'admin**). **Réouverture possible**
+  (`cloturee` → `gelee`). **Pas d'historique des transitions**, juste
+  `recap_paie.date_validation`.
+- **Import** : copie **couche 1** (photo fidèle des `jours`) + **couche 2
+  pré-remplie** (`type_jour_valide = type_jour`, `heures_valide =
+  total_heures` / **7 h** AT·CS / **0** CP, `ajuste_admin = false`). L'unicité
+  `(periode_id, collab_id, date_jour)` **protège du double import**.
+- **RÈGLE SÉCURITÉ** : un **recalcul ne doit JAMAIS écraser un ajustement admin**
+  (`ajuste_admin = true` préservé).
+- **Heures sup** : **HORS moteur** (gérées à la main par l'admin, trop
+  particulier). **Annualisation** : chantier séparé, plus tard. **Jours fériés** :
+  à intégrer dans `jours` plus tard (catégorie absente aujourd'hui).
+- **AT / CS** : récap = **nb de jours** ; détail = **heures ajustables**.
+
+### SQL fait en base (tracé dans `sql/`)
+
+- `historique_contrats` : `GRANT` + policy **SELECT** `anon`.
+- `paie_detail` : `GRANT` + **3 policies** SELECT / INSERT / UPDATE `anon`.
+
+⚠️ **Lecture/écriture OUVERTES — PHASE DEV**, à **resécuriser avec l'auth admin
+POST-15** (écriture sur données de paie = particulièrement sensible).
+
+### Prochaine étape
+
+**Coder la fonction d'import** (phase 3, **première écriture**). **Tester** en
+**gelant temporairement `DECAL_2026_06`** — **sans risque** : les collabs
+saisissent encore sur **Sheets/GAS**, pas Supabase.
+
+### Ménage en attente
+
+- `grouperParSemaine` (**code mort**).
+- `initPaie` (**mort temporaire**).
+- Statut **`ouverte`** du sélecteur Paie (**à retirer post-test**).
