@@ -1690,22 +1690,56 @@ async function chargerPeriodes() {
 let periodesData = [];
 let recapData = [];
 let filtreRecapStructure = '';
+let triColonneRecap = 'nomAffiche';
+let triDescRecap = false;
 
 function setFiltreRecap(structure, btn) {
   filtreRecapStructure = structure;
   document.querySelectorAll('#vue-recap .filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  renderRecapFiltered();
+  filtrerRecap();
 }
 
-function renderRecapFiltered() {
-  let result = filtreRecapStructure ? recapData.filter(c => c.structure === filtreRecapStructure) : recapData;
+function trierRecap(col, th) {
+  if (triColonneRecap === col) { triDescRecap = !triDescRecap; }
+  else { triColonneRecap = col; triDescRecap = false; }
+  document.querySelectorAll('#vue-recap th.sortable').forEach(t => t.classList.remove('sort-asc','sort-desc'));
+  th.classList.add(triDescRecap ? 'sort-desc' : 'sort-asc');
+  filtrerRecap();
+}
+
+function filtrerRecap() {
+  const recherche = (document.getElementById('search-recap')?.value || '').toLowerCase();
+  let result = recapData.filter(c => {
+    const nom = ((c.prenom||'') + ' ' + (c.nom||'') + ' ' + (c.nomAffiche||'')).toLowerCase();
+    if (recherche && !nom.includes(recherche)) return false;
+    if (filtreRecapStructure && c.structure !== filtreRecapStructure) return false;
+    return true;
+  });
+  const col = triColonneRecap;
+  result.sort((a, b) => {
+    if (col === 'derniereSaisie') {
+      // ISO aaaa-mm-jj (triable en chaîne) ; sans saisie (null/'') TOUJOURS en bas
+      const va = a.derniereSaisie || '', vb = b.derniereSaisie || '';
+      if (!va && !vb) return 0;
+      if (!va) return 1;
+      if (!vb) return -1;
+      return triDescRecap ? vb.localeCompare(va) : va.localeCompare(vb);
+    }
+    const va = (a[col]||'').toString().toLowerCase();
+    const vb = (b[col]||'').toString().toLowerCase();
+    return triDescRecap ? vb.localeCompare(va) : va.localeCompare(vb);
+  });
   const count = document.getElementById('recap-filter-count');
   if (count) count.textContent = result.length + ' / ' + recapData.length + ' collaborateur' + (recapData.length > 1 ? 's' : '');
-  const sorted = [...result].sort((a, b) => (a.nomAffiche||'').localeCompare(b.nomAffiche||''));
-  document.getElementById('recap-tbody').innerHTML = sorted.length === 0
+  renderRecapFiltered(result);
+}
+
+function renderRecapFiltered(list) {
+  const result = list || recapData;
+  document.getElementById('recap-tbody').innerHTML = !result.length
     ? '<tr><td colspan="7" style="text-align:center;color:var(--texte3);padding:32px">Aucun résultat</td></tr>'
-    : sorted.map(c => `
+    : result.map(c => `
       <tr>
         <td><strong>${c.nomAffiche || ((c.prenom||'')+' '+(c.nom||'')).trim()}</strong></td>
         <td>${c.structure || '—'}</td>
@@ -1755,7 +1789,7 @@ async function chargerRecap() {
   document.querySelectorAll('#vue-recap .filter-btn').forEach(b => b.classList.remove('active'));
   const fb = document.querySelector('#vue-recap .filter-btn');
   if (fb) fb.classList.add('active');
-  renderRecapFiltered();
+  filtrerRecap();
 }
 </script>
 </body>
