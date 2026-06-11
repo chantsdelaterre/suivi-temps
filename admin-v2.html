@@ -315,6 +315,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
           <button class="filter-btn" onclick="setFiltrePaie('SCEA',this)">SCEA</button>
           <button class="filter-btn" onclick="setFiltrePaie('SAS',this)">SAS</button>
           <button class="filter-btn" onclick="setFiltrePaie('SARL',this)">SARL</button>
+          <span class="filter-count" id="paie-filter-count"></span>
         </div>
         <div class="table-wrap">
           <table>
@@ -1106,6 +1107,104 @@ async function calculerPaiePeriode(periodeId) {
   return resultat;
 }
 
+// MOTEUR DE PAIE — lecture depuis paie_detail (COUCHE 2 = validation admin).
+// Même format de sortie que calculerPaiePeriode → renderPaieFiltered inchangé.
+async function calculerPaieDepuisPaieDetail(periodeId) {
+  if (!periodeId) { console.warn('calculerPaieDepuisPaieDetail : periodeId manquant'); return []; }
+
+  // 1) Lignes paie_detail de la période
+  const { data: detail, error: ed } = await sb
+    .from('paie_detail')
+    .select('*')
+    .eq('periode_id', periodeId);
+  if (ed) { console.error('Erreur lecture paie_detail :', ed); return []; }
+
+  // Bornes de la période (résolution du contrat en vigueur)
+  const { data: periode } = await sb
+    .from('periodes')
+    .select('periode_id, nom_periode, date_debut, date_fin, statut')
+    .eq('periode_id', periodeId)
+    .maybeSingle();
+  const pDebut = periode ? periode.date_debut : null;
+  const pFin   = periode ? periode.date_fin   : null;
+
+  // 2) Contexte : collaborateurs (réutilise collabsData) + historique_contrats
+  let collabs = (collabsData && collabsData.length) ? collabsData : null;
+  if (!collabs) {
+    const { data } = await sb.from('collaborateurs').select('collab_id, nom_affiche, prenom, nom');
+    collabs = (data || []).map(c => ({ collabId: c.collab_id, nomAffiche: c.nom_affiche, prenom: c.prenom, nom: c.nom }));
+  }
+  const collabById = {};
+  collabs.forEach(c => { collabById[c.collabId] = c; });
+
+  const { data: contrats, error: ec } = await sb
+    .from('historique_contrats')
+    .select('collab_id, date_debut, date_fin, structure, type_contrat, heures_hebdo, type_periode, matricule_silae');
+  if (ec) { console.error('Erreur lecture historique_contrats :', ec); return []; }
+  const contratsByCollab = {};
+  (contrats || []).forEach(k => { (contratsByCollab[k.collab_id] ||= []).push(k); });
+
+  const fmtK = k => ({ type_contrat:k.type_contrat, structure:k.structure, heures_hebdo:k.heures_hebdo,
+                       type_periode:k.type_periode, matricule_silae:k.matricule_silae,
+                       date_debut:k.date_debut, date_fin:k.date_fin });
+  const resoudreContrat = (collabId) => {
+    const liste = (contratsByCollab[collabId] || []).slice()
+      .sort((a, b) => (a.date_debut||'').localeCompare(b.date_debut||''));
+    const couvrants = liste.filter(k =>
+      (!pFin || (k.date_debut||'') <= pFin) &&
+      (!k.date_fin || !pDebut || k.date_fin >= pDebut)
+    );
+    if (!couvrants.length) return { contexte:null, changement:false, segments:[] };
+    if (couvrants.length === 1) return { contexte:fmtK(couvrants[0]), changement:false, segments:[fmtK(couvrants[0])] };
+    return { contexte:fmtK(couvrants[couvrants.length-1]), changement:true, segments:couvrants.map(fmtK) };
+  };
+
+  // 3) Agrégation par collab sur la COUCHE 2 (type_jour_valide / heures_valide)
+  const parCollab = {};
+  (detail || []).forEach(d => {
+    const acc = parCollab[d.collab_id] || (parCollab[d.collab_id] = {
+      heures_travaillees:0, heures_at:0, heures_cs:0, nb_at:0, nb_cs:0, nb_cp:0, nb_jours_travailles:0
+    });
+    const t = d.type_jour_valide;
+    const h = Number(d.heures_valide) || 0;
+    if (t === 'travaillée') {
+      acc.heures_travaillees += h;
+      if (h > 0) acc.nb_jours_travailles += 1;
+    } else if (t === 'AT') {
+      acc.heures_at += h; acc.nb_at += 1;
+    } else if (t === 'CS') {
+      acc.heures_cs += h; acc.nb_cs += 1;
+    } else if (t === 'CP') {
+      acc.nb_cp += 1;
+    }
+  });
+
+  // 4) Assemblage — MÊME format que calculerPaiePeriode (renderPaieFiltered inchangé)
+  return Object.keys(parCollab).map(collabId => {
+    const c = collabById[collabId] || {};
+    const acc = parCollab[collabId];
+    const r = resoudreContrat(collabId);
+    return {
+      collabId,
+      nomAffiche: c.nomAffiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim() || collabId,
+      structure:        r.contexte ? r.contexte.structure : null,
+      type_contrat:     r.contexte ? r.contexte.type_contrat : null,
+      heures_hebdo:     r.contexte ? r.contexte.heures_hebdo : null,
+      type_periode:     r.contexte ? r.contexte.type_periode : null,
+      matricule_silae:  r.contexte ? r.contexte.matricule_silae : null,
+      changement_contrat: r.changement,
+      segments_contrat:   r.segments,
+      heures_travaillees: Math.round(acc.heures_travaillees * 100) / 100,
+      heures_at:          acc.heures_at,
+      heures_cs:          acc.heures_cs,
+      nb_at:              acc.nb_at,
+      nb_cs:              acc.nb_cs,
+      nb_cp:              acc.nb_cp,
+      nb_jours_travailles: acc.nb_jours_travailles
+    };
+  }).sort((a, b) => (a.nomAffiche||'').localeCompare(b.nomAffiche||''));
+}
+
 // MOTEUR DE PAIE — PHASE 3, ÉTAPE A : IMPORT/FIGEMENT dans paie_detail (PREMIÈRE ÉCRITURE).
 // Copie fidèle des `jours` (couche 1) + couche 2 pré-remplie (valeurs de départ ajustables).
 // Idempotent : n'écrit QUE si paie_detail est vide pour la période (+ protégé par
@@ -1192,7 +1291,7 @@ async function chargerPaie(periodeId) {
   card.style.display='block'; indic.style.display='block';
   document.getElementById('paie-titre').textContent = 'Paie — chargement…';
   document.getElementById('paie-tbody').innerHTML = '<tr><td colspan="12"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
-  const recap = await calculerPaiePeriode(periodeId);   // moteur Supabase, lecture seule, aucune écriture
+  const recap = await calculerPaieDepuisPaieDetail(periodeId);   // lecture depuis paie_detail (couche 2 validation admin)
   renderPaie(recap, periodeId);
 }
 
@@ -1233,6 +1332,8 @@ function setFiltrePaie(val, btn) {
 function renderPaieFiltered() {
   const recap = window._paie_recap_current || [];
   const filtered = filtrePaieStructure ? recap.filter(r => r.structure === filtrePaieStructure) : recap;
+  const count = document.getElementById('paie-filter-count');
+  if (count) count.textContent = filtered.length + ' / ' + recap.length + ' collaborateur' + (recap.length > 1 ? 's' : '');
   const sorted = [...filtered].sort((a,b) => (a.nomAffiche||'').localeCompare(b.nomAffiche||''));
   document.getElementById('paie-tbody').innerHTML = sorted.length === 0
     ? '<tr><td colspan="12" style="text-align:center;color:var(--texte3);padding:32px">Aucun collaborateur</td></tr>'
@@ -1822,12 +1923,10 @@ async function chargerPeriodes() {
   // (ancien select Récap #recap-periode-select supprimé du HTML — plus de peuplement ici)
   // 2) alerte « < 2 planifiées »
   verifierAlertePeriodes(periodes);
-  // 3) select Paie : périodes travaillables/archivées (gelee + cloturee).
-  //    'ouverte' AJOUTÉ TEMPORAIREMENT pour tester sur une période encore ouverte
-  //    (ex. DECAL_2026_06) — À RETIRER une fois une période réellement gelée.
+  // 3) select Paie : périodes travaillables (gelee = à traiter) + archivées (cloturee).
   const selPaie = document.getElementById('paie-periode-select');
   selPaie.innerHTML = '<option value="">— Sélectionner une période —</option>';
-  periodes.filter(p => ['gelee','cloturee','ouverte'].includes(p.statut)).forEach(p => {
+  periodes.filter(p => ['gelee','cloturee'].includes(p.statut)).forEach(p => {
     const o = document.createElement('option');
     o.value = p.periodeId;
     o.textContent = p.nomPeriode + ' (' + p.statut + ')';
