@@ -1291,6 +1291,13 @@ async function chargerPaie(periodeId) {
   card.style.display='block'; indic.style.display='block';
   document.getElementById('paie-titre').textContent = 'Paie — chargement…';
   document.getElementById('paie-tbody').innerHTML = '<tr><td colspan="12"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
+  // Import auto au 1er accès (idempotent : n'écrit que si paie_detail est vide).
+  // Séquentiel : paie_detail doit être peuplé AVANT la lecture.
+  const imp = await importerPaiePeriode(periodeId);
+  if (!imp.ok) {
+    document.getElementById('paie-tbody').innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--rouge);padding:32px">Impossible de préparer la paie de cette période.</td></tr>';
+    return;
+  }
   const recap = await calculerPaieDepuisPaieDetail(periodeId);   // lecture depuis paie_detail (couche 2 validation admin)
   renderPaie(recap, periodeId);
 }
@@ -1314,7 +1321,7 @@ function renderPaie(recap, periodeId) {
   if (statut) {
     statut.style.background = 'var(--bleu-pale)';
     statut.style.color = 'var(--bleu)';
-    statut.textContent = 'ℹ️ Calcul en lecture seule — non figé (validation / clôture à venir)';
+    statut.textContent = 'ℹ️ Paie en préparation — non validée (validation / clôture à faire)';
   }
   const sel = document.getElementById('paie-periode-select');
   const opt = sel.querySelector('option[value="'+periodeId+'"]');
