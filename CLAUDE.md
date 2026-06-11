@@ -365,3 +365,67 @@ saisissent encore sur **Sheets/GAS**, pas Supabase.
 - `grouperParSemaine` (**code mort**).
 - `initPaie` (**mort temporaire**).
 - Statut **`ouverte`** du sélecteur Paie (**à retirer post-test**).
+
+## Phase 3 paie — import + lecture (cadré le 11/06/2026)
+
+**PHASE 3 TERMINÉE (import + lecture).** Chaîne complète validée : ouverture
+d'une période **gelée** → **import auto** → récap **depuis la couche 2**, sans
+intervention console.
+
+### Étape A — `importerPaiePeriode(periodeId)` (1ʳᵉ ÉCRITURE du projet)
+
+Copie **couche 1** (photo fidèle des `jours`) + **couche 2 pré-remplie**
+(`type_jour_valide = type_jour`, `heures_valide = total_heures` / **7 h** AT·CS /
+**0** CP, `ajuste_admin = false`, `date_cloture = null`). **Idempotent** (n'écrit
+que si `paie_detail` est vide pour la période). Testé sur `DEC_2026_06`
+(**261 lignes**).
+
+### Étape B1 — `calculerPaieDepuisPaieDetail(periodeId)`
+
+L'onglet Paie lit `paie_detail` **COUCHE 2** (`type_jour_valide` /
+`heures_valide`) au lieu de `jours`. `chargerPaie` branché dessus. Sélecteur Paie
+restreint à **`gelee` + `cloturee`** (retrait du `'ouverte'` temporaire).
+Compteur « **X / Y collaborateurs** » ajouté.
+
+### Étape B2 — import auto au premier accès
+
+`chargerPaie` appelle `importerPaiePeriode` **avant** le calcul (idempotent,
+message d'erreur si échec). Bandeau = « **Paie en préparation — non validée
+(validation / clôture à faire)** ».
+
+### Précisions métier tranchées cette session
+
+- **`CS` = attribut ADMIN uniquement** (les collabs ne saisissent **jamais** de
+  CS) → le CS **n'arrive PAS par l'import** ; il est **ajouté par l'admin** dans
+  `paie_detail` (couche 2) pendant la validation.
+- **`AT`** : le collab saisit le **TYPE** (sans heures, `total_heures = 0`) ;
+  c'est l'**admin** qui pose les heures (**7 h** de départ en couche 2,
+  ajustables).
+- **Statuts période** : `ouverte` → `gelee` → `cloturee`. **Pas de statut
+  intermédiaire** (`gelee` = à traiter par l'admin). Import déclenché **au
+  premier accès** (`paie_detail` vide), **PAS dans le cron**.
+- **Séparation des onglets** : **Récap** = période **OUVERTE** (suivi live depuis
+  `jours`) ; **Paie** = période **GELÉE / CLÔTURÉE** (depuis `paie_detail`
+  couche 2).
+
+### Prochaines étapes
+
+- **Détail collab Paie** (`ouvrirSaisiesPaie`) lu depuis `paie_detail` (réutiliser
+  `fetchJoursCollab` / `renderSaisies`).
+- **Écritures admin couche 2** : ajustements `heures_valide` / `type_jour_valide`
+  (`ajuste_admin = true`), avec la règle « **un recalcul ne doit JAMAIS écraser un
+  ajustement** ». **C'est là que le CS s'ajoute.**
+- **Validation → clôture** (fige `recap_paie` + `date_cloture`).
+
+### Ménage en attente (actualisé)
+
+- `calculerPaiePeriode` (**doublon depuis B1**, à retirer).
+- `grouperParSemaine` (**mort**), `initPaie` (**mort**).
+- **Données de test** dans `paie_detail` pour `DEC_2026_06` (**à purger avant
+  mise en service**).
+- **Resécurisation RLS post-15** (`historique_contrats` + `paie_detail`).
+
+### État
+
+`DEC_2026_06` **remise en `ouverte`** après les tests (gel temporaire utilisé
+pour tester l'import — **sans risque**, collabs encore sur Sheets/GAS).
