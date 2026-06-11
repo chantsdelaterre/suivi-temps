@@ -1106,6 +1106,84 @@ async function calculerPaiePeriode(periodeId) {
   return resultat;
 }
 
+// MOTEUR DE PAIE — PHASE 3, ÉTAPE A : IMPORT/FIGEMENT dans paie_detail (PREMIÈRE ÉCRITURE).
+// Copie fidèle des `jours` (couche 1) + couche 2 pré-remplie (valeurs de départ ajustables).
+// Idempotent : n'écrit QUE si paie_detail est vide pour la période (+ protégé par
+// l'unicité (periode_id, collab_id, date_jour)). Testable en console, NON branchée à l'UI.
+async function importerPaiePeriode(periodeId) {
+  if (!periodeId) { console.warn('importerPaiePeriode : periodeId manquant'); return {ok:false, raison:'periodeId manquant'}; }
+
+  // 1) DÉTECTION : compter les lignes existantes SANS rapatrier les données
+  const { count, error: ecount } = await sb
+    .from('paie_detail')
+    .select('id', { count: 'exact', head: true })
+    .eq('periode_id', periodeId);
+  if (ecount) {
+    console.error('importerPaiePeriode : erreur count', ecount);
+    return {ok:false, raison:'erreur count', error:ecount};
+  }
+  if (count > 0) {
+    console.log('importerPaiePeriode : déjà importé (' + count + ' lignes) — aucune écriture.');
+    return {ok:true, importe:false, lignes:count, message:'déjà importé'};
+  }
+
+  // 2) IMPORT : lire tous les jours de la période
+  const { data: jours, error: ej } = await sb
+    .from('jours')
+    .select('*')
+    .eq('periode_id', periodeId);
+  if (ej) {
+    console.error('importerPaiePeriode : erreur lecture jours', ej);
+    return {ok:false, raison:'erreur lecture jours', error:ej};
+  }
+  if (!jours || !jours.length) {
+    console.warn('importerPaiePeriode : aucun jour pour cette période — rien à importer.');
+    return {ok:true, importe:false, lignes:0, message:'aucun jour'};
+  }
+
+  const lignes = jours.map(j => {
+    const t = j.type_jour;
+    const heuresValide = (t === 'travaillée') ? (Number(j.total_heures) || 0)
+                       : (t === 'AT' || t === 'CS') ? 7
+                       : 0;  // CP (et tout autre) → 0
+    return {
+      // Couche 1 — copie fidèle de jours
+      periode_id:          j.periode_id,
+      collab_id:           j.collab_id,
+      date_jour:           j.date_jour,
+      jour_semaine:        j.jour_semaine,
+      type_jour:           j.type_jour,
+      c1_debut:            j.c1_debut,
+      c1_fin:              j.c1_fin,
+      c2_debut:            j.c2_debut,
+      c2_fin:              j.c2_fin,
+      c3_debut:            j.c3_debut,
+      c3_fin:              j.c3_fin,
+      total_heures:        j.total_heures,
+      commentaire:         j.commentaire,
+      remarque_manager:    j.remarque_manager ?? null,
+      total_hebdo_prog:    j.total_hebdo_prog,
+      nb_modifications:    j.nb_modifications,
+      date_derniere_modif: j.date_derniere_modif,
+      date_cloture:        null,   // explicitement null (la date de clôture sera posée à la CLÔTURE, pas à l'import)
+      // Couche 2 — pré-remplie (valeurs de départ, ajustables par l'admin)
+      type_jour_valide:    j.type_jour,
+      heures_valide:       heuresValide,
+      ajuste_admin:        false,
+      note_admin:          null
+    };
+  });
+
+  const { error: eins } = await sb.from('paie_detail').insert(lignes);
+  if (eins) {
+    console.error('importerPaiePeriode : erreur insert', eins);
+    return {ok:false, raison:'erreur insert', error:eins};
+  }
+  console.log('importerPaiePeriode : ' + lignes.length + ' ligne(s) importée(s) dans paie_detail pour ' + periodeId);
+  return {ok:true, importe:true, lignes:lignes.length};
+}
+window.importerPaiePeriode = importerPaiePeriode;
+
 async function chargerPaie(periodeId) {
   paieCurrentPeriode = periodeId || '';
   const card = document.getElementById('paie-card');
