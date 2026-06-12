@@ -847,69 +847,53 @@ async function toggleValidationModal() {
   if (!_paieCurrentCollab) return;
   const btnVal = document.getElementById('btn-valider-collab');
   if (btnVal) { btnVal.disabled = true; btnVal.textContent = '⏳ Validation…'; }
-  const note = (document.getElementById('modal-note-admin')?.value||'').trim();
-  const jours = window._jours_paie_current || [];
 
-  // Sauvegarder tous les jours en un seul appel
-  const get = id => (document.getElementById(id)?.value||'').trim();
-  const joursAsSauver = jours.map((j, idx) => {
-    if (!document.getElementById('jp'+idx+'-type')) return null;
-    return {
-      jourId: (j.jourId||'').replace(/'/g,''),
-      typeJour:    get('jp'+idx+'-type') || j.typeJour || 'travaillée',
-      c1Debut:     get('jp'+idx+'-c1d') || j.c1Debut || '',
-      c1Fin:       get('jp'+idx+'-c1f') || j.c1Fin || '',
-      c2Debut:     get('jp'+idx+'-c2d') || j.c2Debut || '',
-      c2Fin:       get('jp'+idx+'-c2f') || j.c2Fin || '',
-      c3Debut:     get('jp'+idx+'-c3d') || j.c3Debut || '',
-      c3Fin:       get('jp'+idx+'-c3f') || j.c3Fin || '',
-      commentaire: get('jp'+idx+'-comm') || j.commentaire || '',
-      totalHeuresOverride: (()=>{const el=document.getElementById('jp'+idx+'-total-input');return el?el.value:'';})(),
-    };
-  }).filter(Boolean);
-  try {
-    await jsonpFetch(API_URL + '?action=bo_saveAllJours&token=' + encodeURIComponent(ADMIN_TOKEN)
-      + '&jours=' + encodeURIComponent(JSON.stringify(joursAsSauver)));
-  } catch(e) { console.warn('Erreur saveAllJours', e); }
-
-  // Valider avec recalcul + note
-  try {
-    const d = await jsonpFetch(API_URL
-      + '?action=bo_validerCollab&token=' + encodeURIComponent(ADMIN_TOKEN)
-      + '&periodeId=' + encodeURIComponent(paieCurrentPeriode)
-      + '&collabId=' + encodeURIComponent(_paieCurrentCollab)
-      + '&note=' + encodeURIComponent(note));
-    if (d.ok) {
-      // Mettre à jour le badge
-      const badge = document.getElementById('badge-validation-paie');
-      if (badge) badge.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;background:#e8f8ee;color:#2d7a4f;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#2d7a4f;display:inline-block"></span>Validé</span>';
-      // Repasser en mode consultation
-      window._paie_mode_edit = false;
-      const btnC = document.getElementById('btn-pill-consult');
-      const btnM = document.getElementById('btn-pill-modif');
-      if (btnC && btnM) {
-        btnC.classList.add('pill-active'); btnC.textContent = '👁 Consultation ✓';
-        btnM.classList.remove('pill-active'); btnM.textContent = '✏️ Modification';
-      }
-      // Mettre à jour le bouton valider
-      if (btnVal) { btnVal.textContent = '✅ Valider'; btnVal.disabled = true; btnVal.style.opacity = '0.45'; }
-      // Recharger les jours
-      await new Promise(r => setTimeout(r, 1000));
-      try {
-        const url2 = API_URL + '?action=bo_getJoursCollab&token=' + encodeURIComponent(ADMIN_TOKEN)
-          + '&collabId=' + encodeURIComponent(_paieCurrentCollab)
-          + '&periodeId=' + encodeURIComponent(paieCurrentPeriode);
-        const d2 = await jsonpFetch(url2);
-        if (d2.ok) renderSaisiesPaie(d2.jours || [], _paieCurrentCollab);
-      } catch(e) {}
-    } else {
-      if (btnVal) { btnVal.disabled = false; btnVal.textContent = '✅ Valider'; btnVal.style.opacity = '1'; }
-      alert('Erreur validation : ' + (d.error||'inconnue'));
-    }
-  } catch(e) {
+  const cid = decodeURIComponent(_paieCurrentCollab);
+  const note = (document.getElementById('modal-note-admin')?.value || '').trim();
+  // Totaux du collab courant, déjà calculés depuis paie_detail (couche 2)
+  const ligne = (window._paie_recap_current || []).find(r => r.collabId === cid);
+  if (!ligne) {
     if (btnVal) { btnVal.disabled = false; btnVal.textContent = '✅ Valider'; btnVal.style.opacity = '1'; }
-    alert('Erreur réseau');
+    alert('Validation impossible : totaux du collaborateur introuvables (recharge la période).');
+    return;
   }
+  // date de validation = date du jour (locale), colonne texte
+  const now = new Date();
+  const dateValidation = String(now.getFullYear()) + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+
+  // UPSERT recap_paie sur (periode_id, collab_id) → revalider écrase proprement.
+  // nb_at / nb_cs : colonnes absentes de recap_paie → NON écrites (assumé, reporté).
+  // Statut période (gelee→cloturee) : NON modifié ici (étape suivante).
+  const { error } = await sb.from('recap_paie').upsert({
+    periode_id:          paieCurrentPeriode,
+    collab_id:           cid,
+    nom_affiche:         ligne.nomAffiche,
+    heures_travaillees:  ligne.heures_travaillees,
+    heures_at:           ligne.heures_at,
+    heures_cs:           ligne.heures_cs,
+    nb_cp:               ligne.nb_cp,
+    nb_jours_travailles: ligne.nb_jours_travailles,
+    statut_validation:   'valide',
+    date_validation:     dateValidation,
+    note_admin:          note
+  }, { onConflict: 'periode_id,collab_id' });
+
+  if (error) {
+    if (btnVal) { btnVal.disabled = false; btnVal.textContent = '✅ Valider'; btnVal.style.opacity = '1'; }
+    alert('Échec de la validation : ' + (error.message || error.code || 'erreur Supabase'));
+    return;
+  }
+
+  // Succès : feedback bouton + repasser en consultation
+  if (btnVal) { btnVal.textContent = '✅ Validé'; btnVal.disabled = true; btnVal.style.opacity = '0.45'; }
+  window._paie_mode_edit = false;
+  const btnC = document.getElementById('btn-pill-consult');
+  const btnM = document.getElementById('btn-pill-modif');
+  if (btnC && btnM) {
+    btnC.classList.add('pill-active'); btnC.textContent = '👁 Consultation ✓';
+    btnM.classList.remove('pill-active'); btnM.textContent = '✏️ Modification';
+  }
+  poserBadgePaie();
 }
 
 function fermerModal(id) {
@@ -1519,6 +1503,18 @@ async function ouvrirSaisies(collabId, btn) {
   if (footer) footer.style.display = 'none';
 }
 
+// Pose le badge du détail paie d'après le STATUT RÉEL de la période courante
+// (periodesData, rempli par chargerPeriodes). Lecture seule.
+function poserBadgePaie() {
+  const badge = document.getElementById('badge-validation-paie');
+  if (!badge) return;
+  const p = (periodesData || []).find(x => x.periodeId === paieCurrentPeriode);
+  const cloturee = !!(p && p.statut === 'cloturee');
+  badge.innerHTML = cloturee
+    ? '<span style="display:inline-flex;align-items:center;gap:6px;background:#e8f8ee;color:#2d7a4f;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#2d7a4f;display:inline-block"></span>Relevé validé (période clôturée)</span>'
+    : '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff3e0;color:#c8833a;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#c8833a;display:inline-block"></span>Relevé en attente de validation</span>';
+}
+
 async function ouvrirSaisiesPaie(collabId, btn) {
   _paieCurrentCollab = collabId;
   const nomAffiche = btn.closest('tr').querySelector('td strong').textContent;
@@ -1542,12 +1538,7 @@ async function ouvrirSaisiesPaie(collabId, btn) {
     btnVal.style.opacity = valide ? '0.45' : '1';
     btnVal.disabled = valide;
     btnVal.className = 'btn btn-success btn-sm';
-    const badge = document.getElementById('badge-validation-paie');
-    if (badge) {
-      badge.innerHTML = valide
-        ? '<span style="display:inline-flex;align-items:center;gap:6px;background:#e8f8ee;color:#2d7a4f;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#2d7a4f;display:inline-block"></span>Validé</span>'
-        : '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff3e0;color:#c8833a;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#c8833a;display:inline-block"></span>En attente</span>';
-    }
+    poserBadgePaie();
   }
   // Afficher vue détail
   document.getElementById('paie-detail-titre').textContent = 'Détail — ' + nomAffiche;
@@ -1559,14 +1550,33 @@ async function ouvrirSaisiesPaie(collabId, btn) {
     if (footer) footer.style.display = '';
   document.getElementById('table-saisies-paie').innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
   document.getElementById('filtres-paie').innerHTML = '';
-  try {
-    const url = API_URL + '?action=bo_getJoursCollab&token=' + encodeURIComponent(ADMIN_TOKEN)
-      + '&collabId=' + encodeURIComponent(collabId)
-      + '&periodeId=' + encodeURIComponent(paieCurrentPeriode);
-    const d = await jsonpFetch(url);
-    if (!d.ok) { document.getElementById('table-saisies-paie').innerHTML = '<div class="error-banner">Erreur.</div>'; return; }
-    renderSaisiesPaie(d.jours || [], collabId);
-  } catch(e) { document.getElementById('table-saisies-paie').innerHTML = '<div class="error-banner">Erreur réseau.</div>'; }
+  // Lecture depuis paie_detail (couche 2 = validation admin), cohérent avec la liste récap.
+  const cid = decodeURIComponent(collabId);
+  const { data: detail, error } = await sb
+    .from('paie_detail')
+    .select('*')
+    .eq('collab_id', cid)
+    .eq('periode_id', paieCurrentPeriode)
+    .order('date_jour');
+  if (error) { document.getElementById('table-saisies-paie').innerHTML = '<div class="error-banner">Erreur de chargement.</div>'; return; }
+  // Mapping snake_case → camelCase attendu par buildTableSaisies.
+  // Affiché = COUCHE 2 (type_jour_valide / heures_valide), sans fallback ; créneaux = couche 1 (référence).
+  const fmtISO = iso => { if (!iso) return ''; const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : String(iso); };
+  const jours = (detail || []).map(d => ({
+    jourId:      String(d.id),          // handle paie_detail.id (pour l'écriture, étape suivante)
+    dateJour:    fmtISO(d.date_jour),
+    jourSemaine: d.jour_semaine,
+    typeJour:    d.type_jour_valide,    // COUCHE 2
+    c1Debut:     d.c1_debut || '',
+    c1Fin:       d.c1_fin || '',
+    c2Debut:     d.c2_debut || '',
+    c2Fin:       d.c2_fin || '',
+    c3Debut:     d.c3_debut || '',
+    c3Fin:       d.c3_fin || '',
+    totalHeures: d.heures_valide,       // COUCHE 2
+    commentaire: d.commentaire || ''
+  }));
+  renderSaisiesPaie(jours, collabId);
 }
 
 function renderSaisiesPaie(jours, collabId) {
@@ -1613,7 +1623,7 @@ function buildTableSaisies(jours, filtre, collabId) {
     + (() => {
         const JOURS_P = ['Dim.','Lun.','Mar.','Mer.','Jeu.','Ven.','Sam.'];
         const fmtDP = s => { const p=(s||'').split('/'); if(p.length!==3) return s; const d=new Date(p[2],p[1]-1,p[0]); return JOURS_P[d.getDay()]+' '+p[0]+'/'+p[1]; };
-        const getISOMon = s => { const p=(s||'').split('/'); if(p.length!==3) return ''; const d=new Date(p[2],p[1]-1,p[0]); const dow=d.getDay()===0?6:d.getDay()-1; const l=new Date(d); l.setDate(d.getDate()-dow); return l.toISOString().split('T')[0]; };
+        const getISOMon = s => { const p=(s||'').split('/'); if(p.length!==3) return ''; const d=new Date(p[2],p[1]-1,p[0]); const dow=d.getDay()===0?6:d.getDay()-1; const l=new Date(d); l.setDate(d.getDate()-dow); return String(l.getFullYear())+'-'+String(l.getMonth()+1).padStart(2,'0')+'-'+String(l.getDate()).padStart(2,'0'); };
         const cumSemP = {};
         const sortedForCum = [...filtered].sort((a,b) => { const pa=(a.dateJour||'').split('/'),pb=(b.dateJour||'').split('/'); return (pa[2]+pa[1]+pa[0]).localeCompare(pb[2]+pb[1]+pb[0]); });
         sortedForCum.forEach(jj => { const l=getISOMon(jj.dateJour); if(!cumSemP[l]) cumSemP[l]=0; cumSemP[l]+=(Number(jj.totalHeures)||0); jj._semProg=cumSemP[l]; });
@@ -1621,9 +1631,11 @@ function buildTableSaisies(jours, filtre, collabId) {
         const jourId = (j.jourId||'').replace(/'/g,'');
         const tot = j.totalHeures!=null&&j.totalHeures!==''?Number(j.totalHeures).toFixed(2)+'h':'—';
         const semTot = j._semProg!=null ? Number(j._semProg).toFixed(2).replace('.',',')+' h' : '—';
-        const typeSelect = '<select id="jp'+idx+'-type" onchange="majTotalPaie('+idx+')" style="font-size:12px;padding:3px 6px;border-radius:6px;border:1.5px solid #dce6f0">'
-          + types.map(t => '<option value="'+t+'"'+(j.typeJour===t?' selected':'')+'>'+t+'</option>').join('')
-          + '</select>';
+        const typeSelect = modeEdit
+          ? '<select id="jp'+idx+'-type" onchange="majTotalPaie('+idx+')" style="font-size:12px;padding:3px 6px;border-radius:6px;border:1.5px solid #dce6f0">'
+            + types.map(t => '<option value="'+t+'"'+(j.typeJour===t?' selected':'')+'>'+t+'</option>').join('')
+            + '</select>'
+          : '<span style="font-size:13px">'+(j.typeJour||'—')+'</span>';
         const _pDate = (j.dateJour||'').split('/');
         const _dDate = _pDate.length===3 ? new Date(_pDate[2],_pDate[1]-1,_pDate[0]) : new Date(j.dateJour);
         const _dow = _dDate.getDay();
@@ -1642,7 +1654,9 @@ function buildTableSaisies(jours, filtre, collabId) {
           + td(cren3,'white-space:nowrap')
           + (modeEdit && isATCS ? td('<input type="text" id="jp'+idx+'-total-input" value="" inputmode="decimal" style="width:45px;font-size:13px;padding:2px 4px;font-family:monospace;font-weight:600;color:var(--bleu);border:none;border-bottom:1.5px solid #aac4e8;outline:none;background:transparent;">') : td('<span id="jptot-'+idx+'" style="font-family:monospace;font-weight:600;color:var(--bleu)">'+tot+'</span>'))
           + td('<span style="font-size:11px;color:var(--texte3)">'+semTot+'</span>')
-          + td('<input type="text" id="jp'+idx+'-comm" value="'+(j.commentaire||'').replace(/"/g,"&quot;")+('" placeholder="Commentaire…" style="width:140px;font-size:12px;padding:3px 6px">'))
+          + td(modeEdit
+              ? '<input type="text" id="jp'+idx+'-comm" value="'+(j.commentaire||'').replace(/"/g,"&quot;")+'" placeholder="Commentaire…" style="width:140px;font-size:12px;padding:3px 6px">'
+              : '<span style="font-size:12px;color:var(--texte2)">'+((j.commentaire||'').replace(/</g,'&lt;')||'—')+'</span>')
           + '</tr>';
       }).join('')
       })()
@@ -1662,7 +1676,7 @@ async function toggleHeuresEdit() {
       const badge = document.getElementById('badge-validation-paie');
       const isValide = badge && badge.innerHTML.includes('Validé');
       if (isValide) {
-        badge.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff3e0;color:#c8833a;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#c8833a;display:inline-block"></span>En attente</span>';
+        poserBadgePaie();
         const btnVal = document.getElementById('btn-valider-collab');
         if (btnVal) { btnVal.disabled = false; btnVal.style.opacity = '1'; }
       }
