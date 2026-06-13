@@ -6,6 +6,7 @@
 <title>Espace Responsable — Suivi du temps</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root {
   --bleu:       #1e3a5f;
@@ -62,6 +63,8 @@ tr:hover td { background: #fafcff; }
 .badge-inactif::before { background: #bbb; }
 .badge-attente { background: var(--orange-pale); color: var(--orange); }
 .badge-attente::before { background: var(--orange); }
+.badge-gelee { background: #e8f0fb; color: #2d5a8e; }
+.badge-gelee::before { background: #2d5a8e; }
 .recap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
 .stat-card { background: var(--bleu-pale); border-radius: var(--radius); padding: 16px 20px; }
 .stat-num { font-family: "DM Mono", monospace; font-size: 32px; font-weight: 500; color: var(--bleu); line-height: 1; }
@@ -136,10 +139,10 @@ input:focus { border-color: var(--bleu-clair); }
           <thead>
             <tr>
               <th>Collaborateur</th>
-              <th>H/sem</th>
-              <th>Dernière saisie</th>
-              <th>Heures</th>
               <th>Voir</th>
+              <th style="text-align:right">H/sem</th>
+              <th>Dernière saisie</th>
+              <th style="text-align:right">Heures</th>
             </tr>
           </thead>
           <tbody id="recap-tbody">
@@ -165,11 +168,14 @@ input:focus { border-color: var(--bleu-clair); }
   </div>
 </div>
 <script>
-const API_URL = 'https://script.google.com/macros/s/AKfycbx1BTyA9scZnOy7cFKoif9KuV_PuEmotXtO5yCheB-IUESExdG5v5l3maZ-Wn-XBowwbg/exec';
+const SUPABASE_URL = 'https://oldkmapumqnibdcniecd.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_sMySTPpkgaiUtnban8uCtw_HQFxmsgv';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let MANAGER_TOKEN = new URLSearchParams(location.search).get('token') || '';
 let recapData = [];
 let recapPeriodeId = '';
 let equipeCollabs = [];
+let managerEquipe = null;
 
 function fmtDate(d) {
   if (!d || d === '—' || d === '') return '—';
@@ -203,53 +209,81 @@ function fmtHeure(v) {
   return '';
 }
 
-function jsonpFetch(url) {
-  return new Promise((resolve, reject) => {
-    const cb = 'cb_' + Math.random().toString(36).slice(2);
-    const script = document.createElement('script');
-    window[cb] = (data) => { delete window[cb]; document.head.removeChild(script); resolve(data); };
-    script.src = url + '&callback=' + cb;
-    script.onerror = () => reject(new Error('Erreur réseau'));
-    document.head.appendChild(script);
-  });
-}
-
 async function login() {
   const token = document.getElementById('login-token').value.trim();
   if (!token) return;
   MANAGER_TOKEN = token;
-  try {
-    const d = await jsonpFetch(API_URL + '?action=bo_getRecapManager&token=' + encodeURIComponent(token));
-    if (!d.ok) {
-      document.getElementById('login-error').textContent = 'Token invalide.';
-      document.getElementById('login-error').style.display = 'block';
-      return;
-    }
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    charger30j();
-  } catch(e) {
-    document.getElementById('login-error').textContent = 'Erreur réseau.';
+  const { data: equipe, error } = await sb
+    .from('equipes').select('*').eq('manager_token', token).maybeSingle();
+  if (error || !equipe) {
+    document.getElementById('login-error').textContent = error ? 'Erreur de connexion.' : 'Accès refusé.';
     document.getElementById('login-error').style.display = 'block';
+    return;
   }
+  managerEquipe = equipe;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  charger30j();
 }
 
 if (MANAGER_TOKEN) { document.getElementById('login-token').value = MANAGER_TOKEN; login(); }
 
 async function charger30j() {
   document.getElementById('recap-tbody').innerHTML = '<tr><td colspan="5"><div class="loader"><div class="spinner"></div></div></td></tr>';
-  try {
-    const d = await jsonpFetch(API_URL + '?action=bo_getJoursEquipe30j&token=' + encodeURIComponent(MANAGER_TOKEN));
-    if (!d.ok) return;
-    document.getElementById('header-equipe').textContent = d.equipeNom || 'Mon équipe';
-    equipeCollabs = d.collabs || [];
-    const sorted = [...equipeCollabs].sort((a, b) => a.nomAffiche.localeCompare(b.nomAffiche));
-    document.getElementById('recap-tbody').innerHTML = sorted.length === 0
-      ? '<tr><td colspan="5" style="text-align:center;color:var(--texte3);padding:32px">Aucun collaborateur dans cette équipe.</td></tr>'
-      : sorted.map(c => '<tr><td><strong>'+c.nomAffiche+'</strong></td><td>'+(c.heuresHebdo?c.heuresHebdo+'h':'—')+'</td><td style="font-size:13px;color:var(--texte2)">'+(c.derniereSaisie||'—')+'</td><td><span style="font-family:monospace;font-weight:500">'+Number(c.totalHeures).toFixed(2)+'h</span></td><td><button class="btn btn-warning btn-sm" onclick="ouvrirSaisies(&quot;'+c.collabId+'&quot;, this)">Voir</button></td></tr>').join('');
-  } catch(e) {
-    document.getElementById('recap-tbody').innerHTML = '<tr><td colspan="5" style="color:var(--rouge);padding:24px">Erreur réseau.</td></tr>';
+  const eq = managerEquipe;
+  if (!eq) return;
+  document.getElementById('header-equipe').textContent = eq.nom_equipe || 'Mon équipe';
+
+  // Collabs actifs de l'équipe
+  const { data: collabs, error: ec } = await sb
+    .from('collaborateurs').select('*').eq('equipe_id', eq.equipe_id);
+  if (ec) { document.getElementById('recap-tbody').innerHTML = '<tr><td colspan="5" style="color:var(--rouge);padding:24px">Erreur de chargement.</td></tr>'; return; }
+  const actifs = (collabs || []).filter(c => c.actif === true || c.actif === 'TRUE' || c.actif === 1);
+  const ids = actifs.map(c => c.collab_id);
+
+  // Jours des 30 derniers jours pour ces collabs (un seul fetch)
+  const d30 = new Date(); d30.setDate(d30.getDate() - 30);
+  const d30ISO = String(d30.getFullYear()) + '-' + String(d30.getMonth()+1).padStart(2,'0') + '-' + String(d30.getDate()).padStart(2,'0');
+  let jours = [];
+  if (ids.length) {
+    const { data: dj } = await sb.from('jours').select('*')
+      .in('collab_id', ids).gte('date_jour', d30ISO).order('date_jour', {ascending:false});
+    jours = dj || [];
   }
+
+  // Mapping snake→camel + groupage par collab (jours embarqués pour la modale "Voir")
+  const fmtISO = iso => { if (!iso) return ''; const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : String(iso); };
+  const parCollab = {};
+  jours.forEach(j => {
+    (parCollab[j.collab_id] ||= []).push({
+      jourId: j.jour_id, dateJour: fmtISO(j.date_jour), jourSemaine: j.jour_semaine, typeJour: j.type_jour,
+      c1Debut: j.c1_debut||'', c1Fin: j.c1_fin||'', c2Debut: j.c2_debut||'', c2Fin: j.c2_fin||'',
+      c3Debut: j.c3_debut||'', c3Fin: j.c3_fin||'', totalHeures: j.total_heures, totalHebdoProg: j.total_hebdo_prog,
+      commentaire: j.commentaire||'', remarqueManager: j.remarque_manager||'', _dateISO: String(j.date_jour).slice(0,10)
+    });
+  });
+
+  // Agrégats à la volée (PAS de total_hebdo_prog stocké) — logique du Récap admin-v2
+  equipeCollabs = actifs.map(c => {
+    const js = parCollab[c.collab_id] || [];
+    const totalHeures = js.reduce((s,j) => s + (Number(j.totalHeures)||0), 0);
+    const saisis = js.filter(j => (j.c1Debut||j.c2Debut||j.c3Debut) || ['CP','AT','CS'].includes(j.typeJour));
+    const derniereISO = saisis.length ? saisis.map(j => j._dateISO).sort().slice(-1)[0] : '';
+    return {
+      collabId: c.collab_id,
+      nomAffiche: c.nom_affiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim(),
+      heuresHebdo: c.heures_hebdo,
+      totalHeures: totalHeures,
+      derniereSaisie: derniereISO ? fmtISO(derniereISO) : '—',
+      jours: js
+    };
+  });
+
+  // Rendu — identique à l'existant (non touché)
+  const sorted = [...equipeCollabs].sort((a, b) => a.nomAffiche.localeCompare(b.nomAffiche));
+  document.getElementById('recap-tbody').innerHTML = sorted.length === 0
+    ? '<tr><td colspan="5" style="text-align:center;color:var(--texte3);padding:32px">Aucun collaborateur dans cette équipe.</td></tr>'
+    : sorted.map(c => '<tr><td><strong>'+c.nomAffiche+'</strong></td><td><button class="btn btn-warning btn-sm" onclick="ouvrirSaisies(&quot;'+c.collabId+'&quot;, this)">Voir</button></td><td style="text-align:right">'+(c.heuresHebdo?c.heuresHebdo+'h':'—')+'</td><td style="font-size:13px;color:var(--texte2)">'+(c.derniereSaisie||'—')+'</td><td style="text-align:right"><span style="font-family:monospace;font-weight:500">'+Number(c.totalHeures).toFixed(2)+'h</span></td></tr>').join('');
 }
 
 function fermerSaisies() {
@@ -266,69 +300,100 @@ function ouvrirSaisies(collabId, btn) {
 
 function renderSaisies(jours, collabId) {
   const body = document.getElementById('saisies-body');
-  if (!jours.length) {
+  // Jours "saisis" uniquement (jour travaillé avec heures, ou CP/AT/CS)
+  const joursVus = (jours || []).filter(j => (Number(j.totalHeures) > 0) || ['CP','AT','CS'].includes(j.typeJour));
+  if (!joursVus.length) {
     body.innerHTML = '<div style="text-align:center;color:var(--texte3);padding:40px">Aucune saisie pour cette période.</div>';
     return;
   }
-  const typeLabel = t => ({ travaille:'Travaillé', conge:'Congé', absence:'Absence', ferie:'Férié', travaillée:'Travaillé' }[t] || t || '—');
-  const typeBadge = t => {
-    const cls = (t==='travaille'||t==='travaillée')?'badge-actif':t==='conge'?'badge-attente':t==='absence'?'badge-attente':'badge-inactif';
-    return '<span class="badge '+cls+'">'+typeLabel(t)+'</span>';
+  // Helpers date (clé locale, pas de toISOString → pas de décalage UTC)
+  const keyLocal = dt => String(dt.getFullYear()) + String(dt.getMonth()+1).padStart(2,'0') + String(dt.getDate()).padStart(2,'0');
+  const toDate = s => { const p=(s||'').split('/'); return p.length===3 ? new Date(p[2], p[1]-1, p[0]) : new Date(s); };
+  // Cumul hebdo progressif (lundi → jour inclus), par jourId, somme par plage de clés
+  const meta = joursVus.map(j => { const d = toDate(j.dateJour); return { j, d, key: isNaN(d) ? null : keyLocal(d) }; });
+  const cumulById = {};
+  meta.forEach(({ j, d, key }) => {
+    if (!key || isNaN(d)) { cumulById[j.jourId] = null; return; }
+    const dow = d.getDay() === 0 ? 6 : d.getDay() - 1;
+    const lundi = new Date(d); lundi.setDate(d.getDate() - dow);
+    const lundiKey = keyLocal(lundi);
+    let cumul = 0;
+    meta.forEach(m => { if (m.key && m.key >= lundiKey && m.key <= key) cumul += Number(m.j.totalHeures) || 0; });
+    cumulById[j.jourId] = cumul;
+  });
+  // Remap des types (vocabulaire Supabase) — badges cohérents
+  const TYPE_INFO = {
+    'travaillée': { cls:'badge-actif',   lbl:'Travaillée' },
+    'CP':         { cls:'badge-attente', lbl:'Congé payé' },
+    'AT':         { cls:'badge-inactif', lbl:'Arrêt travail' },
+    'CS':         { cls:'badge-gelee',   lbl:'Congé spécial' }
   };
+  const typeBadge = t => { const i = TYPE_INFO[t] || { cls:'badge-inactif', lbl: t || '—' }; return '<span class="badge '+i.cls+'">'+i.lbl+'</span>'; };
+  const cren = (deb, fin) => (fmtHeure(deb) && fmtHeure(fin)) ? fmtHeure(deb)+' → '+fmtHeure(fin) : '—';
   const th = s => '<th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);border-bottom:1px solid #e8f0f8;background:#fafcff;white-space:nowrap">'+s+'</th>';
   const td = (content, extra) => '<td style="padding:8px 10px;border-bottom:1px solid #f0f4f8;'+(extra||'')+'">'+content+'</td>';
-  body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'
-    + th('Date') + th('Type') + th('Créneau 1') + th('Créneau 2') + th('Créneau 3') + th('Total') + th('Cumul sem.') + th('Commentaire') + th('Remarque responsable')
+
+  const rows = joursVus.map((j, idx) => {
+    const d = toDate(j.dateJour);
+    const dow = isNaN(d) ? -1 : d.getDay();
+    const bg = dow===6 ? 'background:#fff8f0;' : dow===0 ? 'background:#fff0f0;' : '';
+    const cumul = cumulById[j.jourId];
+    const cumulTxt = cumul != null ? cumul.toFixed(2)+'h' : '—';
+    const totalTxt = (j.totalHeures != null && j.totalHeures !== '') ? Number(j.totalHeures).toFixed(2)+'h' : '—';
+    const jourId = (j.jourId||'').replace(/'/g,'');
+    const hasRem = j.remarqueManager && String(j.remarqueManager).trim();
+    const remVal = (j.remarqueManager||'').replace(/"/g,'&quot;');
+    return '<tr style="'+bg+'">'
+      + td('<strong>'+(j.dateJour||'—')+'</strong><div style="font-size:11px;color:var(--texte3)">'+(j.jourSemaine||'')+'</div>', 'white-space:nowrap')
+      + td(typeBadge(j.typeJour))
+      + td(cren(j.c1Debut,j.c1Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
+      + td(cren(j.c2Debut,j.c2Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
+      + td(cren(j.c3Debut,j.c3Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
+      + td('<span style="font-family:monospace;font-weight:600;color:var(--bleu)">'+totalTxt+'</span>')
+      + td('<span style="font-family:monospace;color:var(--texte2)">'+cumulTxt+'</span>')
+      + td('<span style="font-size:12px;color:var(--texte2)">'+(j.commentaire||'—').replace(/</g,'&lt;')+'</span>')
+      + '<td style="padding:6px 10px;border-bottom:1px solid #f0f4f8">'
+      + '<div style="display:flex;align-items:center;gap:6px">'
+      + '<input type="text" id="j'+idx+'-rem" value="'+remVal+'" placeholder="Ajouter une remarque…" style="flex:1;min-width:180px;font-size:12px;padding:5px 8px;'+(hasRem?'border-color:var(--orange);background:var(--orange-pale)':'')+'">'
+      + '<button class="btn btn-warning btn-sm" onclick="sauverRemarque('+idx+',\''+jourId+'\')">Enregistrer</button>'
+      + '</div>'
+      + '<div class="save-msg" id="jmsg-'+idx+'"></div>'
+      + '</td></tr>';
+  }).join('');
+
+  body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px">'
+    + '<thead style="position:sticky;top:-1px;z-index:2;box-shadow:0 1px 0 #e8f0f8"><tr>'
+    + th('Date') + th('Type') + th('Matin') + th('Après-midi') + th('Créneau 3') + th('Total') + th('Cumul sem.') + th('Commentaire') + th('Remarque responsable')
     + '</tr></thead><tbody>'
-    + jours.filter(j => (j.totalHeures && Number(j.totalHeures) > 0) || j.typeJour === 'CP' || j.typeJour === 'AT' || j.typeJour === 'conge' || j.typeJour === 'absence').map((j, idx) => {
-        const jourId = (j.jourId||'').replace(/'/g,'');
-        const vide = !j.typeJour;
-        const cren = (d, f) => (fmtHeure(d) && fmtHeure(f)) ? fmtHeure(d)+' → '+fmtHeure(f) : '—';
-        const hasRem = j.remarqueManager && j.remarqueManager.trim();
-        const remVal = (j.remarqueManager||'').replace(/"/g,'&quot;');
-        return '<tr style="'+(vide?'background:#fffbf5':'')+'">'
-          + td('<strong>'+(j.dateJour||'—')+'</strong><div style="font-size:11px;color:var(--texte3)">'+(j.jourSemaine||'')+'</div>', 'white-space:nowrap')
-          + td(typeBadge(j.typeJour))
-          + td(cren(j.c1Debut,j.c1Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
-          + td(cren(j.c2Debut,j.c2Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
-          + td(cren(j.c3Debut,j.c3Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
-          + td('<span style="font-family:monospace;font-weight:600;color:var(--bleu)">'+(j.totalHeures!=null&&j.totalHeures!==''?Number(j.totalHeures).toFixed(2)+'h':'—')+'</span>')
-          + td('<span style="font-family:monospace;font-size:12px;color:var(--texte3)">'+(j.totalHebdoProg!=null&&j.totalHebdoProg!==''?j.totalHebdoProg+'h':'—')+'</span>')
-          + td('<span style="font-size:12px;color:var(--texte2)">'+(j.commentaire||'—').replace(/</g,'&lt;')+'</span>')
-          + '<td style="padding:6px 10px;border-bottom:1px solid #f0f4f8">'
-          + '<div style="display:flex;align-items:center;gap:6px">'
-          + '<input type="text" id="j'+idx+'-rem" value="'+remVal+'" placeholder="Ajouter une remarque…" style="flex:1;min-width:180px;font-size:12px;padding:5px 8px;'+(hasRem?'border-color:var(--orange);background:var(--orange-pale)':'')+'">'
-          + '<button class="btn btn-warning btn-sm" onclick="sauverRemarque('+idx+',\''+jourId+'\')">Enregistrer</button>'
-          + '</div>'
-          + '<div class="save-msg" id="jmsg-'+idx+'"></div>'
-          + '</td></tr>';
-      }).join('')
+    + rows
     + '</tbody></table>';
 }
 
-function sauverRemarque(idx, jourId) {
+async function sauverRemarque(idx, jourId) {
   const msg = document.getElementById('jmsg-'+idx);
-  const remarque = (document.getElementById('j'+idx+'-rem')?.value || '').trim();
-  msg.style.display = 'none';
-  const url = API_URL + '?action=bo_saveRemarqueManager&token=' + encodeURIComponent(MANAGER_TOKEN)
-    + '&jourId=' + encodeURIComponent(jourId)
-    + '&remarque=' + encodeURIComponent(remarque);
-  jsonpFetch(url).then(d => {
-    msg.style.display = 'block';
-    if (d.ok) {
-      msg.style.color = 'var(--vert)';
-      msg.textContent = '✓ Remarque enregistrée';
-      const inp = document.getElementById('j'+idx+'-rem');
-      if (inp) { inp.style.borderColor = remarque ? 'var(--orange)' : ''; inp.style.background = remarque ? 'var(--orange-pale)' : ''; }
-    } else {
-      msg.style.color = 'var(--rouge)';
-      msg.textContent = d.error || 'Erreur.';
-    }
-  }).catch(() => {
-    msg.style.display = 'block';
+  const inp = document.getElementById('j'+idx+'-rem');
+  const remarque = (inp?.value || '').trim();
+  if (msg) msg.style.display = 'none';
+  const { data, error } = await sb
+    .from('jours')
+    .update({ remarque_manager: remarque })
+    .eq('jour_id', jourId)
+    .select('jour_id');
+  if (!msg) return;
+  msg.style.display = 'block';
+  if (error) {
     msg.style.color = 'var(--rouge)';
-    msg.textContent = 'Erreur réseau.';
-  });
+    msg.textContent = '✗ ' + (error.message || 'Enregistrement impossible.');
+    return;
+  }
+  if (!data || !data.length) {
+    msg.style.color = 'var(--rouge)';
+    msg.textContent = '✗ Jour introuvable — remarque non enregistrée.';
+    return;
+  }
+  msg.style.color = 'var(--vert)';
+  msg.textContent = '✓ Remarque enregistrée';
+  if (inp) { inp.style.borderColor = remarque ? 'var(--orange)' : ''; inp.style.background = remarque ? 'var(--orange-pale)' : ''; }
 }
 </script>
 </body>

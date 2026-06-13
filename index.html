@@ -875,7 +875,7 @@
             COLLAB_EQUIPE_ID = equipeManagerToken;
             if (COLLAB_ROLE === 'responsable' && COLLAB_EQUIPE_ID) {
               const btnEquipe = document.getElementById('btn-mon-equipe');
-              if (btnEquipe) { btnEquipe.style.display = 'flex'; btnEquipe.dataset.href = 'https://chantsdelaterre.github.io/suivi-temps/manager.html?token=' + COLLAB_EQUIPE_ID; }
+              if (btnEquipe) { btnEquipe.style.display = 'flex'; btnEquipe.dataset.href = 'manager.html?token=' + COLLAB_EQUIPE_ID; }
             }
             document.getElementById('hdr-periode').textContent = periode ? periode.nom_periode : 'Période en cours';
             renderJournee();
