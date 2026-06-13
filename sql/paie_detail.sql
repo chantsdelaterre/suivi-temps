@@ -10,7 +10,8 @@
 --   1. SAISIE COLLAB FIGÉE — recopie de `jours` au moment de la clôture
 --      (type_jour, créneaux, totaux, commentaire, nb_modifications…).
 --   2. VALIDATION ADMIN — valeurs finales retenues pour la paie + traçabilité
---      (type_jour_valide, heures_valide, ajuste_admin, note_admin).
+--      (type_jour_valide, heures_valide, ajuste_admin, note_admin,
+--       date_ajuste_admin [ajoutée 13/06, pas encore écrite par le front]).
 --
 -- NE stocke PAS le contexte contractuel (structure, heures_hebdo, type_contrat,
 --   matricule_silae…) : on le retrouve via `historique_contrats` (contrat en
@@ -63,6 +64,7 @@ create table public.paie_detail (
   heures_valide       numeric,                -- heures finales validées pour la paie
   ajuste_admin        boolean     default false,  -- jour modifié par l'admin ?
   note_admin          text,
+  date_ajuste_admin   timestamptz,                -- ajoutée le 13/06 (ALTER) — traçabilité future, PAS encore écrite par le front
 
   constraint paie_detail_collab_id_fkey
     foreign key (collab_id)

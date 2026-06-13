@@ -429,3 +429,55 @@ message d'erreur si échec). Bandeau = « **Paie en préparation — non validé
 
 `DEC_2026_06` **remise en `ouverte`** après les tests (gel temporaire utilisé
 pour tester l'import — **sans risque**, collabs encore sur Sheets/GAS).
+
+## Onglet Paie — ajustement & validation (cadré le 13/06/2026)
+
+Commit courant : **`a3d4ca8`** sur `supabase`. Le cycle paie est **complet en
+lecture/écriture sur Supabase** (hors clôture/PDF).
+
+### FAIT
+
+- **Détail Paie lit `paie_detail` couche 2** (`type_jour_valide`/`heures_valide`)
+  via `ouvrirSaisiesPaie`/`renderSaisiesPaie`/`buildTableSaisies`. **Consultation
+  = lecture seule** (Type, créneaux, Total, Commentaire verrouillés hors mode
+  Modification). **Badge = statut de la période** (`poserBadgePaie`).
+- **Ajustement admin** (mode Modification) : **bascule de type**
+  (`travaillée`/`CP`/`AT`/`CS`) ; **case Total éditable pour AT/CS** (pré-remplie
+  **7** si vide) ; **total recalculé depuis les créneaux** pour `travaillée` ;
+  **créneaux vides** pour AT/CP/CS ; **restauration des créneaux d'origine** au
+  retour vers `travaillée` (depuis le modèle, couche 1). Piloté par
+  `majTotalPaie` selon le type courant, **sans re-render**.
+- **Écriture couche 2** : `UPDATE paie_detail` (`type_jour_valide`,
+  `heures_valide`, `ajuste_admin=true`) **UNIQUEMENT sur les lignes réellement
+  modifiées** (comparaison de **nombres arrondis 2 déc.** des deux côtés).
+  **Jamais la table `jours`** (couche 1 = trace intouchable). `date_ajuste_admin`
+  **non écrit** (réservé).
+- **Bouton unique « 💾 Enregistrer et valider le relevé »** (`enregistrerEtValider`) :
+  enchaîne **UPDATE `paie_detail`** → recalcul des totaux → **upsert `recap_paie`**
+  (cœur partagé **`upsertRecapPaieCourant`**, sans alert). Après succès → **retour
+  à la liste Paie** (`retourPaie`). Un seul feedback.
+- **Liste Paie** : colonnes **Validation** (« ✅ Validé » si
+  `recap_paie.statut_validation='valide'`) et **Note admin** lues depuis
+  `recap_paie` (1 requête par période, injectée dans `calculerPaieDepuisPaieDetail`).
+
+### RESTE (backlog paie, par ordre)
+
+1. **Clôture de période** (`gelee → cloturee`) quand tous les collabs sont validés.
+2. **Cycle rouvrir** (`cloturee → gelee`).
+3. **Export PDF** du relevé détaillé.
+4. **Colonnes `nb_at` / `nb_cs`** à ajouter dans `recap_paie` (récap les ignore
+   aujourd'hui ; seules les heures AT/CS y sont).
+5. **Ménage** : `rechargerDetailPaie` devenue **inutilisée** ; + doublon
+   `calculerPaiePeriode`, `grouperParSemaine`, `initPaie`, fonctions GAS mortes.
+6. **RESÉCURISATION RLS post-15** : `paie_detail`, `recap_paie`,
+   `historique_contrats` sont en **accès `anon` ouvert (phase DEV)** — à
+   restreindre à l'auth admin avant mise en production.
+
+### Accès SQL ouverts en base (phase DEV, le 13/06)
+
+- **`recap_paie`** : `grant select, insert, update … to anon` + policies
+  lecture/insertion/maj (`using/with check (true)`). Consigné dans
+  `sql/recap_paie.sql`.
+- **`paie_detail`** : colonne **`date_ajuste_admin`** (`timestamptz`, nullable)
+  ajoutée par `ALTER TABLE` — **existe mais pas encore écrite par le front**.
+  Consignée dans `sql/paie_detail.sql`.

@@ -18,9 +18,11 @@
 -- Unicité   : (periode_id, collab_id) — une seule ligne de récap par collab et
 --             par période.
 --
--- ⚠️ RLS NON ACTIVÉE — donnée sensible (paie). RLS à activer IMPÉRATIVEMENT
---    avant la mise en production de l'écran admin (comme `paie_detail` et
---    `historique_contrats`).
+-- ⚠️ RLS ACTIVÉE (rowsecurity = true) — MAIS des policies de phase DEV
+--    (lecture + insertion + maj, using/with check (true)) OUVRENT l'accès à
+--    `anon` (ouvert le 13/06, cf. section « ACCÈS » en fin de fichier). Donnée
+--    TRÈS sensible (synthèse de paie) : à RESÉCURISER IMPÉRATIVEMENT avec l'auth
+--    admin avant la mise en production (post-15/06).
 --
 -- Déploiement : MANUEL, copier-coller dans le SQL Editor de Supabase.
 --              ⚠️ Recrée la table : exécuter les 3 étapes DANS L'ORDRE et
@@ -74,3 +76,32 @@ create table public.recap_paie (
   constraint recap_paie_unique
     unique (periode_id, collab_id)
 );
+
+-- -----------------------------------------------------------------------------
+-- ACCÈS LECTURE / ÉCRITURE (phase DEV) — exécuté en base le 2026-06-13.
+-- RLS activée ; ces grants + policies ouvrent SELECT/INSERT/UPDATE à `anon`
+-- pour que l'app admin (admin-v2.html) écrive la validation/clôture (recap_paie).
+-- ⚠️ LECTURE **ET ÉCRITURE** OUVERTES (using/with check (true)) — NON sécurisé,
+--    synthèse de paie (très sensible). À RESÉCURISER IMPÉRATIVEMENT APRÈS le 15/06 :
+--    restreindre au rôle admin authentifié et retirer l'accès `anon`.
+-- -----------------------------------------------------------------------------
+grant select, insert, update on public.recap_paie to anon;
+
+create policy "lecture recap_paie"
+  on public.recap_paie
+  for select
+  to public
+  using (true);
+
+create policy "insertion recap_paie"
+  on public.recap_paie
+  for insert
+  to public
+  with check (true);
+
+create policy "maj recap_paie"
+  on public.recap_paie
+  for update
+  to public
+  using (true)
+  with check (true);
