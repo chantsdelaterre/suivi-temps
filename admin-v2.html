@@ -908,49 +908,86 @@ async function sauverCollab() {
   const errBox = document.getElementById('modal-error');
   errBox.style.display = 'none';
   btn.disabled = true; btn.textContent = '⏳ Enregistrement…';
-  const params = {
-    action: 'bo_saveCollab',
-    collabId: collabEnEdition?.collabId || '',
-    prenom: (v => v.charAt(0).toUpperCase() + v.slice(1).toLowerCase())(document.getElementById('f-prenom').value.trim()),
-    nom: document.getElementById('f-nom').value.trim().toUpperCase(),
-    email: document.getElementById('f-email').value.trim().toLowerCase(),
-    structure: document.getElementById('f-structure').value,
-    typeContrat: document.getElementById('f-contrat').value,
-    heuresHebdo: document.getElementById('f-heures').value,
-    statut: document.getElementById('f-statut').value,
-    typePeriode: document.getElementById('f-type-periode').value,
-    matriculeSilae: document.getElementById('f-matricule-silae').value,
-    dateActivation: document.getElementById('f-date-activation').value,
-    equipeId: document.getElementById('f-equipe').value,
-    token: ADMIN_TOKEN,
+  const showErr = m => { errBox.textContent = m; errBox.style.display = 'block'; btn.disabled = false; btn.textContent = 'Enregistrer'; };
+  const cap = s => { s = (s||'').trim(); return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : ''; };
+  const orNull = v => { v = (typeof v === 'string') ? v.trim() : v; return (v === '' || v == null) ? null : v; };
+
+  const prenom        = cap(document.getElementById('f-prenom').value);
+  const nom           = document.getElementById('f-nom').value.trim().toUpperCase();
+  const email         = document.getElementById('f-email').value.trim().toLowerCase();
+  const structure     = document.getElementById('f-structure').value;
+  const typeContrat   = document.getElementById('f-contrat').value;
+  const typePeriode   = document.getElementById('f-type-periode').value;
+  const heuresRaw     = document.getElementById('f-heures').value.trim();
+  const statut        = document.getElementById('f-statut').value;
+  const dateActivation= document.getElementById('f-date-activation').value;
+  const matriculeSilae= document.getElementById('f-matricule-silae').value;
+  const equipeId      = document.getElementById('f-equipe').value;
+
+  // Validation type_periode obligatoire (inchangée)
+  if (!typePeriode) { showErr('Aucune période de paie définie pour ce collaborateur — veuillez sélectionner un type de période.'); return; }
+
+  // Champs communs création + édition. nom_affiche recalculé. Vides → null.
+  const champs = {
+    prenom:          orNull(prenom),
+    nom:             orNull(nom),
+    nom_affiche:     (prenom + ' ' + nom).trim(),
+    email:           orNull(email),
+    structure:       orNull(structure),
+    type_contrat:    orNull(typeContrat),
+    type_periode:    typePeriode,
+    heures_hebdo:    heuresRaw === '' ? null : Number(heuresRaw),
+    statut:          statut,
+    actif:           statut === 'actif',
+    date_activation: orNull(dateActivation),
+    matricule_silae: orNull(matriculeSilae),
+    equipe_id:       orNull(equipeId),
   };
-  // Validation type_periode obligatoire
-  if (!params.typePeriode) {
-    errBox.textContent = 'Aucune période de paie définie pour ce collaborateur — veuillez sélectionner un type de période.';
-    errBox.style.display = 'block';
-    btn.disabled = false; btn.textContent = 'Enregistrer';
-    return;
-  }
+
   try {
-    const url = API_URL + '?' + Object.entries(params).map(([k,v]) => k+'='+encodeURIComponent(v)).join('&');
-    const d = await jsonpFetch(url);
-    if (!d.ok) {
-      errBox.textContent = d.error||'Erreur.';
-      errBox.style.display = 'block';
-      btn.disabled = false; btn.textContent = 'Enregistrer';
-      return;
+    if (collabEnEdition) {
+      // ── ÉDITION ── collab_id et token INCHANGÉS
+      const { error } = await sb.from('collaborateurs').update(champs).eq('collab_id', collabEnEdition.collabId);
+      if (error) { showErr('Échec de l\'enregistrement : ' + error.message); return; }
+      fermerModal();
+      chargerCollabs();
+    } else {
+      // ── CRÉATION ──
+      // 1) collab_id = COLL + (max numéro existant + 1) sur 3 chiffres
+      const { data: existants, error: eList } = await sb.from('collaborateurs').select('collab_id');
+      if (eList) { showErr('Échec (lecture des collab_id) : ' + eList.message); return; }
+      let maxNum = 0;
+      (existants || []).forEach(r => { const m = /^COLL(\d+)$/.exec(r.collab_id || ''); if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10)); });
+      const collabId = 'COLL' + String(maxNum + 1).padStart(3, '0');
+      // 2) token aléatoire 8 car. [a-z0-9], unique en base (régénéré si collision)
+      let token = null;
+      for (let i = 0; i < 20 && !token; i++) {
+        const t = genTokenCollab();
+        const { data: dup, error: eDup } = await sb.from('collaborateurs').select('collab_id').eq('token', t).maybeSingle();
+        if (eDup) { showErr('Échec (vérification token) : ' + eDup.message); return; }
+        if (!dup) token = t;
+      }
+      if (!token) { showErr('Impossible de générer un token unique, réessayez.'); return; }
+      // 3) INSERT
+      const { error } = await sb.from('collaborateurs').insert({ collab_id: collabId, token: token, ...champs });
+      if (error) { showErr('Échec de la création : ' + error.message); return; }
+      alert('✓ Collaborateur créé !');
+      fermerModal();
+      chargerCollabs();
     }
-    if (d.action === 'created' && d.lien) {
-      navigator.clipboard.writeText(d.lien).catch(()=>{});
-      alert('✓ Collaborateur créé !\n\nLien copié :\n' + d.lien);
-    }
-    fermerModal();
-    chargerCollabs();
-  } catch(e) {
-    errBox.textContent = 'Erreur réseau.';
-    errBox.style.display = 'block';
-    btn.disabled = false; btn.textContent = 'Enregistrer';
+  } catch (e) {
+    showErr('Erreur : ' + (e && e.message ? e.message : e));
   }
+}
+
+// Token d'accès collab : 8 caractères [a-z0-9], aléatoire non biaisé
+function genTokenCollab() {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const arr = new Uint32Array(8);
+  crypto.getRandomValues(arr);
+  let t = '';
+  for (let i = 0; i < 8; i++) t += chars[arr[i] % chars.length];
+  return t;
 }
 
 async function toggleCollab(collabId, btn) {
