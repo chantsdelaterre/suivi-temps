@@ -540,3 +540,78 @@ foi** sur les points qu'elle recouvre (supersède le backlog du 13/06 : la
 - **ABANDONNÉ** : **verrou lecture seule période clôturée** + **bouton Rouvrir**.
   Décision : on **rouvre 1 collab via Détail** (re-validation), la **période
   reste `cloturee`**. (Supersède les points 1-2 « rouvrir » du backlog du 13/06.)
+
+## Chantier HISTORISATION DES CONTRATS — conception figée (14/06/2026)
+
+> À coder **à froid, en session dédiée**. Chantier **sensible** : on écrit dans
+> `historique_contrats`, table **lue par le calcul de paie**. Une erreur fausse
+> des calculs de paie. Procéder **par étapes testables**, comme la clôture.
+
+### Principe métier
+
+Un champ **contractuel** ne change jamais « en écrasant » : on garde la trace.
+**Geste à deux écritures coordonnées** :
+1. **Clôturer** la ligne d'historique en cours → `date_fin` = **veille de la date d'effet**.
+2. **Ouvrir** une nouvelle ligne → `date_debut` = date d'effet, `date_fin` = null, nouvelles valeurs.
+
+- Champs **contractuels** (déclenchent une nouvelle ligne) : `heures_hebdo`,
+  `structure`, `type_contrat`, `type_periode`, `matricule_silae`.
+- Champs **non contractuels** (ne touchent JAMAIS l'historique) : équipe, email,
+  nom, etc. (« administratif »).
+- **Règle d'or** : les champs contractuels ne sont JAMAIS modifiables librement —
+  ils ne changent QUE par le geste daté « changement de contrat », qui crée
+  toujours la trace historique correspondante.
+
+### Les 3 écrans
+
+1. **Formulaire de CRÉATION (l'actuel, conservé)** : tous les champs saisis (dont
+   contractuels). À la validation → crée la ligne `collaborateurs` **ET** la 1re
+   ligne `historique_contrats` (`date_debut` = **date d'activation du collab**,
+   `date_fin` = null). Seul ajout vs aujourd'hui : la création écrit aussi
+   l'historique.
+2. **Modale unique « Modifier collab » (existant) — DEUX zones / DEUX boutons** :
+   - **Haut — admin éditable** (nom, email, équipe…) : bouton « Enregistrer » →
+     met à jour `collaborateurs` **uniquement**, ne touche pas l'historique.
+   - **Bas — contrat / historique** : situation contractuelle **actuelle** en
+     **lecture seule** ; zone « changement de contrat » = les 5 champs
+     contractuels + **date d'effet** ; **bouton séparé** « Enregistrer le
+     changement de contrat ». Deux gestes de nature différente, **deux mécaniques
+     distinctes**.
+
+### Règles de date d'effet
+
+- Date d'effet **présente ou future** : cas normal, autorisé.
+- Date d'effet **rétroactive sur une période déjà clôturée** : **avertir / bloquer**
+  (pas de recalcul d'une paie déjà validée). Régularisation rétroactive = cas
+  avancé, traité plus tard.
+
+### Technique : geste à deux écritures = fonction SQL TRANSACTIONNELLE
+
+Le changement de contrat fait **3 écritures** (fermer ancienne ligne + ouvrir
+nouvelle + maj `collaborateurs`) → une **fonction SQL transactionnelle**
+(tout-ou-rien), même esprit que `verifier_admin`. **JAMAIS** un enchaînement de
+requêtes côté front pour ce geste.
+
+### Préalable au code (état des lieux en début de session)
+
+- Comment `sauverCollab` gère **création vs édition** aujourd'hui (champs,
+  formulaire HTML) pour savoir comment le **scinder** : création (geste 1 +
+  écriture historique) vs édition (modale 2 zones).
+- Structure de `historique_contrats` (connue) : `collab_id, date_debut,
+  date_fin, structure, type_contrat, heures_hebdo, matricule_silae, type_periode`.
+
+### Ce que ça débloque ensuite
+
+- **PDF 2 (récap admin)** : situation contrat au 1er jour de période /
+  modifications / situation au dernier jour (ou « pas de modification »). Ne
+  fonctionne vraiment qu'avec un historique vivant → **après ce chantier**.
+- **Indicateur de modification de contrat** sur le récap (badge « ! » + modale
+  avant/après).
+
+### État de départ (au 14/06/2026)
+
+- `historique_contrats` : **29 lignes**, toutes `date_debut=2026-01-01`,
+  `date_fin=null`, **une seule ligne par collab**.
+- `sauverCollab` écrit **UNIQUEMENT** dans `collaborateurs`, jamais dans
+  `historique_contrats` → c'est ce qu'on vient corriger.
+- `matricule_silae` : **null partout** (à renseigner un jour ; non bloquant).
