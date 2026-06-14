@@ -2297,7 +2297,8 @@ function renderArchivesFiltered() {
         + '<td style="text-align:center">'+(r.nb_cp || 0)+'</td>'
         + '<td style="text-align:center">'+(r.nb_jours_travailles || 0)+'</td>'
         + '<td>'+(r.note_admin ? String(r.note_admin).replace(/</g,'&lt;') : '—')+'</td>'
-        + '<td><button class="btn btn-primary btn-sm" onclick="ouvrirDetailArchive(\''+collabEnc+'\',\''+r.periodeId+'\', this)">📋 Détail</button></td>'
+        + '<td style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="ouvrirDetailArchive(\''+collabEnc+'\',\''+r.periodeId+'\', this)">📋 Détail</button>'
+          + '<button class="btn btn-secondary btn-sm" onclick="genererPdfReleve(\''+collabEnc+'\',\''+r.periodeId+'\')">📄 PDF</button></td>'
         + '</tr>';
     }).join('');
 }
@@ -2307,6 +2308,128 @@ async function ouvrirDetailArchive(collabIdEnc, periodeId, btn) {
   paieCurrentPeriode = periodeId;
   await chargerPaie(periodeId);          // _paie_recap_current pour CETTE période + import idempotent
   await ouvrirSaisiesPaie(collabIdEnc, btn);
+}
+
+// Génère le relevé d'heures imprimable (PDF via window.print) d'un collab sur une période.
+async function genererPdfReleve(collabIdEnc, periodeId) {
+  const collabId = decodeURIComponent(collabIdEnc);
+  // 1) paie_detail (couche 2) trié par date
+  const { data: det, error } = await sb.from('paie_detail')
+    .select('date_jour, jour_semaine, type_jour_valide, c1_debut, c1_fin, c2_debut, c2_fin, c3_debut, c3_fin, heures_valide')
+    .eq('collab_id', collabId).eq('periode_id', periodeId).order('date_jour');
+  if (error) { alert('Erreur de lecture du relevé : ' + (error.message || error.code)); return; }
+  if (!det || !det.length) { alert('Aucune donnée pour ce relevé.'); return; }
+  // 2) Contexte collab (structure depuis collaborateurs / collabsData) + période
+  const collab = (collabsData || []).find(c => c.collabId === collabId) || {};
+  let structure = collab.structure, nomAffiche = collab.nomAffiche;
+  if (!structure || !nomAffiche) {
+    const { data } = await sb.from('collaborateurs').select('nom_affiche, structure').eq('collab_id', collabId).maybeSingle();
+    if (data) { structure = structure || data.structure; nomAffiche = nomAffiche || data.nom_affiche; }
+  }
+  nomAffiche = nomAffiche || collabId;
+  const SOC = { SCEA:'SCEA Chants de la Terre', SAS:'SAS Chants de la Terre', SARL:'SARL Les 6 Saveurs' };
+  const societe = SOC[structure] || 'Chants de la Terre';
+  const periode = (periodesData || []).find(p => p.periodeId === periodeId) || {};
+  // Helpers
+  const fmtJJMMAAAA = iso => { if (!iso) return ''; const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : String(iso); };
+  const fmtJJMM = iso => { const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1] : String(iso); };
+  const toDate = iso => { const p = String(iso).slice(0,10).split('-'); return new Date(+p[0], +p[1]-1, +p[2]); };
+  const keyLundi = d => { const dow = d.getDay()===0?6:d.getDay()-1; const l = new Date(d); l.setDate(d.getDate()-dow); return String(l.getFullYear())+String(l.getMonth()+1).padStart(2,'0')+String(l.getDate()).padStart(2,'0'); };
+  const abrJour = (js, d) => js ? (js.slice(0,3) + '.') : ['Dim.','Lun.','Mar.','Mer.','Jeu.','Ven.','Sam.'][d.getDay()];
+  const fmtH = n => (Number(n)||0).toFixed(2).replace('.', ',') + ' h';
+  const cr = (deb, fin) => (fmtHeure(deb) && fmtHeure(fin)) ? fmtHeure(deb)+'–'+fmtHeure(fin) : null;
+  // Colonne Créneau 3 : seulement si au moins un jour en a un
+  const showC3 = det.some(d => fmtHeure(d.c3_debut) && fmtHeure(d.c3_fin));
+  // 3) Lignes + total sem. à la volée (reset chaque lundi) + total global
+  const badge = t => t==='CP' ? '<span class="badge b-cp">CP</span>'
+    : t==='AT' ? '<span class="badge b-at">AT</span>'
+    : t==='CS' ? '<span class="badge b-cs">CS</span>' : 'travaillée';
+  const cell = v => v ? '<td class="creneau">'+v+'</td>' : '<td class="vide">—</td>';
+  let weekKey = null, weekCumul = 0, totalGlobal = 0;
+  const rows = det.map(d => {
+    const dt = toDate(d.date_jour), wk = keyLundi(dt);
+    if (wk !== weekKey) { weekKey = wk; weekCumul = 0; }
+    const h = Number(d.heures_valide) || 0;
+    weekCumul += h; totalGlobal += h;
+    const dow = dt.getDay();
+    const trCls = dow===6 ? ' class="sam"' : dow===0 ? ' class="dim"' : '';
+    const trav = d.type_jour_valide === 'travaillée';
+    const c1v = trav ? cr(d.c1_debut,d.c1_fin) : null;
+    const c2v = trav ? cr(d.c2_debut,d.c2_fin) : null;
+    const c3v = trav ? cr(d.c3_debut,d.c3_fin) : null;
+    const aCreneau = !!(c1v || c2v || c3v);
+    // 'travaillée' masqué si jour vide (0h ET aucun créneau) → "—" ; CP/AT/CS inchangés
+    const typeHtml = (trav && h === 0 && !aCreneau) ? '<span class="vide">—</span>' : badge(d.type_jour_valide);
+    return '<tr'+trCls+'>'
+      + '<td class="l date">'+abrJour(d.jour_semaine, dt)+' '+fmtJJMM(d.date_jour)+'</td>'
+      + '<td class="type">'+typeHtml+'</td>'
+      + cell(c1v)
+      + cell(c2v)
+      + (showC3 ? cell(c3v) : '')
+      + '<td class="tot">'+fmtH(h)+'</td>'
+      + '<td class="sem">'+fmtH(weekCumul)+'</td>'
+      + '</tr>';
+  }).join('');
+  const auj = new Date();
+  const editeLe = String(auj.getDate()).padStart(2,'0')+'/'+String(auj.getMonth()+1).padStart(2,'0')+'/'+auj.getFullYear();
+  // 4) Document A4 (CSS maquette) + impression auto
+  const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>Relevé d'heures — ${nomAffiche}</title>
+<style>
+:root{--txt:#1a1a1a;--txt2:#555;--bord:#d0d0d0;--bord2:#ececec;--sam:#ebebeb;--dim:#d8d8d8;--entete:#2d4a3e;}
+*{box-sizing:border-box}
+body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--txt);margin:0;padding:0;background:#f0f0f0;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.page{width:210mm;min-height:297mm;margin:16px auto;background:#fff;padding:14mm 16mm;box-shadow:0 2px 12px rgba(0,0,0,.12);}
+.entete{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2.5px solid var(--entete);padding-bottom:9px;margin-bottom:10px;}
+.entete .societe{font-size:16px;font-weight:700;color:var(--entete);letter-spacing:.2px;}
+.entete .doc{font-size:12px;font-weight:600;text-align:right;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;}
+.ident{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;}
+.ident .nom{font-size:15px;font-weight:700;}
+.ident .periode{font-size:12.5px;font-weight:600;color:var(--txt2);}
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:11px;}
+thead th{background:var(--entete);color:#fff;font-weight:600;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;padding:5px 6px;text-align:center;}
+thead th.l{text-align:left;}
+tbody td{padding:3px 6px;border-bottom:1px solid var(--bord2);text-align:center;}
+tbody td.l{text-align:left;}
+tbody td.date{white-space:nowrap;font-weight:500;}
+tbody td.type{font-size:10px;}
+tbody td.tot{font-weight:700;font-variant-numeric:tabular-nums;}
+tbody td.sem{color:var(--txt2);font-variant-numeric:tabular-nums;}
+tbody tr.sam td{background:var(--sam);}
+tbody tr.dim td{background:var(--dim);}
+.badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;letter-spacing:.3px;}
+.b-cp{background:#e3f0ff;color:#1a5fb4;}
+.b-at{background:#ffeede;color:#b5651d;}
+.b-cs{background:#fde8ef;color:#a01f4c;}
+.creneau{font-variant-numeric:tabular-nums;}
+.vide{color:#c4c4c4;}
+.pied{margin-top:14px;}
+.pied .grand{font-size:14px;font-weight:700;color:var(--entete);}
+.pied .edite{font-size:10px;color:var(--txt2);margin-top:2px;}
+.signatures{display:flex;gap:28px;margin-top:22px;}
+.sign{flex:1;border-top:1.3px solid var(--txt);padding-top:5px;display:flex;justify-content:space-between;align-items:baseline;}
+.sign .g .role{font-size:9.5px;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;}
+.sign .g .nom{font-size:12px;font-weight:600;margin-top:1px;}
+.sign .date{font-size:10px;color:var(--txt2);margin-top:2px;}
+@media print{body{background:#fff;}.page{margin:0;box-shadow:none;width:auto;min-height:auto;padding:10mm;}tbody tr.sam td,tbody tr.dim td{-webkit-print-color-adjust:exact;print-color-adjust:exact;}@page{size:A4;margin:10mm;}}
+</style></head>
+<body><div class="page">
+  <div class="entete"><div class="societe">${societe}</div><div class="doc">Relevé d'heures</div></div>
+  <div class="ident"><div class="nom">${nomAffiche}</div><div class="periode">Période du ${fmtJJMMAAAA(periode.dateDebut)} au ${fmtJJMMAAAA(periode.dateFin)}</div></div>
+  <table><thead><tr>
+    <th class="l">Date</th><th>Type</th><th>Créneau 1</th><th>Créneau 2</th>${showC3?'<th>Créneau 3</th>':''}<th>Total jour</th><th>Total sem.</th>
+  </tr></thead><tbody>${rows}</tbody></table>
+  <div class="pied"><div class="grand">Total comptabilisé : ${fmtH(totalGlobal)}</div><div class="edite">Édité le ${editeLe}</div></div>
+  <div class="signatures">
+    <div class="sign"><div class="g"><div class="role">Signature de l'employé</div><div class="nom">${nomAffiche}<span style="margin-left:32px">Date :</span></div></div></div>
+    <div class="sign"><div class="g"><div class="role">Signature de l'employeur</div><div class="nom">${societe}<span style="margin-left:32px">Date :</span></div></div></div>
+  </div>
+</div>
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('Autorise les fenêtres pop-up pour générer le PDF.'); return; }
+  w.document.write(html); w.document.close();
 }
 
 async function chargerPeriodes() {
