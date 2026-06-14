@@ -276,10 +276,12 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
       <div class="card" style="margin-bottom:20px">
         <div class="card-header">
           <span class="card-title" id="paie-titre">Gestion de la paie</span>
-          <select id="paie-periode-select" onchange="chargerPaie(this.value)" style="font-size:13px;padding:6px 10px;border-radius:8px;border:1.5px solid #dce6f0;">
-            <option value="">— Sélectionner une période clôturée —</option>
-          </select>
+          <div class="toggle-pill" id="paie-sous-onglets">
+            <button class="pill-active" id="pill-a-traiter" onclick="setPaieSousOnglet('gelee')">📋 À traiter</button>
+            <button id="pill-cloturees" onclick="setPaieSousOnglet('cloturee')">🔒 Clôturées</button>
+          </div>
         </div>
+        <div class="card-body" id="paie-entete"></div>
         <div class="card-body" id="paie-indicateur" style="display:none">
           <div id="paie-statut-global" style="padding:12px 16px;border-radius:10px;font-size:14px;font-weight:500"></div>
         </div>
@@ -309,6 +311,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
       <div class="card" id="paie-card" style="display:none">
         <div class="card-header">
           <span class="card-title">Récapitulatif par collaborateur</span>
+          <span id="paie-validation-count" style="font-size:13px;font-weight:600"></span>
         </div>
         <div style="padding:12px 24px;border-bottom:1px solid #e8f0f8;display:flex;gap:6px;align-items:center">
           <button class="filter-btn active" onclick="setFiltrePaie('',this)">Toutes</button>
@@ -543,7 +546,7 @@ function showTab(nom, el) {
   el.classList.add('active');
   if (nom === 'periodes') chargerPeriodes();
   if (nom === 'recap') chargerRecap();
-  if (nom === 'paie') chargerPeriodes();
+  if (nom === 'paie') chargerPeriodes().then(() => setPaieSousOnglet(paieSousOnglet));
   if (nom === 'equipes') chargerVueEquipes();
 }
 
@@ -859,12 +862,15 @@ async function upsertRecapPaieCourant() {
     heures_travaillees:  ligne.heures_travaillees,
     heures_at:           ligne.heures_at,
     heures_cs:           ligne.heures_cs,
+    nb_at:               ligne.nb_at,
+    nb_cs:               ligne.nb_cs,
     nb_cp:               ligne.nb_cp,
     nb_jours_travailles: ligne.nb_jours_travailles,
     statut_validation:   'valide',
     date_validation:     dateValidation,
     note_admin:          note
-    // nb_at/nb_cs : colonnes absentes (assumé). date_ajuste_admin : non écrit. Statut période : non touché.
+    // nb_at/nb_cs : nb de JOURS AT/CS (depuis paie_detail couche 2, via calculerPaieDepuisPaieDetail).
+    // date_ajuste_admin : non écrit. Statut période : non touché.
   }, { onConflict: 'periode_id,collab_id' });
   return error ? { ok:false, error } : { ok:true };
 }
@@ -1001,6 +1007,7 @@ async function toggleCollab(collabId, btn) {
 
 // ── PAIE ─────────────────────────────────────────────────────────────────────
 let paieCurrentPeriode = '';
+let paieSousOnglet = 'gelee';   // sous-onglet Paie actif : 'gelee' (À traiter) | 'cloturee' (Clôturées)
 let filtrePaieStructure = '';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1356,9 +1363,16 @@ function renderPaie(recap, periodeId) {
     statut.style.color = 'var(--bleu)';
     statut.textContent = 'ℹ️ Paie en préparation — non validée (validation / clôture à faire)';
   }
-  const sel = document.getElementById('paie-periode-select');
-  const opt = sel.querySelector('option[value="'+periodeId+'"]');
-  document.getElementById('paie-titre').textContent = 'Paie — ' + (opt ? opt.textContent : periodeId);
+  const p = (periodesData || []).find(x => x.periodeId === periodeId);
+  document.getElementById('paie-titre').textContent = 'Paie — ' + (p ? p.nomPeriode : periodeId);
+  // Indicateur X / Y validés — lecture seule, sur le récap COMPLET (indépendant du filtre structure)
+  const vc = document.getElementById('paie-validation-count');
+  if (vc) {
+    const total = recap.length;
+    const valides = recap.filter(r => r.statut_validation === 'valide').length;
+    vc.textContent = total ? (valides + ' / ' + total + ' validés') : '';
+    vc.style.color = (total > 0 && valides === total) ? 'var(--vert)' : 'var(--texte2)';
+  }
   renderPaieFiltered();
 }
 
@@ -1417,10 +1431,17 @@ async function sauverNote(collabId, note) {
 
 function retourPaie() {
   document.getElementById('paie-detail').style.display = 'none';
-  document.getElementById('paie-card').style.display = 'block';
-  document.getElementById('paie-indicateur').style.display = 'block';
   document.querySelector('#vue-paie .card:first-child').style.display = 'block';
   _paieCurrentCollab = null;
+  if (paieSousOnglet === 'cloturee') {
+    // Retour vers la table transversale (reflète une éventuelle re-validation)
+    document.getElementById('paie-card').style.display = 'none';
+    document.getElementById('paie-indicateur').style.display = 'none';
+    chargerArchivesCloturees();
+    return;
+  }
+  document.getElementById('paie-card').style.display = 'block';
+  document.getElementById('paie-indicateur').style.display = 'block';
   chargerPaie(paieCurrentPeriode);
 }
 
@@ -2066,6 +2087,228 @@ function verifierAlertePeriodes(periodes) {
   }
 }
 
+// Bascule de sous-onglet Paie ("À traiter" = gelee / "Clôturées" = cloturee).
+function setPaieSousOnglet(statut) {
+  paieSousOnglet = statut;
+  const pa = document.getElementById('pill-a-traiter');
+  const pc = document.getElementById('pill-cloturees');
+  if (pa) pa.classList.toggle('pill-active', statut === 'gelee');
+  if (pc) pc.classList.toggle('pill-active', statut === 'cloturee');
+  paieCurrentPeriode = '';            // reset de la sélection au changement d'onglet
+  renderEntetePaie(true);
+}
+
+// Compte X (validés via recap_paie) et Y (collabs avec données via paie_detail) par période,
+// en 2 requêtes batch (.in) — JAMAIS une requête par période.
+async function calculerCountsPaie(ids) {
+  const out = {};
+  ids.forEach(id => { out[id] = { x:0, y:0, _data:new Set(), _valid:new Set() }; });
+  if (!ids.length) return out;
+  // Y = collabs ayant des données (distinct collab_id dans paie_detail) — cohérent avec renderPaie
+  const { data: det, error: ed } = await sb.from('paie_detail').select('periode_id, collab_id').in('periode_id', ids);
+  if (!ed) (det||[]).forEach(d => { if (out[d.periode_id]) out[d.periode_id]._data.add(d.collab_id); });
+  // X = collabs validés (recap_paie.statut_validation='valide')
+  const { data: rec, error: er } = await sb.from('recap_paie').select('periode_id, collab_id, statut_validation').in('periode_id', ids);
+  if (!er) (rec||[]).forEach(r => { if (out[r.periode_id] && r.statut_validation==='valide') out[r.periode_id]._valid.add(r.collab_id); });
+  ids.forEach(id => { out[id].y = out[id]._data.size; out[id].x = out[id]._valid.size; });
+  return out;
+}
+
+// Vide / masque l'affichage récap (message optionnel affiché dans la carte récap).
+function viderRecapPaie(message) {
+  paieCurrentPeriode = '';
+  const detail = document.getElementById('paie-detail'); if (detail) detail.style.display = 'none';
+  const indic = document.getElementById('paie-indicateur'); if (indic) indic.style.display = 'none';
+  document.querySelector('#vue-paie .card:first-child').style.display = 'block';
+  const card = document.getElementById('paie-card');
+  if (message) {
+    card.style.display = 'block';
+    document.getElementById('paie-titre').textContent = 'Gestion de la paie';
+    const vc = document.getElementById('paie-validation-count'); if (vc) vc.textContent = '';
+    document.getElementById('paie-tbody').innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--texte3);padding:32px">' + message + '</td></tr>';
+  } else {
+    card.style.display = 'none';
+  }
+}
+
+// Rend l'en-tête de l'onglet Paie selon le sous-onglet actif.
+// autoLoad=true : sélection automatique (1 seule période, ou période déjà chargée).
+async function renderEntetePaie(autoLoad) {
+  const entete = document.getElementById('paie-entete');
+  if (!entete) return;
+  const liste = (periodesData || []).filter(p => p.statut === paieSousOnglet);
+
+  // ── "Clôturées" : vue transversale filtrable (recap_paie × périodes clôturées) ──
+  if (paieSousOnglet === 'cloturee') {
+    await chargerArchivesCloturees();
+    return;
+  }
+
+  // ── "À traiter" (gelee) : X/Y validés + bouton Clôturer par période ──
+  if (!liste.length) {
+    entete.innerHTML = '<div style="color:var(--texte3);padding:6px 2px">Aucune période à traiter.</div>';
+    if (autoLoad) viderRecapPaie('Aucune période à traiter.');
+    return;
+  }
+  const counts = await calculerCountsPaie(liste.map(p => p.periodeId));
+  entete.innerHTML = liste.map(p => {
+    const c = counts[p.periodeId] || { x:0, y:0 };
+    const tous = c.y > 0 && c.x === c.y;
+    const sel = p.periodeId === paieCurrentPeriode;
+    const xy = '<span style="font-weight:600;color:'+(tous?'var(--vert)':'var(--texte2)')+'">'+c.x+' / '+c.y+' validés</span>';
+    const btn = '<button class="btn btn-success btn-sm" onclick="event.stopPropagation();cloturerPeriode(\''+p.periodeId+'\')"'
+      + (tous ? '' : ' disabled style="opacity:.5;cursor:not-allowed" title="Tous les collaborateurs doivent être validés"')
+      + '>🔒 Clôturer</button>';
+    return '<div onclick="selectionnerPeriodePaie(\''+p.periodeId+'\')" style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 14px;border:1.5px solid '+(sel?'var(--bleu)':'#e8f0f8')+';border-radius:10px;margin-bottom:8px;cursor:pointer;background:'+(sel?'var(--bleu-pale)':'#fff')+'">'
+      + '<div style="display:flex;align-items:center;gap:14px"><strong>'+p.nomPeriode+'</strong>'+xy+'</div>'
+      + btn + '</div>';
+  }).join('');
+  if (autoLoad) {
+    if (liste.some(p => p.periodeId === paieCurrentPeriode)) selectionnerPeriodePaie(paieCurrentPeriode);
+    else if (liste.length === 1) selectionnerPeriodePaie(liste[0].periodeId);
+    else viderRecapPaie('Sélectionnez une période à traiter ci-dessus.');
+  }
+}
+
+// Sélection d'une période : charge le récap puis rafraîchit l'en-tête (mise en évidence + X/Y à jour).
+async function selectionnerPeriodePaie(periodeId) {
+  paieCurrentPeriode = periodeId;
+  await chargerPaie(periodeId);        // import idempotent + calcul + renderPaie
+  await renderEntetePaie(false);       // re-rend l'en-tête : surbrillance + X/Y recalculés (paie_detail désormais peuplé)
+}
+
+// Clôture d'une période (gelee → cloturee). Re-vérifie X===Y FRAIS avant d'écrire.
+async function cloturerPeriode(periodeId) {
+  const counts = await calculerCountsPaie([periodeId]);
+  const c = counts[periodeId] || { x:0, y:0 };
+  if (!(c.y > 0 && c.x === c.y)) {
+    alert('Clôture impossible : tous les collaborateurs doivent être validés (' + c.x + ' / ' + c.y + ').');
+    return;
+  }
+  const { error } = await sb.from('periodes').update({ statut: 'cloturee' }).eq('periode_id', periodeId);
+  if (error) { alert('Échec de la clôture : ' + (error.message || error.code || 'erreur Supabase')); return; }
+  if (paieCurrentPeriode === periodeId) paieCurrentPeriode = '';
+  await chargerPeriodes();             // periodesData à jour (la période n'est plus 'gelee')
+  await renderEntetePaie(true);        // l'en-tête "À traiter" se reconstruit sans elle
+}
+
+// ── Onglet "Clôturées" : vue transversale filtrable ───────────────────────────
+let archivesRecap = [];   // lignes recap_paie (× périodes clôturées) croisées avec la structure collab
+
+async function chargerArchivesCloturees() {
+  document.getElementById('paie-detail').style.display = 'none';
+  document.getElementById('paie-card').style.display = 'none';
+  document.getElementById('paie-indicateur').style.display = 'none';
+  document.querySelector('#vue-paie .card:first-child').style.display = 'block';
+  document.getElementById('paie-titre').textContent = 'Paie — périodes clôturées';
+  const entete = document.getElementById('paie-entete');
+  const cloturees = (periodesData || []).filter(p => p.statut === 'cloturee');
+  if (!cloturees.length) {
+    archivesRecap = [];
+    entete.innerHTML = '<div style="color:var(--texte3);padding:6px 2px">Aucune période clôturée.</div>';
+    return;
+  }
+  entete.innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
+  const ids = cloturees.map(p => p.periodeId);
+  // 1 requête recap_paie pour TOUTES les périodes clôturées
+  const { data: recs, error } = await sb.from('recap_paie').select('*').in('periode_id', ids);
+  if (error) { entete.innerHTML = '<div class="error-banner">Erreur de chargement des archives.</div>'; return; }
+  // Structure (absente de recap_paie) croisée depuis collaborateurs — lus une fois.
+  const collabMap = {};
+  if (collabsData && collabsData.length) {
+    collabsData.forEach(c => { collabMap[c.collabId] = c; });
+  } else {
+    const { data } = await sb.from('collaborateurs').select('collab_id, nom_affiche, structure');
+    (data||[]).forEach(c => { collabMap[c.collab_id] = { collabId:c.collab_id, nomAffiche:c.nom_affiche, structure:c.structure }; });
+  }
+  const periodeMap = {};
+  cloturees.forEach(p => { periodeMap[p.periodeId] = p; });
+  archivesRecap = (recs || []).map(r => {
+    const c = collabMap[r.collab_id] || {};
+    const p = periodeMap[r.periode_id] || {};
+    return {
+      periodeId: r.periode_id,
+      nomPeriode: p.nomPeriode || r.periode_id,
+      dateDebut: p.dateDebut || '',
+      collabId: r.collab_id,
+      nomAffiche: r.nom_affiche || c.nomAffiche || r.collab_id,
+      structure: c.structure || '—',
+      heures_travaillees: Number(r.heures_travaillees || 0),
+      heures_at: Number(r.heures_at || 0),
+      heures_cs: Number(r.heures_cs || 0),
+      nb_at: r.nb_at || 0,
+      nb_cs: r.nb_cs || 0,
+      nb_cp: r.nb_cp || 0,
+      nb_jours_travailles: r.nb_jours_travailles || 0,
+      note_admin: r.note_admin || ''
+    };
+  }).sort((a, b) =>
+    (b.dateDebut || '').localeCompare(a.dateDebut || '') ||
+    (a.nomAffiche || '').localeCompare(b.nomAffiche || '')
+  );
+  // Options de filtres (collabs & périodes présents dans les archives)
+  const collabsOpts = [...new Map(archivesRecap.map(r => [r.collabId, r.nomAffiche])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]));
+  const periodesOpts = [...new Map(archivesRecap.map(r => [r.periodeId, r.nomPeriode])).entries()];
+  const selStyle = 'font-size:13px;padding:6px 10px;border-radius:8px;border:1.5px solid #dce6f0';
+  entete.innerHTML =
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'
+    + '<select id="arch-f-structure" onchange="renderArchivesFiltered()" style="'+selStyle+'"><option value="">Toutes structures</option><option>SCEA</option><option>SAS</option><option>SARL</option></select>'
+    + '<select id="arch-f-collab" onchange="renderArchivesFiltered()" style="'+selStyle+'"><option value="">Tous collaborateurs</option>'
+      + collabsOpts.map(([id, nom]) => '<option value="'+id+'">'+nom+'</option>').join('') + '</select>'
+    + '<select id="arch-f-periode" onchange="renderArchivesFiltered()" style="'+selStyle+'"><option value="">Toutes périodes</option>'
+      + periodesOpts.map(([id, nom]) => '<option value="'+id+'">'+nom+'</option>').join('') + '</select>'
+    + '<span class="filter-count" id="arch-count"></span>'
+    + '</div>'
+    + '<div class="table-wrap"><table><thead><tr>'
+    + '<th>Période</th><th>Collaborateur</th><th style="text-align:center">Structure</th>'
+    + '<th style="text-align:center">Heures trav.</th><th style="text-align:center">AT</th><th style="text-align:center">CS</th>'
+    + '<th style="text-align:center">CP</th><th style="text-align:center">Jours trav.</th><th>Note admin</th><th>Détail</th>'
+    + '</tr></thead><tbody id="arch-tbody"></tbody></table></div>';
+  renderArchivesFiltered();
+}
+
+function renderArchivesFiltered() {
+  const fS = (document.getElementById('arch-f-structure')||{}).value || '';
+  const fC = (document.getElementById('arch-f-collab')||{}).value || '';
+  const fP = (document.getElementById('arch-f-periode')||{}).value || '';
+  const list = archivesRecap.filter(r =>
+    (!fS || r.structure === fS) &&
+    (!fC || r.collabId === fC) &&
+    (!fP || r.periodeId === fP)
+  );
+  const count = document.getElementById('arch-count');
+  if (count) count.textContent = list.length + ' / ' + archivesRecap.length + ' ligne' + (archivesRecap.length > 1 ? 's' : '');
+  const tb = document.getElementById('arch-tbody');
+  if (!tb) return;
+  // AT/CS : "Xh / Yj" (heures recap + nb de jours recap) ; "—" si 0h ET 0j
+  const fmtHJ = (h, j) => (!h && !j) ? '—' : (h||0) + 'h / ' + (j||0) + 'j';
+  tb.innerHTML = list.length === 0
+    ? '<tr><td colspan="10" style="text-align:center;color:var(--texte3);padding:32px">Aucune ligne pour ces filtres</td></tr>'
+    : list.map(r => {
+      const collabEnc = encodeURIComponent(r.collabId);
+      return '<tr>'
+        + '<td>'+r.nomPeriode+'</td>'
+        + '<td><strong>'+r.nomAffiche+'</strong></td>'
+        + '<td style="text-align:center">'+r.structure+'</td>'
+        + '<td style="text-align:center"><span style="font-family:monospace;font-weight:600">'+r.heures_travaillees.toFixed(2)+'h</span></td>'
+        + '<td style="text-align:center">'+fmtHJ(r.heures_at, r.nb_at)+'</td>'
+        + '<td style="text-align:center">'+fmtHJ(r.heures_cs, r.nb_cs)+'</td>'
+        + '<td style="text-align:center">'+(r.nb_cp || 0)+'</td>'
+        + '<td style="text-align:center">'+(r.nb_jours_travailles || 0)+'</td>'
+        + '<td>'+(r.note_admin ? String(r.note_admin).replace(/</g,'&lt;') : '—')+'</td>'
+        + '<td><button class="btn btn-primary btn-sm" onclick="ouvrirDetailArchive(\''+collabEnc+'\',\''+r.periodeId+'\', this)">📋 Détail</button></td>'
+        + '</tr>';
+    }).join('');
+}
+
+// Détail d'une archive : fixe la période de la ligne puis réutilise ouvrirSaisiesPaie (consultation + re-validation).
+async function ouvrirDetailArchive(collabIdEnc, periodeId, btn) {
+  paieCurrentPeriode = periodeId;
+  await chargerPaie(periodeId);          // _paie_recap_current pour CETTE période + import idempotent
+  await ouvrirSaisiesPaie(collabIdEnc, btn);
+}
+
 async function chargerPeriodes() {
   const { data, error } = await sb.from('periodes').select('*').order('date_debut', {ascending:false});
   if (error) {
@@ -2087,15 +2330,8 @@ async function chargerPeriodes() {
   // (ancien select Récap #recap-periode-select supprimé du HTML — plus de peuplement ici)
   // 2) alerte « < 2 planifiées »
   verifierAlertePeriodes(periodes);
-  // 3) select Paie : périodes travaillables (gelee = à traiter) + archivées (cloturee).
-  const selPaie = document.getElementById('paie-periode-select');
-  selPaie.innerHTML = '<option value="">— Sélectionner une période —</option>';
-  periodes.filter(p => ['gelee','cloturee'].includes(p.statut)).forEach(p => {
-    const o = document.createElement('option');
-    o.value = p.periodeId;
-    o.textContent = p.nomPeriode + ' (' + p.statut + ')';
-    selPaie.appendChild(o);
-  });
+  // 3) en-tête Paie : rendu piloté par setPaieSousOnglet / showTab (pas ici — évite
+  //    des requêtes counts hors de l'onglet Paie).
   // 4) tableau des périodes
   const tbody = document.getElementById('periodes-tbody');
   if (!periodes.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--texte3);padding:32px">Aucune période</td></tr>'; return; }
