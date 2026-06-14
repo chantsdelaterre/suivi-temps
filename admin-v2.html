@@ -521,15 +521,35 @@ function fmtDate(d) {
 }
 
 async function login() {
-  // Phase lecture : login simplifié, sans validation serveur.
-  // On pose ADMIN_TOKEN (utile plus tard) puis on affiche la coquille.
-  // Les amorces de chargement (collabs/périodes/équipes) seront rebranchées
-  // une par une à mesure qu'elles passent sur Supabase.
+  // Vérification serveur du token admin (fonction SQL verifier_admin → nom si actif, sinon null).
+  const errEl = document.getElementById('login-error');
   const token = document.getElementById('login-token').value.trim();
-  if (token) ADMIN_TOKEN = token;
+  if (errEl) errEl.style.display = 'none';
+  if (!token) {
+    ADMIN_TOKEN = '';
+    if (errEl) { errEl.textContent = 'Token requis.'; errEl.style.display = 'block'; }
+    return;
+  }
+  let nom = null;
+  try {
+    const { data, error } = await sb.rpc('verifier_admin', { p_token: token });
+    if (error) throw error;
+    nom = data;   // nom de l'admin, ou null si token inconnu/inactif
+  } catch (e) {
+    ADMIN_TOKEN = '';
+    if (errEl) { errEl.textContent = 'Erreur de vérification : ' + (e.message || e); errEl.style.display = 'block'; }
+    return;
+  }
+  if (!nom) {
+    ADMIN_TOKEN = '';
+    if (errEl) { errEl.textContent = 'Token invalide.'; errEl.style.display = 'block'; }
+    return;
+  }
+  // Token valide → ouvrir l'interface
+  ADMIN_TOKEN = token;
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  document.getElementById('header-admin').textContent = 'Admin connecté';
+  document.getElementById('header-admin').textContent = 'Connecté : ' + nom;
   await chargerEquipes();
   chargerCollabs();
 }
