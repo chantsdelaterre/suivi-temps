@@ -822,6 +822,10 @@
                 document.getElementById('journee-content').innerHTML = '<div class="error-box">Lien invalide — contacte ton responsable.</div>';
                 return;
             }
+            // En-tête : rempli dès que le collab est connu (indépendant de la présence d'un jour)
+            document.getElementById('hdr-name').textContent = collab.nom_affiche || (collab.prenom + ' ' + collab.nom);
+            const SOC = { SCEA: 'Chants de la Terre', SAS: 'Chants de la Terre', SARL: 'Les 6 Saveurs' };
+            document.getElementById('hdr-company').textContent = SOC[collab.structure] || 'Chants de la Terre';
             // Récupérer le jour du jour
             const today = new Date();
             const todayISO = today.toISOString().slice(0, 10);
@@ -869,8 +873,6 @@
                 periodeStatut: periode ? periode.statut : null,
                 verrouillee: !(periode && periode.statut === 'ouverte')
             };
-            document.getElementById('hdr-name').textContent = collab.nom_affiche || (collab.prenom + ' ' + collab.nom);
-            document.getElementById('hdr-company').textContent = collab.employeur || 'Chants de la Terre';
             COLLAB_ROLE = collab.role || 'collab';
             COLLAB_EQUIPE_ID = equipeManagerToken;
             if (COLLAB_ROLE === 'responsable' && COLLAB_EQUIPE_ID) {
