@@ -481,3 +481,62 @@ lecture/écriture sur Supabase** (hors clôture/PDF).
 - **`paie_detail`** : colonne **`date_ajuste_admin`** (`timestamptz`, nullable)
   ajoutée par `ALTER TABLE` — **existe mais pas encore écrite par le front**.
   Consignée dans `sql/paie_detail.sql`.
+
+## Onglet Paie refondu + PDF + état réel (cadré le 14/06/2026)
+
+Commit courant : **`7ca3484`** sur `supabase` (poussé). Cette section **fait
+foi** sur les points qu'elle recouvre (supersède le backlog du 13/06 : la
+**clôture est faite**, le **bouton Rouvrir est abandonné**).
+
+### ÉTAT ACTUEL (fait, sur `supabase`)
+
+- **Onglet Paie refondu en 2 sous-onglets** : **« À traiter »** (périodes
+  `gelee`) / **« Clôturées »** (périodes `cloturee`). Le sélecteur déroulant
+  unique a disparu.
+  - **À traiter** : en-tête listant les périodes gelées avec indicateur
+    **« X/Y validés »** (vert si X===Y) + **bouton Clôturer** — actif seulement
+    si **X===Y**, avec **re-vérif fraîche** au clic, puis `UPDATE periodes`
+    `statut` **gelee→cloturee**. X/Y calculés en **2 requêtes batch**
+    (`recap_paie` pour X validés, `paie_detail` pour Y = collabs avec données).
+  - **Clôturées** : **table transversale filtrable** (`recap_paie` × périodes
+    clôturées), **3 filtres** (structure / collaborateur / période, combinés
+    **en mémoire**), **structure croisée depuis `collaborateurs`** (pas figée
+    dans `recap_paie`), colonnes **AT/CS en « Xh/Yj »**. **Bouton Détail**
+    (ouvre le relevé du collab pour cette période ; **re-validation possible**).
+    **Bouton PDF** (relevé d'heures imprimable).
+- **`recap_paie`** : colonnes **`nb_at`** et **`nb_cs`** (nb de **jours** AT/CS)
+  ajoutées et **écrites par `upsertRecapPaieCourant`** à la validation.
+- **PDF relevé d'heures collab** (`genererPdfReleve`) : **impression navigateur**
+  (`window.print`), mise en page **A4**, lit **`paie_detail`**, **total semaine
+  recalculé à la volée** (reset lundi, **jamais `total_hebdo_prog`**), mapping
+  **structure→société** : `SCEA`/`SAS` → « … Chants de la Terre », `SARL` →
+  « SARL Les 6 Saveurs ». Fonds week-end + badges forcés à l'impression
+  (`print-color-adjust:exact`).
+- **`historique_contrats`** : **29 lignes** (18 anciens `COLL001`-`018` + 12
+  nouveaux `COLL019`-`030` comblés ce jour ; `TEST001` exclu). Toutes
+  `date_debut = 2026-01-01`, `date_fin = null`.
+
+### POINTS IMPORTANTS / DETTE
+
+- **`sauverCollab` écrit UNIQUEMENT dans `collaborateurs`, JAMAIS dans
+  `historique_contrats`.** L'**historisation automatique** (geste à 2 écritures :
+  clôturer l'ancienne ligne + ouvrir une nouvelle quand un champ **contractuel**
+  change) **n'est PAS implémentée** = **prochain gros morceau conceptuel**
+  (cf. « greffe de `historique_contrats` »).
+- **Écriture `anon` ouverte** sur `collaborateurs`, `periodes`, `recap_paie`,
+  `jours`, `paie_detail`, `historique_contrats` = **phase DEV non sécurisée**.
+  **Resécurisation RLS = chantier post-bascule prioritaire.**
+
+### BACKLOG
+
+- **Bug** : à la saisie d'un jour `CP`/`AT`/`CS`, **vider les créneaux**
+  (présent dans **`index.html` ET `admin-v2.html`**).
+- **PDF 2 (récap admin)** : contexte contrat, matricule Silae, date de
+  validation — **dépend en partie de l'historisation**.
+- **Indicateur de modification de contrat** sur le récap (badge « ! » + modale
+  avant/après) — **dépend de l'historisation branchée**.
+- **Ménage code mort** : `calculerPaiePeriode`, `grouperParSemaine`, `initPaie`,
+  `toggleValidation`, `sauverNote` (`peuplerSelecteurPaie` déjà retirée).
+- **ABANDONNÉ** : **verrou lecture seule période clôturée** + **bouton Rouvrir**.
+  Décision : on **rouvre 1 collab via Détail** (re-validation), la **période
+  reste `cloturee`**. (Supersède les points 1-2 « rouvrir » du backlog du 13/06.)
