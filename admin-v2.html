@@ -390,7 +390,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
   </div>
 </div>
 <div class="modal-overlay" id="modal-saisies">
-  <div class="modal modal-lg" style="max-width:900px;width:95vw">
+  <div class="modal modal-lg" style="max-width:1100px;width:95vw">
     <div class="modal-header">
       <span class="modal-title" id="saisies-titre">Saisies</span>
       <button class="modal-close" onclick="fermerModal('modal-saisies')">×</button>
@@ -518,6 +518,15 @@ function fmtDate(d) {
   const parts = s.split('-');
   if (parts.length === 3 && parts[0].length === 4) return parts[2]+'/'+parts[1]+'/'+parts[0];
   return d;
+}
+
+// "14/06/2026 10:23" → "14/06 10:23" (retire l'année ; fallback = valeur brute)
+function fmtModif(s) {
+  if (!s) return '';
+  const parts = String(s).trim().split(' ');
+  const d = (parts[0] || '').split('/');
+  const jjmm = d.length >= 2 ? d[0] + '/' + d[1] : (parts[0] || '');
+  return (jjmm + (parts[1] ? ' ' + parts[1] : '')).trim();
 }
 
 async function login() {
@@ -1537,12 +1546,19 @@ function renderSaisies(jours, collabId) {
       + td('<span style="font-family:monospace;font-weight:600;color:var(--bleu)">'+totalTxt+'</span>')
       + td('<span style="font-family:monospace;color:var(--texte2)">'+cumulTxt+'</span>')
       + td('<span style="font-size:12px;color:var(--texte2)">'+(j.commentaire||'—').replace(/</g,'&lt;')+'</span>')
+      + (function(){
+          const nbm = Number(j.nbModifications) || 0;
+          const txt = nbm === 0
+            ? '—'
+            : nbm + ' modif' + (nbm > 1 ? 's' : '') + (j.dateDerniereModif ? ' · ' + fmtModif(j.dateDerniereModif) : '');
+          return td('<span style="font-size:12px;color:var(--texte2)">'+txt+'</span>', 'white-space:nowrap');
+        })()
       + '</tr>';
   }).join('');
 
   body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead style="position:sticky;top:-1px;z-index:2;box-shadow:0 1px 0 #e8f0f8"><tr>'
-    + th('Date') + th('Type') + th('Matin') + th('Après-midi') + th('Créneau 3') + th('Total') + th('Cumul sem.') + th('Commentaire')
+    + th('Date') + th('Type') + th('Matin') + th('Après-midi') + th('Créneau 3') + th('Total') + th('Cumul sem.') + th('Commentaire') + th('Modifications')
     + '</tr></thead><tbody>'
     + rows
     + '</tbody></table>';
@@ -1572,7 +1588,9 @@ async function fetchJoursCollab(collabId) {
     c3Debut: j.c3_debut || '',
     c3Fin: j.c3_fin || '',
     totalHeures: j.total_heures || 0,
-    commentaire: j.commentaire || ''
+    commentaire: j.commentaire || '',
+    nbModifications: j.nb_modifications || 0,
+    dateDerniereModif: j.date_derniere_modif || ''
   }));
 }
 
@@ -1775,7 +1793,7 @@ function buildTableSaisies(jours, filtre, collabId) {
   const collabPaie = collabsData.find(c => c.collabId === collabId) || {};
   const fmtH = v => v && v!=='--:--' ? v : '—';
   return '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'
-    + th('Date')+th('Type')+th('Matin')+th('Après-midi')+th('Créneau 3')+th('Total')+th('Sem.')+th('Commentaire')
+    + th('Date')+th('Type')+th('Matin')+th('Après-midi')+th('Créneau 3')+th('Total')+th('Sem.')+th('Commentaire')+th('Modifications')
     + '</tr></thead><tbody>'
     + (() => {
         const JOURS_P = ['Dim.','Lun.','Mar.','Mer.','Jeu.','Ven.','Sam.'];
@@ -1821,6 +1839,11 @@ function buildTableSaisies(jours, filtre, collabId) {
           + td(modeEdit
               ? '<input type="text" id="jp'+idx+'-comm" value="'+(j.commentaire||'').replace(/"/g,"&quot;")+'" placeholder="Commentaire…" style="width:140px;font-size:12px;padding:3px 6px">'
               : '<span style="font-size:12px;color:var(--texte2)">'+((j.commentaire||'').replace(/</g,'&lt;')||'—')+'</span>')
+          + (function(){
+              const nbm = Number(j.nbModifications) || 0;
+              const txt = nbm === 0 ? '—' : nbm + ' modif' + (nbm > 1 ? 's' : '') + (j.dateDerniereModif ? ' · ' + fmtModif(j.dateDerniereModif) : '');
+              return td('<span style="font-size:12px;color:var(--texte2)">'+txt+'</span>','white-space:nowrap');
+            })()
           + '</tr>';
       }).join('')
       })()
