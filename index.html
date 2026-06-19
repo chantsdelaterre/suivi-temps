@@ -889,7 +889,7 @@
         if (!jourData)
             return;
         const j = jourData;
-        const saisi = j.c1Debut !== '' || j.typeJour === 'CP' || j.typeJour === 'AT';
+        const saisi = (j.c1Debut && j.c1Fin) || (j.c2Debut && j.c2Fin) || (j.c3Debut && j.c3Fin) || j.typeJour === 'CP' || j.typeJour === 'AT';
         const maxModifs = j.nbModifications >= 3;
         const verrouille = j.verrouillee || maxModifs;
         let html = '';
@@ -1270,7 +1270,7 @@
                 modifiable = joursDepuis <= 5 && (j.nbModifications || 0) < 3;
             const t = j.typeJour || 'travaillée',
                 nonTravaillee = t === 'CP' || t === 'AT';
-            const saisi = j.c1Debut !== '' || t === 'CP' || t === 'AT';
+            const saisi = (j.c1Debut && j.c1Fin) || (j.c2Debut && j.c2Fin) || (j.c3Debut && j.c3Fin) || t === 'CP' || t === 'AT';
             let statutHtml = '';
             if (!saisi)
                 statutHtml = '<span style="font-size:13px;color:#c8833a;font-weight:500;">⚠️ Non saisi</span>';
