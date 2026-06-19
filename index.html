@@ -14,7 +14,7 @@
     <title>Suivi du temps</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@500&family=Chivo+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
     :root {
         --vert: #2d5a2d;
@@ -141,7 +141,7 @@
     }
 
     .time-val {
-        font-family: 'DM Mono', monospace;
+        font-family: 'Chivo Mono', monospace;
         font-size: 36px;
         font-weight: 500;
         color: var(--texte);
@@ -177,7 +177,7 @@
     }
 
     .total-num {
-        font-family: 'DM Mono', monospace;
+        font-family: 'Chivo Mono', monospace;
         font-size: 40px;
         font-weight: 500;
         color: var(--vert);
@@ -329,7 +329,7 @@
         border: none;
         border-radius: 12px;
         padding: 15px 8px;
-        font-family: 'DM Mono', monospace;
+        font-family: 'Chivo Mono', monospace;
         font-size: 24px;
         font-weight: 500;
         color: var(--texte);
@@ -350,23 +350,17 @@
         font-size: 18px;
         color: var(--texte3);
     }
-
-    .add-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        border: 1.5px dashed var(--texte3);
-        border-radius: 12px;
-        padding: 12px;
-        font-family: 'DM Sans', sans-serif;
-        font-size: 14px;
-        color: var(--texte3);
-        width: 100%;
-        background: none;
-        cursor: pointer;
-        margin-top: 10px;
+    .form-actions-row { display: flex; gap: 10px; margin-top: 10px; }
+    .btn-mini {
+        flex: 1;
+        display: flex; align-items: center; justify-content: center; gap: 6px;
+        border: 1.5px solid var(--vide); border-radius: 10px;
+        padding: 9px 8px;
+        font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+        color: var(--texte2); background: none; cursor: pointer;
+        transition: background .15s;
     }
+    .btn-mini:hover, .btn-mini:active { background: #edeae4; }
 
     .textarea {
         width: 100%;
@@ -561,7 +555,7 @@
     }
 
     .picker-preview {
-        font-family: 'DM Mono', monospace;
+        font-family: 'Chivo Mono', monospace;
         font-size: 20px;
         font-weight: 500;
         color: var(--texte);
@@ -617,7 +611,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        font-family: 'DM Mono', monospace;
+        font-family: 'Chivo Mono', monospace;
         font-size: 22px;
         font-weight: 500;
         scroll-snap-align: center;
@@ -706,11 +700,13 @@
                 </div>
             </div>
             <div id="save-error" style="display:none" class="error-box"></div>
+            <div class="form-actions-row" id="form-actions-row">
+                <button class="btn-mini" id="btn-add-c3" onclick="toggleC3()">+ Ajouter un créneau</button>
+                <button class="btn-mini" onclick="viderCreneaux()">Vider les créneaux</button>
+            </div>
             <button class="btn btn-primary" id="btn-save" onclick="sauvegarder()">Enregistrer</button>
             <button class="btn btn-secondary" onclick="showVue('journee')" style="margin-bottom:10px">Annuler</button>
-            <button class="add-btn" id="btn-add-c3" onclick="toggleC3()">+ Ajouter un créneau</button>
             <div class="block" style="margin-top:10px">
-                <div class="block-label">Commentaire (optionnel)</div>
                 <textarea class="textarea" id="commentaire" rows="2" placeholder="Remarque éventuelle…"></textarea>
             </div>
         </div>
@@ -965,6 +961,7 @@
         document.getElementById('c3-section').style.display = hasC3 ? 'block' : 'none';
         document.getElementById('btn-add-c3').style.display = hasC3 ? 'none' : 'flex';
         document.getElementById('card-horaires').style.display = typeJour !== 'travaillée' ? 'none' : 'block';
+        document.getElementById('form-actions-row').style.display = typeJour !== 'travaillée' ? 'none' : 'flex';
         document.getElementById('save-error').style.display = 'none';
         showVue('formulaire');
     }
@@ -973,6 +970,7 @@
         document.querySelectorAll('.type-btn').forEach(b => b.className = 'type-btn');
         btn.classList.add('sel-' + (typeJour === 'travaillée' ? 'travaillee' : typeJour.toLowerCase()));
         document.getElementById('card-horaires').style.display = typeJour !== 'travaillée' ? 'none' : 'block';
+        document.getElementById('form-actions-row').style.display = typeJour !== 'travaillée' ? 'none' : 'flex';
     }
     function toggleC3() {
         document.getElementById('c3-section').style.display = 'block';
@@ -993,6 +991,13 @@
     function getTimeVal(id) {
         const t = document.getElementById(id).textContent;
         return t === '--:--' ? '' : t;
+    }
+    // Vide les TROIS créneaux (6 bornes) à --:-- et réinitialise le 3e créneau (replié) —
+    // affichage seulement ; la sauvegarde se fait via "Enregistrer".
+    function viderCreneaux() {
+        ['c1-debut','c1-fin','c2-debut','c2-fin','c3-debut','c3-fin'].forEach(id => setTimeBtn(id, ''));
+        document.getElementById('c3-section').style.display = 'none';
+        document.getElementById('btn-add-c3').style.display = 'flex';
     }
     async function sauvegarder() {
         const errBox = document.getElementById('save-error');
