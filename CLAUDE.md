@@ -615,3 +615,37 @@ requêtes côté front pour ce geste.
 - `sauverCollab` écrit **UNIQUEMENT** dans `collaborateurs`, jamais dans
   `historique_contrats` → c'est ce qu'on vient corriger.
 - `matricule_silae` : **null partout** (à renseigner un jour ; non bloquant).
+
+## Historisation des contrats — MODÈLE JOURNAL (cadré le 28/06/2026)
+
+⚠️ Cette section FAIT ÉVOLUER la vision « geste à deux écritures » décrite plus haut (section « greffe de historique_contrats »). Le modèle retenu est désormais un JOURNAL append-only.
+
+### Principe
+- `historique_contrats` = journal : on AJOUTE des lignes, on n'écrase jamais.
+- Chaque ligne : valeurs contractuelles + dates [date_debut, date_fin] + created_at (horodatage) + cree_par (auteur : Pauline / Guillaume / Elsa).
+- Le contrat ACTUEL se CALCULE, il ne se stocke pas comme un état figé.
+
+### Règle « contrat en vigueur aujourd'hui »
+La ligne où date_debut <= aujourd'hui ET (date_fin IS NULL OU date_fin >= aujourd'hui).
+- Si plusieurs (chevauchement) → la plus récente par created_at gagne.
+- Si aucune (trou) → pas de contrat ce jour-là (les trous sont OK).
+- Effet FUTUR autorisé (préparer un contrat à l'avance, ex. TESA→CDI de Jonas).
+- 3 états déduits des dates (jamais stockés) : passé (terminé) / présent (actuel) / futur (à venir).
+
+### Fiche collaborateurs = cache (OPTION 2 retenue)
+La fiche reste le statut courant. Un CRON QUOTIDIEN la met à jour avec le contrat en vigueur ce jour-là (bascule auto quand un contrat futur prend effet). Donc ajouter_contrat ne doit PAS mettre à jour la fiche immédiatement pour un effet futur.
+
+### Affichage : timeline
+Zone Contrat de la modale édition = toutes les lignes du collab, ordonnées, colorées selon passé/présent/futur. Bouton « + Nouvel événement » (Fin de contrat / Nouveau contrat) avec date d'effet + note + auteur.
+
+### Déjà en prod (mais à retoucher pour ce modèle)
+- Étape 1 : création écrit la 1re ligne (commit a19b032). OK.
+- cloturer_contrat (pose date_fin) — OK, en prod (79b38ea).
+- ajouter_contrat — à RETOUCHER (maj fiche immédiate ne convient plus ; garde-fou anti-chevauchement à revoir car chevauchement autorisé).
+- Front 2a (zone Contrat) : affichage « Aucun contrat en cours » FAUX (confond fin future et passée) → à REMPLACER par la timeline.
+
+### Décisions ABANDONNÉES (ne pas re-dériver)
+- Contrainte d'exclusion stricte anti-chevauchement → abandonnée (résolution par created_at).
+- « Modif données contrat » comme geste séparé → abandonnée (tout passe par fin/nouveau).
+
+Détail complet : plan_modele_journal_contrats.md (note de conception du 28/06).
