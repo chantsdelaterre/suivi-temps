@@ -70,9 +70,11 @@ tr:hover td { background: #fafcff; }
 .badge-attente::before { background: var(--orange); }
 .badge-gelee { background: var(--bleu-pale); color: var(--bleu-clair); }
 .badge-gelee::before { background: var(--bleu-clair); }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px 14px; }
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group.full { grid-column: 1 / -1; }
+.form-grid .form-group { gap: 4px; }
+.form-grid label { font-size: 11px; }
 label { font-size: 12px; font-weight: 600; color: var(--texte2); text-transform: uppercase; letter-spacing: .05em; }
 input, select { padding: 9px 12px; border: 1.5px solid #dce6f0; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--texte); background: white; outline: none; transition: border-color .15s; }
 input:focus, select:focus, textarea:focus { border-color: var(--bleu-clair); }
@@ -100,6 +102,7 @@ textarea { resize: vertical; min-height: 72px; }
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 500; align-items: center; justify-content: center; }
 .modal-overlay.open { display: flex; }
 .modal { background: white; border-radius: 16px; width: 560px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+#modal-collab .modal { width: 760px; }   /* max-width:95vw hérité → responsable petit écran */
 .modal-header { padding: 20px 24px; border-bottom: 1px solid #e8f0f8; display: flex; align-items: center; justify-content: space-between; }
 .modal-title { font-size: 16px; font-weight: 600; }
 .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--texte3); line-height: 1; padding: 4px; }
@@ -356,20 +359,21 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
       <button class="modal-close" onclick="fermerModal()">×</button>
     </div>
     <div class="modal-body">
+      <div id="form-titre-identite" style="display:none;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);margin-bottom:10px">Identité</div>
       <div class="form-grid">
         <div class="form-group"><label>Prénom *</label><input type="text" id="f-prenom" placeholder="Marie"></div>
         <div class="form-group"><label>Nom *</label><input type="text" id="f-nom" placeholder="Dupont"></div>
         <div class="form-group"><label>Email</label><input type="email" id="f-email" placeholder="marie@exemple.fr"></div>
-        <div class="form-group"><label>Structure *</label>
+        <div class="form-group contrat-field"><label>Structure *</label>
           <select id="f-structure"><option value="">— Choisir —</option><option>SCEA</option><option>SAS</option><option>SARL</option></select>
         </div>
-        <div class="form-group"><label>Type contrat *</label>
+        <div class="form-group contrat-field"><label>Type contrat *</label>
           <select id="f-contrat"><option value="">— Choisir —</option><option>CDI</option><option>TESA</option></select>
         </div>
-        <div class="form-group"><label>Type période *</label>
+        <div class="form-group contrat-field"><label>Type période *</label>
           <select id="f-type-periode"><option value="">— Choisir —</option><option value="decalee">Décalée</option><option value="civil">Civile</option></select>
         </div>
-        <div class="form-group"><label>Heures / semaine</label><input type="number" id="f-heures" placeholder="35" min="1" max="60"></div>
+        <div class="form-group contrat-field"><label>Heures / semaine</label><input type="number" id="f-heures" placeholder="35" min="1" max="60"></div>
         <div class="form-group"><label>Statut</label>
           <select id="f-statut"><option value="en_attente">En attente</option><option value="actif">Actif</option><option value="inactif">Inactif</option></select>
         </div>
@@ -381,7 +385,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
         </div>
       </div>
       <div id="zone-contrat" style="display:none;margin-top:18px;border-top:1px solid #e8f0f8;padding-top:14px">
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);margin-bottom:8px">Contrat actuel</div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);margin-bottom:8px">Contrats</div>
         <div id="contrat-actuel"></div>
         <div id="contrat-fin-zone" style="margin-top:10px"></div>
         <div id="contrat-msg" style="display:none;font-size:13px;margin-top:8px"></div>
@@ -830,6 +834,8 @@ function ouvrirModalCollab() {
   document.getElementById('modal-error').style.display = 'none';
   document.getElementById('btn-sauver').disabled = false;
   document.getElementById('btn-sauver').textContent = 'Enregistrer';
+  document.querySelectorAll('.contrat-field').forEach(el => el.style.display = '');
+  document.getElementById('form-titre-identite').style.display = 'none';
   document.getElementById('zone-contrat').style.display = 'none';
   document.getElementById('modal-collab').classList.add('open');
 }
@@ -837,7 +843,7 @@ function ouvrirModalCollab() {
 function ouvrirModalCollabData(encoded) {
   const c = JSON.parse(decodeURIComponent(encoded));
   collabEnEdition = c;
-  document.getElementById('modal-titre').textContent = 'Modifier le collaborateur';
+  document.getElementById('modal-titre').textContent = 'Fiche collaborateur';
   document.getElementById('f-prenom').value = c.prenom||'';
   document.getElementById('f-nom').value = c.nom||'';
   document.getElementById('f-email').value = c.email||'';
@@ -852,12 +858,16 @@ function ouvrirModalCollabData(encoded) {
   document.getElementById('modal-error').style.display = 'none';
   document.getElementById('btn-sauver').disabled = false;
   document.getElementById('btn-sauver').textContent = 'Enregistrer';
+  document.querySelectorAll('.contrat-field').forEach(el => el.style.display = 'none');
+  document.getElementById('form-titre-identite').style.display = 'block';
   document.getElementById('zone-contrat').style.display = 'block';
   chargerContratActuel(c.collabId);
   document.getElementById('modal-collab').classList.add('open');
 }
 
-// Charge et affiche la ligne d'historique de contrat OUVERTE (date_fin null) du collab.
+// Affiche la TIMELINE des contrats du collab (lecture seule) : toutes les lignes, état calculé
+// vs aujourd'hui (passé / présent / futur). Le bouton "Fin de contrat" reste branché sur la
+// ligne ouverte (date_fin null) via cloturer_contrat (inchangé).
 async function chargerContratActuel(collabId) {
   const box = document.getElementById('contrat-actuel');
   const finZone = document.getElementById('contrat-fin-zone');
@@ -866,20 +876,48 @@ async function chargerContratActuel(collabId) {
   box.innerHTML = '<div style="color:var(--texte3);font-size:13px">Chargement…</div>';
   finZone.innerHTML = '';
   const { data, error } = await sb.from('historique_contrats').select('*')
-    .eq('collab_id', collabId).is('date_fin', null).maybeSingle();
-  if (error) { box.innerHTML = '<div style="color:var(--rouge);font-size:13px">Erreur de lecture du contrat : ' + error.message + '</div>'; return; }
-  if (!data) {
-    box.innerHTML = '<div style="color:var(--texte3);font-size:13px">Aucun contrat en cours.</div>';
-    return;   // pas de bouton Fin de contrat
+    .eq('collab_id', collabId).order('date_debut');
+  if (error) { box.innerHTML = '<div style="color:var(--rouge);font-size:13px">Erreur de lecture des contrats : ' + error.message + '</div>'; return; }
+  if (!data || !data.length) {
+    box.innerHTML = '<div style="color:var(--texte3);font-size:13px">Aucun contrat enregistré.</div>';
+    return;
   }
-  const tp = data.type_periode === 'decalee' ? 'Décalée' : data.type_periode === 'civil' ? 'Civile' : (data.type_periode || '—');
-  box.innerHTML =
-    '<div style="font-size:13px;color:var(--texte2);line-height:1.6">'
-    + '<strong>' + (data.structure || '—') + '</strong> · ' + (data.type_contrat || '—') + ' · ' + tp
-    + ' · ' + (data.heures_hebdo != null ? data.heures_hebdo + ' h/sem' : '—')
-    + '<div style="color:var(--texte3);font-size:12px;margin-top:2px">Depuis le ' + fmtDate(data.date_debut) + '</div>'
-    + '</div>';
-  finZone.innerHTML = '<button type="button" class="btn btn-danger btn-sm" onclick="afficherChampFinContrat()">Fin de contrat</button>';
+  // Date du jour LOCALE (YYYY-MM-DD) — comparaison de chaînes ISO, sans décalage UTC
+  const dNow = new Date();
+  const today = String(dNow.getFullYear()) + '-' + String(dNow.getMonth()+1).padStart(2,'0') + '-' + String(dNow.getDate()).padStart(2,'0');
+  const iso = s => s ? String(s).slice(0,10) : null;
+  const tpLbl = t => t === 'decalee' ? 'Décalée' : t === 'civil' ? 'Civile' : (t || '—');
+
+  box.innerHTML = data.map(r => {
+    const dd = iso(r.date_debut), df = iso(r.date_fin);
+    const ctx = '<strong>' + (r.structure || '—') + '</strong> · ' + (r.type_contrat || '—')
+              + ' · ' + (r.heures_hebdo != null ? r.heures_hebdo + ' h/sem' : '—')
+              + ' · ' + tpLbl(r.type_periode);
+    let bg, coul, op = '', libelle, estPresentOuvert = false;
+    if (df && df < today) {                       // PASSÉ / terminé
+      bg = '#eef1f5'; coul = 'var(--texte3)'; op = 'opacity:.7;';
+      libelle = 'Du ' + fmtDate(dd) + ' au ' + fmtDate(df) + ' — terminé';
+    } else if (dd > today) {                      // FUTUR / à venir
+      bg = 'var(--bleu-pale)'; coul = 'var(--bleu-clair)';
+      libelle = 'À partir du ' + fmtDate(dd);
+    } else {                                      // PRÉSENT (dd<=today ET (df null OU df>=today))
+      if (!df) { estPresentOuvert = true; bg = 'var(--vert-pale)'; coul = 'var(--vert)'; libelle = 'Depuis le ' + fmtDate(dd); }
+      else { bg = 'var(--orange-pale)'; coul = 'var(--orange)'; libelle = 'Du ' + fmtDate(dd) + ' — se termine le ' + fmtDate(df); }
+    }
+    const finBtn = estPresentOuvert
+      ? '<button type="button" class="btn btn-danger btn-sm" onclick="afficherChampFinContrat()" style="flex:0 0 auto;background:#fff;border:1px solid #f1cfc8">Fin de contrat</button>'
+      : '';
+    return '<div style="display:flex;align-items:center;gap:10px;background:'+bg+';color:'+coul+';padding:8px 11px;margin-bottom:6px;border-radius:8px;'+op+'">'
+         + '<div style="flex:1">'
+         +   '<div style="font-size:15px;line-height:1.5">' + ctx + '</div>'
+         +   '<div style="font-size:13px;margin-top:2px;font-weight:600">' + libelle + '</div>'
+         + '</div>'
+         + finBtn
+         + '</div>';
+  }).join('');
+  // "+ Nouvel événement" centré en bas (placeholder — geste réel à l'étape suivante).
+  box.innerHTML += '<div style="text-align:center;margin-top:10px"><button type="button" class="btn btn-secondary btn-sm" onclick="nouvelEvenementPlaceholder()">+ Nouvel événement</button></div>';
+  // #contrat-fin-zone reste vide ici ; il accueille le formulaire de date au clic sur "Fin de contrat".
 }
 
 // Affiche inline le champ date + bouton de confirmation de fin de contrat.
@@ -901,7 +939,13 @@ async function confirmerFinContrat() {
   const { error } = await sb.rpc('cloturer_contrat', { p_collab_id: collabEnEdition.collabId, p_date_fin: dateFin });
   if (error) { showMsg('Échec de la fin de contrat : ' + error.message, false); return; }
   showMsg('✓ Contrat clôturé au ' + fmtDate(dateFin) + '.', true);
-  await chargerContratActuel(collabEnEdition.collabId);   // la ligne est clôturée → "Aucun contrat en cours"
+  await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline
+}
+
+// Placeholder du futur geste "Nouvel événement" (fin / nouveau contrat) — étape suivante.
+function nouvelEvenementPlaceholder() {
+  const msg = document.getElementById('contrat-msg');
+  if (msg) { msg.textContent = 'Nouvel événement — à venir (prochaine étape).'; msg.style.color = 'var(--texte3)'; msg.style.display = 'block'; }
 }
 
 function rendreModalDeplacable(modalEl) {
@@ -1015,27 +1059,33 @@ async function sauverCollab() {
   const matriculeSilae= document.getElementById('f-matricule-silae').value;
   const equipeId      = document.getElementById('f-equipe').value;
 
-  // Validation type_periode obligatoire (inchangée)
-  if (!typePeriode) { showErr('Aucune période de paie définie pour ce collaborateur — veuillez sélectionner un type de période.'); return; }
-  // Création : date d'activation obligatoire (= date_debut de la 1re ligne d'historique)
-  if (!collabEnEdition && !dateActivation) { showErr('Date d\'activation requise.'); return; }
+  const enEdition = !!collabEnEdition;
+  // Validations spécifiques à la CRÉATION (le contrat ne se définit qu'à la création / par événement)
+  if (!enEdition) {
+    if (!typePeriode) { showErr('Aucune période de paie définie pour ce collaborateur — veuillez sélectionner un type de période.'); return; }
+    if (!dateActivation) { showErr('Date d\'activation requise.'); return; }
+  }
 
-  // Champs communs création + édition. nom_affiche recalculé. Vides → null.
+  // Champs IDENTITÉ (communs création + édition). nom_affiche recalculé. Vides → null.
   const champs = {
     prenom:          orNull(prenom),
     nom:             orNull(nom),
     nom_affiche:     (prenom + ' ' + nom).trim(),
     email:           orNull(email),
-    structure:       orNull(structure),
-    type_contrat:    orNull(typeContrat),
-    type_periode:    typePeriode,
-    heures_hebdo:    heuresRaw === '' ? null : Number(heuresRaw),
     statut:          statut,
     actif:           statut === 'actif',
     date_activation: orNull(dateActivation),
     matricule_silae: orNull(matriculeSilae),
     equipe_id:       orNull(equipeId),
   };
+  // Champs CONTRACTUELS : UNIQUEMENT à la création (1er contrat). En édition, ils ne
+  // changent QUE par événement (zone Contrats) → NON écrits par cet UPDATE.
+  if (!enEdition) {
+    champs.structure    = orNull(structure);
+    champs.type_contrat = orNull(typeContrat);
+    champs.type_periode = typePeriode;
+    champs.heures_hebdo = heuresRaw === '' ? null : Number(heuresRaw);
+  }
 
   try {
     if (collabEnEdition) {
