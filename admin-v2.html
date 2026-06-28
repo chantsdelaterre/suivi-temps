@@ -961,6 +961,8 @@ async function sauverCollab() {
 
   // Validation type_periode obligatoire (inchangée)
   if (!typePeriode) { showErr('Aucune période de paie définie pour ce collaborateur — veuillez sélectionner un type de période.'); return; }
+  // Création : date d'activation obligatoire (= date_debut de la 1re ligne d'historique)
+  if (!collabEnEdition && !dateActivation) { showErr('Date d\'activation requise.'); return; }
 
   // Champs communs création + édition. nom_affiche recalculé. Vides → null.
   const champs = {
@@ -1003,8 +1005,24 @@ async function sauverCollab() {
         if (!dup) token = t;
       }
       if (!token) { showErr('Impossible de générer un token unique, réessayez.'); return; }
-      // 3) INSERT
-      const { error } = await sb.from('collaborateurs').insert({ collab_id: collabId, token: token, ...champs });
+      // 3) Création TRANSACTIONNELLE : collaborateurs + 1re ligne historique_contrats (tout-ou-rien)
+      const { error } = await sb.rpc('creer_collaborateur_avec_contrat', {
+        p_collab_id:       collabId,
+        p_token:           token,
+        p_prenom:          champs.prenom,
+        p_nom:             champs.nom,
+        p_nom_affiche:     champs.nom_affiche,
+        p_email:           champs.email,
+        p_structure:       champs.structure,
+        p_equipe_id:       champs.equipe_id,
+        p_type_contrat:    champs.type_contrat,
+        p_type_periode:    champs.type_periode,
+        p_heures_hebdo:    champs.heures_hebdo,
+        p_statut:          champs.statut,
+        p_date_activation: champs.date_activation,
+        p_actif:           champs.actif,
+        p_matricule_silae: champs.matricule_silae
+      });
       if (error) { showErr('Échec de la création : ' + error.message); return; }
       alert('✓ Collaborateur créé !');
       fermerModal();
