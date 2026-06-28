@@ -210,10 +210,10 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
                 <th style="text-align:center">Contrat / Période</th>
                 <th style="text-align:center">H/sem</th>
                 <th class="sortable" onclick="trierCollabs('statut',this)" style="text-align:center">Statut</th>
-                <th style="text-align:center">Activation</th>
                 <th style="text-align:center">Équipe</th>
                 <th style="text-align:center">Matricule Silae</th>
                 <th>Lien</th>
+                <th style="text-align:center">Téléphone</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -364,6 +364,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
         <div class="form-group"><label>Prénom *</label><input type="text" id="f-prenom" placeholder="Marie"></div>
         <div class="form-group"><label>Nom *</label><input type="text" id="f-nom" placeholder="Dupont"></div>
         <div class="form-group"><label>Email</label><input type="email" id="f-email" placeholder="marie@exemple.fr"></div>
+        <div class="form-group"><label>Téléphone</label><input type="text" id="f-telephone" placeholder="06-12-34-56-78"></div>
         <div class="form-group contrat-field"><label>Structure *</label>
           <select id="f-structure"><option value="">— Choisir —</option><option>SCEA</option><option>SAS</option><option>SARL</option></select>
         </div>
@@ -629,6 +630,7 @@ async function chargerCollabs() {
     nom: c.nom,
     nomAffiche: c.nom_affiche,
     email: c.email,
+    telephone: c.telephone,
     structure: c.structure,
     typeContrat: c.type_contrat,
     typePeriode: c.type_periode,
@@ -705,11 +707,11 @@ function renderCollabsFiltered(collabs) {
       <td style="text-align:center">${c.structure||'—'}</td>
       <td style="text-align:center">${c.typeContrat||'—'}${c.typePeriode ? ' · <span style="font-size:13px;color:var(--texte2)">' + (c.typePeriode==='decalee'?'déc.':'civ.') + '</span>' : ''}</td>
       <td style="text-align:center">${c.heuresHebdo ? c.heuresHebdo+'h' : '—'}</td>
-      <td style="white-space:nowrap;text-align:center"><span class="badge ${badgeClass}">${badgeLabel}</span>${c.statut==='en_attente'&&!c.dateActivation?' <span title="Date activation manquante" style="color:#c8621a;font-size:13px;">⚠️</span>':''}</td>
-      <td style="font-size:13px;color:var(--texte2);text-align:center">${fmtDate(c.dateActivation)}</td>
+      <td style="white-space:nowrap;text-align:center"><span class="badge ${badgeClass}">${badgeLabel}</span></td>
       <td style="font-size:13px;color:var(--texte2);text-align:center">${nomEquipe(c.equipeId)}</td>
       <td style="font-size:13px;color:var(--texte2);text-align:center">${c.matriculeSilae||'—'}</td>
       <td>${c.lien ? `<button class="token-link" onclick="copierLien('${c.lien}')" title="${c.lien}">📋 ${c.token}</button>` : '—'}</td>
+      <td style="font-size:13px;color:var(--texte2);text-align:center">${c.telephone||'—'}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" onclick="ouvrirModalCollabData('${collabJson}')">✏️</button>
         <button class="btn btn-secondary btn-sm" onclick="copierMessage('${collabJson}')" title="Copier le message d'invitation">📨</button>
@@ -824,7 +826,7 @@ function copierLien(lien) {
 function ouvrirModalCollab() {
   collabEnEdition = null;
   document.getElementById('modal-titre').textContent = 'Nouveau collaborateur';
-  ['f-prenom','f-nom','f-email','f-heures','f-date-activation'].forEach(id => document.getElementById(id).value = '');
+  ['f-prenom','f-nom','f-email','f-telephone','f-heures','f-date-activation'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-structure').value = '';
   document.getElementById('f-contrat').value = '';
   document.getElementById('f-statut').value = 'en_attente';
@@ -847,6 +849,7 @@ function ouvrirModalCollabData(encoded) {
   document.getElementById('f-prenom').value = c.prenom||'';
   document.getElementById('f-nom').value = c.nom||'';
   document.getElementById('f-email').value = c.email||'';
+  document.getElementById('f-telephone').value = c.telephone||'';
   document.getElementById('f-structure').value = c.structure||'';
   document.getElementById('f-contrat').value = c.typeContrat||'';
   document.getElementById('f-type-periode').value = c.typePeriode||'';
@@ -1046,10 +1049,13 @@ async function sauverCollab() {
   const showErr = m => { errBox.textContent = m; errBox.style.display = 'block'; btn.disabled = false; btn.textContent = 'Enregistrer'; };
   const cap = s => { s = (s||'').trim(); return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : ''; };
   const orNull = v => { v = (typeof v === 'string') ? v.trim() : v; return (v === '' || v == null) ? null : v; };
+  // Reformate en 06-12-34-56-78 SI 10 chiffres nets ; sinon garde la saisie telle quelle.
+  const formatTel = raw => { const s = (raw||'').trim(); const d = s.replace(/[\s.\-]/g,''); return /^\d{10}$/.test(d) ? d.match(/.{2}/g).join('-') : s; };
 
   const prenom        = cap(document.getElementById('f-prenom').value);
   const nom           = document.getElementById('f-nom').value.trim().toUpperCase();
   const email         = document.getElementById('f-email').value.trim().toLowerCase();
+  const telephone     = document.getElementById('f-telephone').value;
   const structure     = document.getElementById('f-structure').value;
   const typeContrat   = document.getElementById('f-contrat').value;
   const typePeriode   = document.getElementById('f-type-periode').value;
@@ -1072,6 +1078,7 @@ async function sauverCollab() {
     nom:             orNull(nom),
     nom_affiche:     (prenom + ' ' + nom).trim(),
     email:           orNull(email),
+    telephone:       orNull(formatTel(telephone)),
     statut:          statut,
     actif:           statut === 'actif',
     date_activation: orNull(dateActivation),
@@ -1130,7 +1137,13 @@ async function sauverCollab() {
         p_matricule_silae: champs.matricule_silae
       });
       if (error) { showErr('Échec de la création : ' + error.message); return; }
-      alert('✓ Collaborateur créé !');
+      // Téléphone non géré par la RPC → maj séparée (message si échec, non silencieux)
+      let telOk = true;
+      if (champs.telephone) {
+        const { error: eTel } = await sb.from('collaborateurs').update({ telephone: champs.telephone }).eq('collab_id', collabId);
+        if (eTel) telOk = false;
+      }
+      alert(telOk ? '✓ Collaborateur créé !' : 'Collaborateur créé, mais le téléphone n\'a pas pu être enregistré — à ressaisir en édition.');
       fermerModal();
       chargerCollabs();
     }
