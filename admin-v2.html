@@ -380,6 +380,12 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
           <select id="f-equipe"><option value="">— Aucune équipe —</option></select>
         </div>
       </div>
+      <div id="zone-contrat" style="display:none;margin-top:18px;border-top:1px solid #e8f0f8;padding-top:14px">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);margin-bottom:8px">Contrat actuel</div>
+        <div id="contrat-actuel"></div>
+        <div id="contrat-fin-zone" style="margin-top:10px"></div>
+        <div id="contrat-msg" style="display:none;font-size:13px;margin-top:8px"></div>
+      </div>
       <div id="modal-error" style="display:none;margin-top:14px" class="error-banner"></div>
     </div>
     <div class="modal-footer">
@@ -824,6 +830,7 @@ function ouvrirModalCollab() {
   document.getElementById('modal-error').style.display = 'none';
   document.getElementById('btn-sauver').disabled = false;
   document.getElementById('btn-sauver').textContent = 'Enregistrer';
+  document.getElementById('zone-contrat').style.display = 'none';
   document.getElementById('modal-collab').classList.add('open');
 }
 
@@ -845,7 +852,56 @@ function ouvrirModalCollabData(encoded) {
   document.getElementById('modal-error').style.display = 'none';
   document.getElementById('btn-sauver').disabled = false;
   document.getElementById('btn-sauver').textContent = 'Enregistrer';
+  document.getElementById('zone-contrat').style.display = 'block';
+  chargerContratActuel(c.collabId);
   document.getElementById('modal-collab').classList.add('open');
+}
+
+// Charge et affiche la ligne d'historique de contrat OUVERTE (date_fin null) du collab.
+async function chargerContratActuel(collabId) {
+  const box = document.getElementById('contrat-actuel');
+  const finZone = document.getElementById('contrat-fin-zone');
+  const msg = document.getElementById('contrat-msg');
+  if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
+  box.innerHTML = '<div style="color:var(--texte3);font-size:13px">Chargement…</div>';
+  finZone.innerHTML = '';
+  const { data, error } = await sb.from('historique_contrats').select('*')
+    .eq('collab_id', collabId).is('date_fin', null).maybeSingle();
+  if (error) { box.innerHTML = '<div style="color:var(--rouge);font-size:13px">Erreur de lecture du contrat : ' + error.message + '</div>'; return; }
+  if (!data) {
+    box.innerHTML = '<div style="color:var(--texte3);font-size:13px">Aucun contrat en cours.</div>';
+    return;   // pas de bouton Fin de contrat
+  }
+  const tp = data.type_periode === 'decalee' ? 'Décalée' : data.type_periode === 'civil' ? 'Civile' : (data.type_periode || '—');
+  box.innerHTML =
+    '<div style="font-size:13px;color:var(--texte2);line-height:1.6">'
+    + '<strong>' + (data.structure || '—') + '</strong> · ' + (data.type_contrat || '—') + ' · ' + tp
+    + ' · ' + (data.heures_hebdo != null ? data.heures_hebdo + ' h/sem' : '—')
+    + '<div style="color:var(--texte3);font-size:12px;margin-top:2px">Depuis le ' + fmtDate(data.date_debut) + '</div>'
+    + '</div>';
+  finZone.innerHTML = '<button type="button" class="btn btn-danger btn-sm" onclick="afficherChampFinContrat()">Fin de contrat</button>';
+}
+
+// Affiche inline le champ date + bouton de confirmation de fin de contrat.
+function afficherChampFinContrat() {
+  document.getElementById('contrat-fin-zone').innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+    + '<label style="font-size:13px;color:var(--texte2)">Date de fin :</label>'
+    + '<input type="date" id="contrat-date-fin" style="font-size:13px;padding:5px 8px;border-radius:8px;border:1.5px solid #dce6f0">'
+    + '<button type="button" class="btn btn-danger btn-sm" onclick="confirmerFinContrat()">Confirmer la fin de contrat</button>'
+    + '</div>';
+}
+
+// Clôture la ligne de contrat ouverte (RPC transactionnelle), puis rafraîchit l'affichage.
+async function confirmerFinContrat() {
+  const msg = document.getElementById('contrat-msg');
+  const showMsg = (txt, ok) => { if (msg) { msg.textContent = txt; msg.style.color = ok ? 'var(--vert)' : 'var(--rouge)'; msg.style.display = 'block'; } };
+  const dateFin = (document.getElementById('contrat-date-fin') || {}).value || '';
+  if (!dateFin) { showMsg('Date de fin requise.', false); return; }
+  const { error } = await sb.rpc('cloturer_contrat', { p_collab_id: collabEnEdition.collabId, p_date_fin: dateFin });
+  if (error) { showMsg('Échec de la fin de contrat : ' + error.message, false); return; }
+  showMsg('✓ Contrat clôturé au ' + fmtDate(dateFin) + '.', true);
+  await chargerContratActuel(collabEnEdition.collabId);   // la ligne est clôturée → "Aucun contrat en cours"
 }
 
 function rendreModalDeplacable(modalEl) {
