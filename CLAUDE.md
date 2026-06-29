@@ -649,3 +649,25 @@ Zone Contrat de la modale édition = toutes les lignes du collab, ordonnées, co
 - « Modif données contrat » comme geste séparé → abandonnée (tout passe par fin/nouveau).
 
 Détail complet : plan_modele_journal_contrats.md (note de conception du 28/06).
+
+## Multi-tenant (horizon — garder la porte ouverte, ne PAS implémenter maintenant)
+
+L'appli vise à terme une architecture SaaS multi-tenant : une seule appli + une
+seule base, isolation logique par `organization_id` + policies RLS Postgres (PAS
+une copie par client). Détail complet : NOTE_Mes_Heures_Pro_commercialisation.md.
+
+⚠️ Principe à respecter dès maintenant, SANS coder le multi-tenant :
+- **Ne pas l'implémenter** tant que l'appli n'est pas finie et sécurisée pour Chants
+  de la Terre (un seul client). C'est un chantier d'APRÈS.
+- **Mais éviter les choix qui le rendraient coûteux** : pour toute nouvelle fonction
+  touchant la SÉCURITÉ ou l'ACCÈS aux données (Edge Function, policies RLS,
+  authentification), la concevoir de façon à ce qu'ajouter un filtre
+  `organization_id` plus tard soit SIMPLE (un filtre en plus), pas une refonte.
+- **La logique métier n'est PAS concernée** (calculs d'heures, modèle journal des
+  contrats, moteur de paie, timeline, UI) : elle restera compatible, on ajoutera
+  juste un filtrage par organisation par-dessus. Donc on code normalement, sans
+  sur-ingénierer.
+- Le multi-tenant repose sur la migration Supabase déjà engagée (Sheets ne
+  permettait pas l'isolation). L'isolation se pose en FONDATION (au moment de
+  l'Edge Function / RLS), elle ne se rajoute pas après — une seule "serrure" mal
+  posée = fuite de données entre clients.
