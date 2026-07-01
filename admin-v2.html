@@ -112,6 +112,7 @@ textarea { resize: vertical; min-height: 72px; }
 .filter-search { padding: 8px 12px; border: 1.5px solid #dce6f0; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--texte); outline: none; width: 220px; }
 .filter-search:focus { border-color: var(--bleu-clair); }
 .filter-group { display: flex; gap: 4px; }
+.filter-group + .filter-group { padding-left: 14px; border-left: 1px solid #e8f0f8; }
 .filter-btn { padding: 6px 12px; border-radius: 20px; border: 1.5px solid #dce6f0; background: white; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; color: var(--texte2); cursor: pointer; transition: all .15s; }
 .filter-btn:hover { border-color: var(--bleu-clair); color: var(--bleu); }
 .filter-btn.active { background: var(--bleu); border-color: var(--bleu); color: white; }
@@ -199,6 +200,12 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <button class="filter-btn" onclick="setFilter('structure','SAS',this)">SAS</button>
             <button class="filter-btn" onclick="setFilter('structure','SARL',this)">SARL</button>
           </div>
+          <div class="filter-group">
+            <button class="filter-btn active" onclick="setFilter('contrat','',this)">Tous</button>
+            <button class="filter-btn" onclick="setFilter('contrat','CDI',this)">CDI</button>
+            <button class="filter-btn" onclick="setFilter('contrat','TESA',this)">TESA</button>
+            <button class="filter-btn" onclick="setFilter('contrat','CDD',this)">CDD</button>
+          </div>
           <span class="filter-count" id="filter-count"></span>
         </div>
         <div class="table-wrap">
@@ -247,10 +254,16 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
         <div class="filter-bar">
           <input type="text" class="filter-search" id="search-recap" placeholder="🔍 Rechercher…" oninput="filtrerRecap()">
           <div class="filter-group">
-            <button class="filter-btn active" onclick="setFiltreRecap('',this)">Toutes</button>
-            <button class="filter-btn" onclick="setFiltreRecap('SCEA',this)">SCEA</button>
-            <button class="filter-btn" onclick="setFiltreRecap('SAS',this)">SAS</button>
-            <button class="filter-btn" onclick="setFiltreRecap('SARL',this)">SARL</button>
+            <button class="filter-btn active" onclick="setFiltreRecap('structure','',this)">Toutes</button>
+            <button class="filter-btn" onclick="setFiltreRecap('structure','SCEA',this)">SCEA</button>
+            <button class="filter-btn" onclick="setFiltreRecap('structure','SAS',this)">SAS</button>
+            <button class="filter-btn" onclick="setFiltreRecap('structure','SARL',this)">SARL</button>
+          </div>
+          <div class="filter-group">
+            <button class="filter-btn active" onclick="setFiltreRecap('contrat','',this)">Tous</button>
+            <button class="filter-btn" onclick="setFiltreRecap('contrat','CDI',this)">CDI</button>
+            <button class="filter-btn" onclick="setFiltreRecap('contrat','TESA',this)">TESA</button>
+            <button class="filter-btn" onclick="setFiltreRecap('contrat','CDD',this)">CDD</button>
           </div>
           <span class="filter-count" id="recap-filter-count"></span>
         </div>
@@ -369,7 +382,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
           <select id="f-structure"><option value="">— Choisir —</option><option>SCEA</option><option>SAS</option><option>SARL</option></select>
         </div>
         <div class="form-group contrat-field"><label>Type contrat *</label>
-          <select id="f-contrat"><option value="">— Choisir —</option><option>CDI</option><option>TESA</option></select>
+          <select id="f-contrat"><option value="">— Choisir —</option><option>CDI</option><option>TESA</option><option>CDD</option></select>
         </div>
         <div class="form-group contrat-field"><label>Type période *</label>
           <select id="f-type-periode"><option value="">— Choisir —</option><option value="decalee">Décalée</option><option value="civil">Civile</option></select>
@@ -493,6 +506,7 @@ let collabsData = [];
 let equipesData = [];
 let filtreStatut = '';
 let filtreStructure = '';
+let filtreContrat = '';
 let triColonne = 'nom';
 let triDesc = false;
 let recapPeriodeId = '';
@@ -647,13 +661,11 @@ async function chargerCollabs() {
 }
 
 function setFilter(type, val, btn) {
-  if (type === 'statut') {
-    filtreStatut = val;
-    document.querySelectorAll('.filter-group:nth-of-type(1) .filter-btn').forEach(b => b.classList.remove('active'));
-  } else {
-    filtreStructure = val;
-    document.querySelectorAll('.filter-group:nth-of-type(2) .filter-btn').forEach(b => b.classList.remove('active'));
-  }
+  let groupIndex;
+  if (type === 'statut')         { filtreStatut = val;     groupIndex = 1; }
+  else if (type === 'structure') { filtreStructure = val;  groupIndex = 2; }
+  else                           { filtreContrat = val;    groupIndex = 3; }  // contrat
+  document.querySelectorAll('.filter-group:nth-of-type(' + groupIndex + ') .filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   filtrerCollabs();
 }
@@ -673,6 +685,7 @@ function filtrerCollabs() {
     if (recherche && !nom.includes(recherche)) return false;
     if (filtreStatut && c.statut !== filtreStatut) return false;
     if (filtreStructure && c.structure !== filtreStructure) return false;
+    if (filtreContrat && c.typeContrat !== filtreContrat) return false;
     return true;
   });
   result.sort((a, b) => {
@@ -2656,12 +2669,15 @@ async function chargerPeriodes() {
 let periodesData = [];
 let recapData = [];
 let filtreRecapStructure = '';
+let filtreRecapContrat = '';
 let triColonneRecap = 'nomAffiche';
 let triDescRecap = false;
 
-function setFiltreRecap(structure, btn) {
-  filtreRecapStructure = structure;
-  document.querySelectorAll('#vue-recap .filter-btn').forEach(b => b.classList.remove('active'));
+function setFiltreRecap(type, val, btn) {
+  let groupIndex;
+  if (type === 'structure') { filtreRecapStructure = val; groupIndex = 1; }
+  else                      { filtreRecapContrat = val;   groupIndex = 2; }  // contrat
+  document.querySelectorAll('#vue-recap .filter-group:nth-of-type(' + groupIndex + ') .filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   filtrerRecap();
 }
@@ -2680,6 +2696,7 @@ function filtrerRecap() {
     const nom = ((c.prenom||'') + ' ' + (c.nom||'') + ' ' + (c.nomAffiche||'')).toLowerCase();
     if (recherche && !nom.includes(recherche)) return false;
     if (filtreRecapStructure && c.structure !== filtreRecapStructure) return false;
+    if (filtreRecapContrat && c.typeContrat !== filtreRecapContrat) return false;
     return true;
   });
   const col = triColonneRecap;
@@ -2752,9 +2769,9 @@ async function chargerRecap() {
     derniereSaisie: dern[c.collabId] || null
   }));
   filtreRecapStructure = '';
+  filtreRecapContrat = '';
   document.querySelectorAll('#vue-recap .filter-btn').forEach(b => b.classList.remove('active'));
-  const fb = document.querySelector('#vue-recap .filter-btn');
-  if (fb) fb.classList.add('active');
+  document.querySelectorAll('#vue-recap .filter-group').forEach(g => { const fb = g.querySelector('.filter-btn'); if (fb) fb.classList.add('active'); });
   filtrerRecap();
 }
 </script>
