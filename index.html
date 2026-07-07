@@ -711,6 +711,7 @@
             </div>
         </div>
         <div class="vue" id="vue-mesjours">
+            <div style="padding:4px 4px 14px"><button class="btn btn-secondary" onclick="genererPdfMesSaisies()" style="width:100%">📄 Mes saisies — dernière période complète</button></div>
             <div id="mesjours-content">
                 <div class="loader">
                     <div class="spinner"></div>
@@ -1189,6 +1190,96 @@
             dateFin: fmtISO(periode.date_fin)
         } : null;
         return { ok: true, jours: joursFormates, periode: periodeFormatee };
+    }
+    // PDF des saisies BRUTES (table jours) de la dernière période clôturée du collab.
+    // But : confronter le brut au RIH validé. Réutilise le pattern window.open + window.print().
+    async function genererPdfMesSaisies() {
+        // 1) Collab (COLLAB_ID = le TOKEN, pas le collab_id)
+        const { data: collab, error: ec } = await sb.from('collaborateurs')
+            .select('collab_id, prenom, nom, structure, type_periode').eq('token', COLLAB_ID).single();
+        if (ec || !collab) { showToast('⚠️ Impossible de charger ta fiche', true); return; }
+        // 2) Dernière période CLÔTURÉE de son type
+        const { data: periode } = await sb.from('periodes').select('*')
+            .eq('type_periode', collab.type_periode).eq('statut', 'cloturee')
+            .order('date_fin', { ascending: false }).limit(1).maybeSingle();
+        if (!periode) { showToast('Aucune période clôturée pour l\'instant', true); return; }
+        // 3) Jours BRUTS de cette période (chronologique)
+        const { data: jours, error: ej } = await sb.from('jours').select('*')
+            .eq('collab_id', collab.collab_id).eq('periode_id', periode.periode_id)
+            .order('date_jour', { ascending: true });
+        if (ej) { showToast('⚠️ Erreur de lecture des saisies', true); return; }
+        if (!jours || !jours.length) { showToast('Aucune saisie pour cette période', true); return; }
+        // 4) Helpers + contexte
+        const SOC = { SCEA: 'Chants de la Terre', SAS: 'Chants de la Terre', SARL: 'Les 6 Saveurs' };
+        const societe = SOC[collab.structure] || 'Chants de la Terre';
+        const nomComplet = ((collab.prenom || '') + ' ' + (collab.nom || '')).trim();
+        const fmtJJMMAAAA = iso => { if (!iso) return ''; const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : String(iso); };
+        const fmtH = n => (Number(n)||0).toFixed(2).replace('.', ',') + ' h';
+        const esc = s => String(s||'').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+        const cr = (a, b) => (a && b) ? esc(a)+'–'+esc(b) : (a ? esc(a) : (b ? esc(b) : ''));
+        // 5) Lignes — règle "saisi" : CP / AT / total_heures>0 ; sinon date + jour seulement
+        const rows = jours.map(j => {
+            const saisi = j.type_jour === 'CP' || j.type_jour === 'AT' || (Number(j.total_heures) || 0) > 0;
+            const dateTxt = fmtJJMMAAAA(j.date_jour);
+            const jsem = esc(j.jour_semaine || '');
+            if (!saisi) {
+                // NON saisi : ne pas afficher le "travaillée" par défaut ni les heures
+                return '<tr><td class="l">'+dateTxt+'</td><td>'+jsem+'</td><td></td><td></td><td></td><td></td><td></td><td class="l"></td><td></td><td></td></tr>';
+            }
+            const tot = (Number(j.total_heures) || 0) > 0 ? fmtH(j.total_heures) : '';
+            return '<tr>'
+                + '<td class="l">'+dateTxt+'</td>'
+                + '<td>'+jsem+'</td>'
+                + '<td>'+esc(j.type_jour || '')+'</td>'
+                + '<td>'+cr(j.c1_debut, j.c1_fin)+'</td>'
+                + '<td>'+cr(j.c2_debut, j.c2_fin)+'</td>'
+                + '<td>'+cr(j.c3_debut, j.c3_fin)+'</td>'
+                + '<td class="tot">'+tot+'</td>'
+                + '<td class="l cmt">'+esc(j.commentaire || '')+'</td>'
+                + '<td>'+(j.nb_modifications != null ? j.nb_modifications : '')+'</td>'
+                + '<td class="modif">'+esc(j.date_derniere_modif || '')+'</td>'
+                + '</tr>';
+        }).join('');
+        const auj = new Date();
+        const editeLe = String(auj.getDate()).padStart(2,'0')+'/'+String(auj.getMonth()+1).padStart(2,'0')+'/'+auj.getFullYear();
+        // 6) Document A4 paysage + impression auto
+        const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>Mes saisies — ${esc(nomComplet)}</title>
+<style>
+:root{--txt:#1a1a1a;--txt2:#555;--bord2:#ececec;--entete:#2d4a3e;}
+*{box-sizing:border-box}
+body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--txt);margin:0;padding:0;background:#f0f0f0;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.page{width:297mm;min-height:210mm;margin:16px auto;background:#fff;padding:12mm 14mm;box-shadow:0 2px 12px rgba(0,0,0,.12);}
+.entete{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2.5px solid var(--entete);padding-bottom:9px;margin-bottom:10px;}
+.entete .societe{font-size:16px;font-weight:700;color:var(--entete);letter-spacing:.2px;}
+.entete .doc{font-size:12px;font-weight:600;text-align:right;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;}
+.ident{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;}
+.ident .nom{font-size:15px;font-weight:700;}
+.ident .periode{font-size:12.5px;font-weight:600;color:var(--txt2);}
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:10.5px;}
+thead th{background:var(--entete);color:#fff;font-weight:600;font-size:9px;text-transform:uppercase;letter-spacing:.3px;padding:5px 6px;text-align:center;}
+thead th.l{text-align:left;}
+tbody td{padding:3px 6px;border-bottom:1px solid var(--bord2);text-align:center;}
+tbody td.l{text-align:left;}
+tbody td.tot{font-weight:700;font-variant-numeric:tabular-nums;}
+tbody td.cmt{font-size:10px;color:var(--txt2);max-width:60mm;}
+tbody td.modif{font-size:9px;color:var(--txt2);white-space:nowrap;}
+.pied{margin-top:12px;font-size:10px;color:var(--txt2);}
+@media print{body{background:#fff;}.page{margin:0;box-shadow:none;width:auto;min-height:auto;padding:8mm;}@page{size:A4 landscape;margin:8mm;}}
+</style></head>
+<body><div class="page">
+  <div class="entete"><div class="societe">${esc(societe)}</div><div class="doc">Saisies collaborateur</div></div>
+  <div class="ident"><div class="nom">${esc(nomComplet)}${collab.structure ? ' · ' + esc(collab.structure) : ''}</div><div class="periode">Période du ${fmtJJMMAAAA(periode.date_debut)} au ${fmtJJMMAAAA(periode.date_fin)}</div></div>
+  <table><thead><tr>
+    <th class="l">Date</th><th>Jour</th><th>Type</th><th>Créneau 1</th><th>Créneau 2</th><th>Créneau 3</th><th>Total</th><th class="l">Commentaire</th><th>Modif.</th><th>Dernière modif.</th>
+  </tr></thead><tbody>${rows}</tbody></table>
+  <div class="pied">Saisies déclarées par le collaborateur. Édité le ${editeLe}.</div>
+</div>
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`;
+        const w = window.open('', '_blank');
+        if (!w) { showToast('Autorise les fenêtres pop-up pour le PDF', true); return; }
+        w.document.write(html); w.document.close();
     }
     function calculTotal(p) {
         let t = 0;
