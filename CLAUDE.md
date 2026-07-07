@@ -671,3 +671,24 @@ une copie par client). Détail complet : NOTE_Mes_Heures_Pro_commercialisation.m
   permettait pas l'isolation). L'isolation se pose en FONDATION (au moment de
   l'Edge Function / RLS), elle ne se rajoute pas après — une seule "serrure" mal
   posée = fuite de données entre clients.
+
+## À AMÉLIORER — UX de l'activation programmée (piège identifié le 01/07/2026)
+
+Problème constaté : poser une `date_activation` (même à aujourd'hui) sur un collab
+au statut `inactif` ne l'active PAS. Le cron `activer_collabs_en_attente` ne bascule
+que les collabs au statut `en_attente` → `actif`. Un `inactif` avec date_activation
+reste inactif (donc pas de génération de jours). Cas réel : Sati GUNDUZ (COLL019)
+n'a pas eu son jour du 01/07, rattrapée à la main (activation manuelle + relance de
+generer_jour_aujourdhui, idempotente).
+
+Comportement actuel (à connaître) :
+- date_activation SEULE ne déclenche rien. Il faut le statut `en_attente` pour que
+  le cron active au jour dit, OU activer à la main (actif=true, statut=actif).
+- C'est contre-intuitif (on croit que « mettre une date d'activation » suffit).
+
+Pistes d'amélioration (à concevoir plus tard, pas urgent) :
+- Que poser une date_activation FUTURE bascule automatiquement le collab en
+  `en_attente` (au lieu de le laisser inactif).
+- OU un message clair dans la modale expliquant la différence inactif / en_attente.
+- OU un bouton admin « générer le jour manquant » pour rattraper une activation
+  tardive sans passer par le SQL (déjà évoqué au backlog).
