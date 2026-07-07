@@ -692,3 +692,13 @@ Pistes d'amélioration (à concevoir plus tard, pas urgent) :
 - OU un message clair dans la modale expliquant la différence inactif / en_attente.
 - OU un bouton admin « générer le jour manquant » pour rattraper une activation
   tardive sans passer par le SQL (déjà évoqué au backlog).
+
+## Fonctionnalités livrées (07/07/2026)
+
+- **Fiche collaborateur** : timeline des contrats (modèle journal), en-tête identité compact + zone Contrats, champ téléphone, type CDD.
+- **Filtres par type de contrat** (CDI/TESA/CDD) sur onglets Collaborateurs et Récap.
+- **PDF collab "Mes saisies — dernière période complète"** (index.html, fonction genererPdfMesSaisies) : bouton dans #vue-mesjours → génère un PDF A4 paysage des saisies BRUTES (table jours, pas paie_detail) de la dernière période clôturée du collab. Jours non saisis (pas CP/AT et 0h) affichés vides. Pattern window.open + window.print(), pas de lib. But : confronter au RIH.
+
+## Chantiers à venir (notés)
+- Démarrer un PROCESSUS.md (règles métier + processus, au fil de l'eau).
+- Inventaire Edge Function (lecture seule) avant migration sécurité.
