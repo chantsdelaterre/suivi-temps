@@ -952,8 +952,17 @@ async function confirmerFinContrat() {
   const showMsg = (txt, ok) => { if (msg) { msg.textContent = txt; msg.style.color = ok ? 'var(--vert)' : 'var(--rouge)'; msg.style.display = 'block'; } };
   const dateFin = (document.getElementById('contrat-date-fin') || {}).value || '';
   if (!dateFin) { showMsg('Date de fin requise.', false); return; }
-  const { error } = await sb.rpc('cloturer_contrat', { p_collab_id: collabEnEdition.collabId, p_date_fin: dateFin });
-  if (error) { showMsg('Échec de la fin de contrat : ' + error.message, false); return; }
+    const { data, error } = await sb.functions.invoke('cloturer-contrat', {
+      body: { admin_token: ADMIN_TOKEN, collab_id: collabEnEdition.collabId, date_fin: dateFin }
+    });
+    if (error) {
+      let detail = 'erreur';
+      try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+      showMsg('Échec de la fin de contrat : ' + detail, false); return;
+    }
+    if (!data || data.ok !== true) {
+      showMsg('Échec de la fin de contrat : ' + ((data && data.error) || 'inconnu'), false); return;
+    }
   showMsg('✓ Contrat clôturé au ' + fmtDate(dateFin) + '.', true);
   await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline
 }
