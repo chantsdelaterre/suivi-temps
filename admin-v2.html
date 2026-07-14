@@ -1108,13 +1108,24 @@ async function sauverCollab() {
   }
 
   try {
-    if (collabEnEdition) {
-      // ── ÉDITION ── collab_id et token INCHANGÉS
-      const { error } = await sb.from('collaborateurs').update(champs).eq('collab_id', collabEnEdition.collabId);
-      if (error) { showErr('Échec de l\'enregistrement : ' + error.message); return; }
-      fermerModal();
-      chargerCollabs();
-    } else {
+      if (collabEnEdition) {
+        // ── ÉDITION ── via Edge Function modifier-collab (auth admin)
+        const { data, error } = await sb.functions.invoke('modifier-collab', {
+          body: { admin_token: ADMIN_TOKEN, collab_id: collabEnEdition.collabId, champs }
+        });
+        if (error) {
+          let detail = 'Échec de l\'enregistrement';
+          try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+          showErr('Échec de l\'enregistrement : ' + detail);
+          return;
+        }
+        if (!data || data.ok !== true) {
+          showErr('Échec de l\'enregistrement : ' + ((data && data.error) || 'inconnu'));
+          return;
+        }
+        fermerModal();
+        chargerCollabs();
+      } else {
       // ── CRÉATION ──
       // 1) collab_id = COLL + (max numéro existant + 1) sur 3 chiffres
       const { data: existants, error: eList } = await sb.from('collaborateurs').select('collab_id');
