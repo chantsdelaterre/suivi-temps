@@ -374,23 +374,32 @@ async function sauverRemarque(idx, jourId) {
   const inp = document.getElementById('j'+idx+'-rem');
   const remarque = (inp?.value || '').trim();
   if (msg) msg.style.display = 'none';
-  const { data, error } = await sb
-    .from('jours')
-    .update({ remarque_manager: remarque })
-    .eq('jour_id', jourId)
-    .select('jour_id');
+
+  const { data, error } = await sb.functions.invoke('sauver-remarque', {
+    body: { jour_id: jourId, remarque, manager_token: MANAGER_TOKEN }
+  });
+
   if (!msg) return;
   msg.style.display = 'block';
+
+  // Erreur HTTP renvoyee par la fonction (401 / 403 / 404 / 500)
   if (error) {
+    let detail = error.message || 'Enregistrement impossible.';
+    try {
+      const body = await error.context.json();
+      if (body?.error) detail = body.error;
+    } catch (_) {}
     msg.style.color = 'var(--rouge)';
-    msg.textContent = '✗ ' + (error.message || 'Enregistrement impossible.');
+    msg.textContent = '✗ ' + detail;
     return;
   }
-  if (!data || !data.length) {
+
+  if (!data || data.ok !== true) {
     msg.style.color = 'var(--rouge)';
-    msg.textContent = '✗ Jour introuvable — remarque non enregistrée.';
+    msg.textContent = '✗ ' + ((data && data.error) || 'Remarque non enregistrée.');
     return;
   }
+
   msg.style.color = 'var(--vert)';
   msg.textContent = '✓ Remarque enregistrée';
   if (inp) { inp.style.borderColor = remarque ? 'var(--orange)' : ''; inp.style.background = remarque ? 'var(--orange-pale)' : ''; }
