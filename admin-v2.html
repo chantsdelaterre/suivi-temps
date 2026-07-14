@@ -2389,8 +2389,19 @@ async function cloturerPeriode(periodeId) {
     alert('Clôture impossible : tous les collaborateurs doivent être validés (' + c.x + ' / ' + c.y + ').');
     return;
   }
-  const { error } = await sb.from('periodes').update({ statut: 'cloturee' }).eq('periode_id', periodeId);
-  if (error) { alert('Échec de la clôture : ' + (error.message || error.code || 'erreur Supabase')); return; }
+    const { data, error } = await sb.functions.invoke('cloturer-periode', {
+      body: { admin_token: ADMIN_TOKEN, periode_id: periodeId }
+    });
+    if (error) {
+      let detail = 'erreur Supabase';
+      try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+      alert('Échec de la clôture : ' + detail);
+      return;
+    }
+    if (!data || data.ok !== true) {
+      alert('Échec de la clôture : ' + ((data && data.error) || 'inconnu'));
+      return;
+    }
   if (paieCurrentPeriode === periodeId) paieCurrentPeriode = '';
   await chargerPeriodes();             // periodesData à jour (la période n'est plus 'gelee')
   await renderEntetePaie(true);        // l'en-tête "À traiter" se reconstruit sans elle
