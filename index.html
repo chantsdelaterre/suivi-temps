@@ -1050,86 +1050,52 @@
             showToast('⚠️ Connexion lente — vérifiez votre réseau', true);
         }, 8000);
         try {
-            // Vérifier nb_modifications depuis Supabase
-            const { data: jourActuel } = await sb
-                .from('jours')
-                .select('nb_modifications')
-                .eq('jour_id', jourData.jourId)
-                .single();
-            const nbModifs = jourActuel ? (jourActuel.nb_modifications || 0) : 0;
-            if (nbModifs >= 3) {
-                clearTimeout(timeoutId);
-                showToast('⚠️ 3 modifications maximum atteintes', true);
-                resetBtn();
-                return;
-            }
-            // Calculer total_heures
-            const totalH = calculTotal(payload);
-            // Calculer total_hebdo_prog — lire les jours de la semaine depuis Supabase
-            const _pDate = (jourData.dateJour||'').split('/');
-            const dateJour = _pDate.length===3 ? new Date(_pDate[2], _pDate[1]-1, _pDate[0]) : new Date(jourData.dateJour);
-            const dow = dateJour.getDay() === 0 ? 6 : dateJour.getDay() - 1;
-            const lundi = new Date(dateJour);
-            lundi.setDate(dateJour.getDate() - dow);
-            // Format ISO en heure LOCALE (évite le décalage d'un jour de toISOString/UTC)
-            const isoLocal = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-            const lundiISO = isoLocal(lundi);
-            const dateJourISO = isoLocal(dateJour);
-            const { data: joursSemaine } = await sb
-                .from('jours')
-                .select('total_heures, jour_id')
-                .eq('collab_id', jourData.jourId.split('_')[0])
-                .gte('date_jour', lundiISO)
-                .lte('date_jour', dateJourISO);
-            let hebdoProg = totalH;
-            if (joursSemaine) {
-                joursSemaine.forEach(j => {
-                    if (j.jour_id !== jourData.jourId) {
-                        hebdoProg += Number(j.total_heures) || 0;
-                    }
-                });
-            }
-            // Formatter la date de modification
-            const now = new Date();
-            const dateMod = now.toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'numeric'})
-                + ' ' + now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})
-                + ' (collab)';
-            // UPDATE dans Supabase
-            const isAbsence = ['CP','AT','CS'].includes(payload.typeJour);
-            const { error: updateErr } = await sb
-                .from('jours')
-                .update({
+            const { data, error } = await sb.functions.invoke('sauver-saisie', {
+                body: {
+                    collab_token: COLLAB_ID,
+                    jour_id: jourData.jourId,
                     type_jour: payload.typeJour,
-                    c1_debut: isAbsence ? '' : (payload.c1Debut || ''),
-                    c1_fin: isAbsence ? '' : (payload.c1Fin || ''),
-                    c2_debut: isAbsence ? '' : (payload.c2Debut || ''),
-                    c2_fin: isAbsence ? '' : (payload.c2Fin || ''),
-                    c3_debut: isAbsence ? '' : (payload.c3Debut || ''),
-                    c3_fin: isAbsence ? '' : (payload.c3Fin || ''),
-                    commentaire: payload.commentaire || '',
-                    total_heures: isAbsence ? 0 : totalH,
-                    total_hebdo_prog: isAbsence ? hebdoProg - totalH : hebdoProg,
-                    nb_modifications: nbModifs + 1,
-                    date_derniere_modif: dateMod
-                })
-                .eq('jour_id', jourData.jourId);
+                    c1_debut: payload.c1Debut || '',
+                    c1_fin:   payload.c1Fin   || '',
+                    c2_debut: payload.c2Debut || '',
+                    c2_fin:   payload.c2Fin   || '',
+                    c3_debut: payload.c3Debut || '',
+                    c3_fin:   payload.c3Fin   || '',
+                    commentaire: payload.commentaire || ''
+                }
+            });
             clearTimeout(timeoutId);
-            if (updateErr) {
-                showToast('⚠️ Erreur serveur — réessayez', true);
+
+            // Erreur HTTP renvoyée par la fonction (401/403/404/500)
+            if (error) {
+                let detail = 'Erreur serveur — réessayez';
+                try {
+                    const body = await error.context.json();
+                    if (body?.error) detail = body.error;
+                } catch (_) {}
+                showToast('⚠️ ' + detail, true);
                 resetBtn();
                 return;
             }
+            if (!data || data.ok !== true) {
+                showToast('⚠️ ' + ((data && data.error) || 'Enregistrement impossible'), true);
+                resetBtn();
+                return;
+            }
+
+            // Succès : on utilise les valeurs recalculées côté serveur
+            const isAbsence = ['CP','AT','CS'].includes(payload.typeJour);
             jourData = {
                 ...jourData,
-                nbModifications: nbModifs + 1,
-                totalHeures: isAbsence ? 0 : totalH,
+                nbModifications: data.nb_modifications,
+                totalHeures: data.total_heures,
                 typeJour: payload.typeJour,
                 c1Debut: isAbsence ? '' : (payload.c1Debut || ''),
-                c1Fin: isAbsence ? '' : (payload.c1Fin || ''),
+                c1Fin:   isAbsence ? '' : (payload.c1Fin   || ''),
                 c2Debut: isAbsence ? '' : (payload.c2Debut || ''),
-                c2Fin: isAbsence ? '' : (payload.c2Fin || ''),
+                c2Fin:   isAbsence ? '' : (payload.c2Fin   || ''),
                 c3Debut: isAbsence ? '' : (payload.c3Debut || ''),
-                c3Fin: isAbsence ? '' : (payload.c3Fin || ''),
+                c3Fin:   isAbsence ? '' : (payload.c3Fin   || ''),
             };
             showVue('journee');
             renderJournee();
