@@ -1135,51 +1135,26 @@ async function sauverCollab() {
         fermerModal();
         chargerCollabs();
       } else {
-      // ── CRÉATION ──
-      // 1) collab_id = COLL + (max numéro existant + 1) sur 3 chiffres
-      const { data: existants, error: eList } = await sb.from('collaborateurs').select('collab_id');
-      if (eList) { showErr('Échec (lecture des collab_id) : ' + eList.message); return; }
-      let maxNum = 0;
-      (existants || []).forEach(r => { const m = /^COLL(\d+)$/.exec(r.collab_id || ''); if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10)); });
-      const collabId = 'COLL' + String(maxNum + 1).padStart(3, '0');
-      // 2) token aléatoire 8 car. [a-z0-9], unique en base (régénéré si collision)
-      let token = null;
-      for (let i = 0; i < 20 && !token; i++) {
-        const t = genTokenCollab();
-        const { data: dup, error: eDup } = await sb.from('collaborateurs').select('collab_id').eq('token', t).maybeSingle();
-        if (eDup) { showErr('Échec (vérification token) : ' + eDup.message); return; }
-        if (!dup) token = t;
+        // ── CRÉATION ── via Edge Function creer-collab (auth admin, id/token générés serveur)
+        const { data, error } = await sb.functions.invoke('creer-collab', {
+          body: { admin_token: ADMIN_TOKEN, champs }
+        });
+        if (error) {
+          let detail = 'erreur';
+          try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+          showErr('Échec de la création : ' + detail);
+          return;
+        }
+        if (!data || data.ok !== true) {
+          showErr('Échec de la création : ' + ((data && data.error) || 'inconnu'));
+          return;
+        }
+        alert(data.tel_ok === false
+          ? 'Collaborateur créé, mais le téléphone n\'a pas pu être enregistré — à ressaisir en édition.'
+          : '✓ Collaborateur créé !');
+        fermerModal();
+        chargerCollabs();
       }
-      if (!token) { showErr('Impossible de générer un token unique, réessayez.'); return; }
-      // 3) Création TRANSACTIONNELLE : collaborateurs + 1re ligne historique_contrats (tout-ou-rien)
-      const { error } = await sb.rpc('creer_collaborateur_avec_contrat', {
-        p_collab_id:       collabId,
-        p_token:           token,
-        p_prenom:          champs.prenom,
-        p_nom:             champs.nom,
-        p_nom_affiche:     champs.nom_affiche,
-        p_email:           champs.email,
-        p_structure:       champs.structure,
-        p_equipe_id:       champs.equipe_id,
-        p_type_contrat:    champs.type_contrat,
-        p_type_periode:    champs.type_periode,
-        p_heures_hebdo:    champs.heures_hebdo,
-        p_statut:          champs.statut,
-        p_date_activation: champs.date_activation,
-        p_actif:           champs.actif,
-        p_matricule_silae: champs.matricule_silae
-      });
-      if (error) { showErr('Échec de la création : ' + error.message); return; }
-      // Téléphone non géré par la RPC → maj séparée (message si échec, non silencieux)
-      let telOk = true;
-      if (champs.telephone) {
-        const { error: eTel } = await sb.from('collaborateurs').update({ telephone: champs.telephone }).eq('collab_id', collabId);
-        if (eTel) telOk = false;
-      }
-      alert(telOk ? '✓ Collaborateur créé !' : 'Collaborateur créé, mais le téléphone n\'a pas pu être enregistré — à ressaisir en édition.');
-      fermerModal();
-      chargerCollabs();
-    }
   } catch (e) {
     showErr('Erreur : ' + (e && e.message ? e.message : e));
   }
