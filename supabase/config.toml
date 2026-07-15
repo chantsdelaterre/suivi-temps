@@ -389,6 +389,15 @@ verify_jwt = false
 [functions.creer-collab]
 verify_jwt = false
 
+[functions.importer-paie]
+verify_jwt = false
+
+[functions.ajuster-paie]
+verify_jwt = false
+
+[functions.valider-recap]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

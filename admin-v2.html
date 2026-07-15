@@ -1009,24 +1009,24 @@ async function upsertRecapPaieCourant() {
   if (!ligne) return { ok:false, error:{ message:'totaux du collaborateur introuvables (recharge la période)' } };
   const now = new Date();
   const dateValidation = String(now.getFullYear()) + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-  const { error } = await sb.from('recap_paie').upsert({
-    periode_id:          paieCurrentPeriode,
-    collab_id:           cid,
-    nom_affiche:         ligne.nomAffiche,
-    heures_travaillees:  ligne.heures_travaillees,
-    heures_at:           ligne.heures_at,
-    heures_cs:           ligne.heures_cs,
-    nb_at:               ligne.nb_at,
-    nb_cs:               ligne.nb_cs,
-    nb_cp:               ligne.nb_cp,
-    nb_jours_travailles: ligne.nb_jours_travailles,
-    statut_validation:   'valide',
-    date_validation:     dateValidation,
-    note_admin:          note
-    // nb_at/nb_cs : nb de JOURS AT/CS (depuis paie_detail couche 2, via calculerPaieDepuisPaieDetail).
-    // date_ajuste_admin : non écrit. Statut période : non touché.
-  }, { onConflict: 'periode_id,collab_id' });
-  return error ? { ok:false, error } : { ok:true };
+  const { data: dRec, error } = await sb.functions.invoke('valider-recap', {
+    body: { admin_token: ADMIN_TOKEN, recap: {
+      periode_id:          paieCurrentPeriode,
+      collab_id:           cid,
+      nom_affiche:         ligne.nomAffiche,
+      heures_travaillees:  ligne.heures_travaillees,
+      heures_at:           ligne.heures_at,
+      heures_cs:           ligne.heures_cs,
+      nb_at:               ligne.nb_at,
+      nb_cs:               ligne.nb_cs,
+      nb_cp:               ligne.nb_cp,
+      nb_jours_travailles: ligne.nb_jours_travailles,
+      statut_validation:   'valide',
+      date_validation:     dateValidation,
+      note_admin:          note
+    } }
+  });
+  return (error || !dRec || dRec.ok !== true) ? { ok:false, error: error || (dRec && dRec.error) } : { ok:true };
 }
 
 // Feedback de succès (bouton + pills + badge) — factorisé.
@@ -1487,13 +1487,15 @@ async function importerPaiePeriode(periodeId) {
     };
   });
 
-  const { error: eins } = await sb.from('paie_detail').insert(lignes);
-  if (eins) {
-    console.error('importerPaiePeriode : erreur insert', eins);
-    return {ok:false, raison:'erreur insert', error:eins};
+  const { data: dImp, error: eins } = await sb.functions.invoke('importer-paie', {
+    body: { admin_token: ADMIN_TOKEN, lignes }
+  });
+  if (eins || !dImp || dImp.ok !== true) {
+    console.error('importerPaiePeriode : erreur import', eins || dImp);
+    return { ok:false, raison:'erreur insert', error: eins || (dImp && dImp.error) };
   }
-  console.log('importerPaiePeriode : ' + lignes.length + ' ligne(s) importée(s) dans paie_detail pour ' + periodeId);
-  return {ok:true, importe:true, lignes:lignes.length};
+  console.log('importerPaiePeriode : import via Edge pour ' + periodeId + ' — ' + JSON.stringify(dImp));
+  return { ok:true, importe: dImp.importe !== false, lignes: dImp.n ?? lignes.length };
 }
 window.importerPaiePeriode = importerPaiePeriode;
 
@@ -1809,11 +1811,16 @@ async function enregistrerEtValider() {
   });
   // 1b) écriture couche 2 (jamais `jours`, jamais date_ajuste_admin)
   const erreurs = [];
-  for (const u of updates) {
-    const { error } = await sb.from('paie_detail')
-      .update({ type_jour_valide: u.type_jour_valide, heures_valide: u.heures_valide, ajuste_admin: true })
-      .eq('id', u.id);
-    if (error) erreurs.push(u.id + ' : ' + (error.message || error.code));
+  if (updates.length) {
+    const { data: dAdj, error: eAdj } = await sb.functions.invoke('ajuster-paie', {
+      body: { admin_token: ADMIN_TOKEN, updates }
+    });
+    if (eAdj || !dAdj || dAdj.ok !== true) {
+      let d = 'erreur';
+      try { const b = await eAdj?.context?.json(); if (b?.error) d = b.error; } catch (_) {}
+      if (!eAdj && dAdj && dAdj.error) d = dAdj.error;
+      erreurs.push(d);
+    }
   }
   if (erreurs.length) {
     if (btnVal) { btnVal.disabled = false; btnVal.textContent = '💾 Enregistrer et valider le relevé'; btnVal.style.opacity = '1'; }
