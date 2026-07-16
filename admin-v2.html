@@ -1481,6 +1481,12 @@ async function importerPaiePeriode(periodeId) {
       date_cloture:        null,   // explicitement null (la date de clôture sera posée à la CLÔTURE, pas à l'import)
       // Couche 2 — pré-remplie (valeurs de départ, ajustables par l'admin)
       type_jour_valide:    j.type_jour,
+      c1_debut_valide:     j.c1_debut,
+      c1_fin_valide:       j.c1_fin,
+      c2_debut_valide:     j.c2_debut,
+      c2_fin_valide:       j.c2_fin,
+      c3_debut_valide:     j.c3_debut,
+      c3_fin_valide:       j.c3_fin,
       heures_valide:       heuresValide,
       ajuste_admin:        false,
       note_admin:          null

@@ -15,6 +15,7 @@ const COLS = [
   "total_heures","commentaire","remarque_manager","total_hebdo_prog",
   "nb_modifications","date_derniere_modif","date_cloture",
   "type_jour_valide","heures_valide","ajuste_admin","note_admin",
+  "c1_debut_valide","c1_fin_valide","c2_debut_valide","c2_fin_valide","c3_debut_valide","c3_fin_valide",
 ];
 
 Deno.serve(async (req) => {
