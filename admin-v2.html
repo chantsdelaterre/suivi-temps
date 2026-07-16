@@ -1811,8 +1811,26 @@ async function enregistrerEtValider() {
     const nH = newType === 'CP' ? 0
       : r2(totEl ? (parseFloat(String(totEl.value).replace(',','.')) || 0) : (Number(j.totalHeures)||0));
     const oH = r2(j.totalHeures);
-    if (newType !== j.typeJour || nH !== oH) {
-      updates.push({ id: j.jourId, type_jour_valide: newType, heures_valide: nH });
+    // Créneaux couche 2 : lus/persistés UNIQUEMENT pour 'travaillée'.
+    // (CP/AT/CS : majTotalPaie vide les inputs DOM → on ne touche pas les colonnes *_valide.)
+    let cren = null, crenModif = false;
+    if (newType === 'travaillée') {
+      const g = sfx => (document.getElementById('jp'+idx+'-'+sfx)?.value || '');
+      cren = {
+        c1_debut_valide: g('c1d'), c1_fin_valide: g('c1f'),
+        c2_debut_valide: g('c2d'), c2_fin_valide: g('c2f'),
+        c3_debut_valide: g('c3d'), c3_fin_valide: g('c3f'),
+      };
+      crenModif = [
+        [cren.c1_debut_valide, j.c1Debut], [cren.c1_fin_valide, j.c1Fin],
+        [cren.c2_debut_valide, j.c2Debut], [cren.c2_fin_valide, j.c2Fin],
+        [cren.c3_debut_valide, j.c3Debut], [cren.c3_fin_valide, j.c3Fin],
+      ].some(([a, b]) => fmtHeure(a) !== fmtHeure(b));
+    }
+    if (newType !== j.typeJour || nH !== oH || crenModif) {
+      const u = { id: j.jourId, type_jour_valide: newType, heures_valide: nH };
+      if (cren) Object.assign(u, cren);
+      updates.push(u);
     }
   });
   // 1b) écriture couche 2 (jamais `jours`, jamais date_ajuste_admin)

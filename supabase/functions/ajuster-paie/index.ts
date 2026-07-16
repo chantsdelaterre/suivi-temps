@@ -24,13 +24,16 @@ Deno.serve(async (req) => {
   if (aErr) return json({ ok: false, error: "Erreur base (auth admin)" }, 500);
   if (!adminNom) return json({ ok: false, error: "Admin non autorisé" }, 401);
 
+  const CREN_COLS = ["c1_debut_valide","c1_fin_valide","c2_debut_valide","c2_fin_valide","c3_debut_valide","c3_fin_valide"];
   for (const u of updates) {
     if (u?.id == null) return json({ ok: false, error: "id manquant dans une ligne" }, 400);
-    const { error: uErr } = await supabase.from("paie_detail").update({
+    const maj: Record<string, unknown> = {
       type_jour_valide: u.type_jour_valide,
       heures_valide: u.heures_valide,
       ajuste_admin: true,
-    }).eq("id", u.id);
+    };
+    for (const col of CREN_COLS) if (u[col] !== undefined) maj[col] = u[col];
+    const { error: uErr } = await supabase.from("paie_detail").update(maj).eq("id", u.id);
     if (uErr) return json({ ok: false, error: "Échec ajustement (id " + u.id + ")" }, 500);
   }
   return json({ ok: true, n: updates.length });
