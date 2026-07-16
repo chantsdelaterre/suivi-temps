@@ -2545,7 +2545,7 @@ async function genererPdfReleve(collabIdEnc, periodeId) {
   const collabId = decodeURIComponent(collabIdEnc);
   // 1) paie_detail (couche 2) trié par date
   const { data: det, error } = await sb.from('paie_detail')
-    .select('date_jour, jour_semaine, type_jour_valide, c1_debut, c1_fin, c2_debut, c2_fin, c3_debut, c3_fin, heures_valide')
+    .select('date_jour, jour_semaine, type_jour_valide, c1_debut_valide, c1_fin_valide, c2_debut_valide, c2_fin_valide, c3_debut_valide, c3_fin_valide, heures_valide')
     .eq('collab_id', collabId).eq('periode_id', periodeId).order('date_jour');
   if (error) { alert('Erreur de lecture du relevé : ' + (error.message || error.code)); return; }
   if (!det || !det.length) { alert('Aucune donnée pour ce relevé.'); return; }
@@ -2569,7 +2569,7 @@ async function genererPdfReleve(collabIdEnc, periodeId) {
   const fmtH = n => (Number(n)||0).toFixed(2).replace('.', ',') + ' h';
   const cr = (deb, fin) => (fmtHeure(deb) && fmtHeure(fin)) ? fmtHeure(deb)+'–'+fmtHeure(fin) : null;
   // Colonne Créneau 3 : seulement si au moins un jour en a un
-  const showC3 = det.some(d => fmtHeure(d.c3_debut) && fmtHeure(d.c3_fin));
+  const showC3 = det.some(d => fmtHeure(d.c3_debut_valide) && fmtHeure(d.c3_fin_valide));
   // 3) Lignes + total sem. à la volée (reset chaque lundi) + total global
   const badge = t => t==='CP' ? '<span class="badge b-cp">CP</span>'
     : t==='AT' ? '<span class="badge b-at">AT</span>'
@@ -2584,9 +2584,9 @@ async function genererPdfReleve(collabIdEnc, periodeId) {
     const dow = dt.getDay();
     const trCls = dow===6 ? ' class="sam"' : dow===0 ? ' class="dim"' : '';
     const trav = d.type_jour_valide === 'travaillée';
-    const c1v = trav ? cr(d.c1_debut,d.c1_fin) : null;
-    const c2v = trav ? cr(d.c2_debut,d.c2_fin) : null;
-    const c3v = trav ? cr(d.c3_debut,d.c3_fin) : null;
+    const c1v = trav ? cr(d.c1_debut_valide,d.c1_fin_valide) : null;
+    const c2v = trav ? cr(d.c2_debut_valide,d.c2_fin_valide) : null;
+    const c3v = trav ? cr(d.c3_debut_valide,d.c3_fin_valide) : null;
     const aCreneau = !!(c1v || c2v || c3v);
     // 'travaillée' masqué si jour vide (0h ET aucun créneau) → "—" ; CP/AT/CS inchangés
     const typeHtml = (trav && h === 0 && !aCreneau) ? '<span class="vide">—</span>' : badge(d.type_jour_valide);
