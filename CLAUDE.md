@@ -494,6 +494,12 @@ lecture/écriture sur Supabase** (hors clôture/PDF).
    `historique_contrats` sont en **accès `anon` ouvert (phase DEV)** — à
    restreindre à l'auth admin avant mise en production.
 
+- Cosmétique / couche 2 : le front écrit '' (chaîne vide) là où la couche 1 a
+  null pour un créneau absent (le `|| ''` dans enregistrerEtValider). Sans effet
+  fonctionnel (fmtHeure('') === '' → créneau non affiché, modale et relevé), mais
+  ces lignes ressortent à tort dans une comparaison `c1_debut is distinct from
+  c1_debut_valide`. Constaté sur COLL016 / 2026-05-19 (c3).
+
 ### Accès SQL ouverts en base (phase DEV, le 13/06)
 
 - **`recap_paie`** : `grant select, insert, update … to anon` + policies
