@@ -39,7 +39,7 @@
 | `type_periode` | `text` | `check in ('civil','decalee')` |
 
 Index : `idx_historique_contrats_collab_date (collab_id, date_debut)`.
-RLS : activée ; policy **SELECT** `anon` (lecture ouverte phase DEV).
+RLS : activée ; policy **SELECT** `anon` (lecture ouverte phase DEV). ✅ **Résolu le 16/07/2026** : écriture anon RÉVOQUÉE, `service_role` dispose des droits, écritures via Edge Functions (voir `sql/coupure_ecriture_anon.sql`).
 
 ## `paie_detail` — `sql/paie_detail.sql`
 Photo figée jour par jour (niveau 2). Couche 1 = copie des `jours` ; couche 2 = validation admin.
@@ -73,7 +73,7 @@ Photo figée jour par jour (niveau 2). Couche 1 = copie des `jours` ; couche 2 =
 
 Contraintes : FK `collab_id` ; **unique `(periode_id, collab_id, date_jour)`**.
 Index : `idx_paie_detail_periode_collab (periode_id, collab_id)`.
-RLS : activée ; policies **SELECT / INSERT / UPDATE** `anon` (lecture+écriture ouvertes phase DEV).
+RLS : activée ; policies **SELECT / INSERT / UPDATE** `anon` (lecture+écriture ouvertes phase DEV). ✅ **Résolu le 16/07/2026** : écriture anon RÉVOQUÉE, `service_role` dispose des droits, écritures via Edge Functions (voir `sql/coupure_ecriture_anon.sql`).
 
 ## `recap_paie` — `sql/recap_paie.sql`
 Synthèse agrégée figée (niveau 3). 1 ligne par collab/période.
@@ -96,7 +96,7 @@ Synthèse agrégée figée (niveau 3). 1 ligne par collab/période.
 | `created_at` | `timestamptz` | `default now()` |
 
 Contraintes : FK `collab_id` ; **unique `(periode_id, collab_id)`** (→ upsert possible).
-RLS : activée ; policies **SELECT / INSERT / UPDATE** `anon` (lecture+écriture ouvertes phase DEV, **ouvertes le 13/06** — `grant` + 3 policies). Consigné dans `sql/recap_paie.sql`. ⚠️ À resécuriser post-15.
+RLS : activée ; policies **SELECT / INSERT / UPDATE** `anon` (lecture+écriture ouvertes phase DEV, **ouvertes le 13/06** — `grant` + 3 policies). Consigné dans `sql/recap_paie.sql`. ⚠️ À resécuriser post-15. ✅ **Résolu le 16/07/2026** : écriture anon RÉVOQUÉE, `service_role` dispose des droits, écritures via Edge Functions (voir `sql/coupure_ecriture_anon.sql`).
 Note : stocke `heures_at`/`heures_cs` (heures) et `nb_cp` (jours), **mais pas** `nb_at`/`nb_cs` (nombre de jours AT/CS).
 
 ---

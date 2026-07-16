@@ -44,6 +44,27 @@ La saisie d'un jour par un collaborateur est possible **si et seulement si les 4
   - **Vérifié sur 2026** : fins les **19/07, 16/08, 20/09, 18/10**.
 - **Génération** : maintenir **2 périodes `planifiee` d'avance par type** (méthode A). La **génération annuelle du 15/11 est reportée** (pas pour l'instant).
 
+## Architecture des écritures — Edge Functions (migré le 16/07/2026)
+
+**Principe :** toutes les écritures front passent par des Edge Functions Supabase authentifiées. Le rôle `anon` (clé publishable, publique) est en LECTURE SEULE. Les fonctions écrivent en `service_role`.
+
+**9 Edge Functions** (`supabase/functions/`) :
+- `sauver-remarque` — remarque manager (auth `manager_token` + appartenance équipe)
+- `sauver-saisie` — saisie collab (auth token collab + appartenance ; recalcul serveur des totaux + règles 3 modifs/jour, J-5, période ouverte)
+- `modifier-collab` — édition collab (auth admin, whitelist colonnes)
+- `creer-collab` — création collab (auth admin ; génère collab_id + token serveur, appelle la RPC, pose le téléphone)
+- `cloturer-periode` — clôture (auth admin + invariant gelee→cloturee)
+- `cloturer-contrat` — fin de contrat (auth admin, wrappe la RPC cloturer_contrat)
+- `importer-paie` — import bulk paie_detail (auth admin, idempotent)
+- `ajuster-paie` — ajustements couche 2 paie_detail (auth admin, batch)
+- `valider-recap` — upsert recap_paie (auth admin)
+
+**Auth :** token applicatif dans le body, vérifié serveur — collab : `collaborateurs.token` ; manager : `equipes.manager_token` ; admin : RPC `verifier_admin`. Acteur collab = non fiable → recalcul serveur. Acteur admin = de confiance → fonctions « fines » (calcul au front).
+
+**Sécurité base** (voir `sql/coupure_ecriture_anon.sql`, appliqué en base le 16/07/2026) : écriture `anon` révoquée sur toutes les tables (SELECT conservé) ; RPC écrivantes et fonctions cron verrouillées en `service_role`/`postgres`. `verifier_admin` reste exécutable par anon (login).
+
+**Workflow Edge :** CC code + commit les fonctions ; Guillaume déploie au Terminal (`supabase functions deploy <nom>` → Supabase, PAS GitHub). `verify_jwt = false` figé par fonction dans `supabase/config.toml`. Preuve de branchement = onglet Network (fonction en 200).
+
 ## Méthode de travail
 - **Éditions chirurgicales uniquement** : ne jamais réécrire un fichier entier.
 - **Une seule modification à la fois** : on discute, on valide, ensuite on code.
