@@ -1893,19 +1893,19 @@ async function ouvrirSaisiesPaie(collabId, btn) {
     .order('date_jour');
   if (error) { document.getElementById('table-saisies-paie').innerHTML = '<div class="error-banner">Erreur de chargement.</div>'; return; }
   // Mapping snake_case → camelCase attendu par buildTableSaisies.
-  // Affiché = COUCHE 2 (type_jour_valide / heures_valide), sans fallback ; créneaux = couche 1 (référence).
+  // Affiché = COUCHE 2 (type_jour_valide / heures_valide) ; créneaux = COUCHE 2 (*_valide), sans fallback.
   const fmtISO = iso => { if (!iso) return ''; const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : String(iso); };
   const jours = (detail || []).map(d => ({
     jourId:      String(d.id),          // handle paie_detail.id (pour l'écriture, étape suivante)
     dateJour:    fmtISO(d.date_jour),
     jourSemaine: d.jour_semaine,
     typeJour:    d.type_jour_valide,    // COUCHE 2
-    c1Debut:     d.c1_debut || '',
-    c1Fin:       d.c1_fin || '',
-    c2Debut:     d.c2_debut || '',
-    c2Fin:       d.c2_fin || '',
-    c3Debut:     d.c3_debut || '',
-    c3Fin:       d.c3_fin || '',
+    c1Debut:     d.c1_debut_valide || '',
+    c1Fin:       d.c1_fin_valide || '',
+    c2Debut:     d.c2_debut_valide || '',
+    c2Fin:       d.c2_fin_valide || '',
+    c3Debut:     d.c3_debut_valide || '',
+    c3Fin:       d.c3_fin_valide || '',
     totalHeures: d.heures_valide,       // COUCHE 2
     commentaire: d.commentaire || ''
   }));
