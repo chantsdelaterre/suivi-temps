@@ -732,6 +732,12 @@ Pistes d'amélioration (à concevoir plus tard, pas urgent) :
 
 ## Contrats & dossiers — modèle CONSOLIDÉ (17/07/2026)
 
+> 🔎 **L'état du CODE se constate avec Claude Code (grep sur le dépôt réel),
+> JAMAIS depuis le chat** — les fichiers projet vus en chat sont une copie FIGÉE,
+> potentiellement périmée. CLAUDE.md porte les **DÉCISIONS** (le pourquoi), pas
+> l'état du code (le quoi). **Aucun numéro de ligne dans ce fichier** : il serait
+> périmé dès le commit suivant.
+
 > Cette section FAIT FOI et SUPERSÈDE les sections « HISTORISATION DES
 > CONTRATS — conception figée (14/06/2026) » et « Historisation des
 > contrats — MODÈLE JOURNAL (28/06/2026) » sur tous les points qu'elle
@@ -806,9 +812,12 @@ la génération des jours + tout le front qui lit ces colonnes).
   effet futur met la fiche à jour DÈS LA SAISIE (trop tôt).
 - `cloturer_contrat` ne touche PAS la fiche (asymétrie avec la
   précédente).
-- AUCUNE fonction du projet ne rafraîchit la fiche à la date d'effet :
-  `trigger_quotidien` a 4 étapes, aucune ne lit `historique_contrats`.
-  Le cron prévu par la note du 28/06 n'a jamais été écrit.
+- Dans le **SQL versionné du dépôt** (`sql/trigger_quotidien.sql`),
+  `trigger_quotidien` enchaîne 4 étapes (activer_collabs_en_attente →
+  ouvrir_geler_periodes → generer_periodes_suivantes → generer_jour_aujourdhui) et
+  **aucune ne lit `historique_contrats`**. ⚠️ Le dépôt reflète le fichier de
+  référence, PAS forcément l'état exact de la base (à confirmer côté base si un
+  doute). Aucun cron de rafraîchissement de fiche n'existe dans `sql/`.
 
 À faire (chantier séparé) : une fonction unique
 `rafraichir_fiche_collab(p_collab_id)` portant la règle « contrat en
@@ -825,18 +834,26 @@ RIEN (la fiche garde l'ancienne valeur, le collab continue de saisir) et
 le trou est signalé dans le rapport texte de `trigger_quotidien`. On ne
 bloque pas la saisie pour punir une saisie admin en retard.
 
-### La timeline (prochain chantier, lecture seule)
+### La timeline (LIVRÉE — commit 31186c7)
 
-Remplace `chargerContratActuel()` (admin-v2.html ~l.861), qui est faux :
-`.is('date_fin', null).maybeSingle()` ignore un contrat en cours ayant
-une date de fin connue → affiche « Aucun contrat en cours » à quelqu'un
-qui en a un, et plante s'il y a 2 lignes ouvertes.
+`chargerContratActuel()` (`admin-v2.html`) est **déjà une timeline lecture seule**
+de TOUTES les lignes de contrat du collab (aucun bug résiduel ; l'ancien
+`.is('date_fin', null).maybeSingle()` n'existe plus). Comportement réel constaté
+dans le code :
+- Elle lit `historique_contrats` filtré par `collab_id`, **ordonné par `date_debut`
+  croissant** (la plus ancienne en haut).
+- L'état de chaque ligne est **calculé** (jamais stocké) par comparaison de chaînes
+  `YYYY-MM-DD` à aujourd'hui : **passé/terminé** (`date_fin` connue < aujourd'hui,
+  fond gris) ; **à venir** (`date_debut` > aujourd'hui, fond bleu, « À partir du … »).
+- ⚠️ Pour un contrat **en cours**, l'affichage DIFFÈRE selon la date de fin : **avec
+  date de fin connue** (cas TESA) → fond orange, « … se termine le … » ; **sans date
+  de fin** → fond vert, « Depuis le … ». Le bouton « Fin de contrat » n'apparaît que
+  sur une ligne en cours **sans date de fin** (cohérent avec `cloturer_contrat` qui
+  cible `where date_fin is null`).
 
-La timeline affiche TOUTES les lignes du collab : passé (gris) /
-en cours (vert) / à venir (violet). Les TROUS NE SONT PAS AFFICHÉS :
-un trou est ambigu (fin définitive ? pause saisonnière ? attente d'un
-CDI ?) et le journal ne sait pas lequel. L'incertitude appartient au
-dossier, pas au journal.
+Les TROUS NE SONT PAS AFFICHÉS : un trou est ambigu (fin définitive ? pause
+saisonnière ? attente d'un CDI ?) et le journal ne sait pas lequel. L'incertitude
+appartient au dossier, pas au journal.
 
 ### Manques identifiés (non traités, notés)
 
@@ -855,12 +872,21 @@ dossier, pas au journal.
   sans date d'activation fait planter la création. Bloquant pour le
   chantier « prospect ».
 
-### Vérifié le 17/07 (grep, pas de mémoire)
+### Constats de code re-vérifiés par grep (17/07)
 
-- Drum picker (index.html) : FAIT.
-- Bug créneaux CP/AT/CS : traité côté index.html (`isAbsence`), à
-  vérifier côté admin-v2.html.
-- Code mort confirmé (définis, jamais appelés) : `grouperParSemaine`,
-  `initPaie`, `sauverNote`, `rechargerDetailPaie`.
-- Encore branchés, NE PAS supprimer : `calculerPaiePeriode`,
-  `toggleValidation`, `toggleCollab`.
+> Le titre précédent « Vérifié le 17/07 (grep) » reposait sur une copie PÉRIMÉE
+> d'`admin-v2.html`. Constats refaits par grep sur le dépôt réel :
+
+- **Drum picker** (`index.html`) : **présent** (`#drum-h`/`#drum-m`, `initDrums`).
+- **Vidage des créneaux sur CP/AT/CS** : `index.html` le fait via `isAbsence`
+  (`['CP','AT','CS']` → créneaux vidés). `admin-v2.html` **ne contient PAS**
+  d'`isAbsence` : la gestion CP/AT/CS y passe par un autre mécanisme (les créneaux
+  ne sont capturés que pour `travaillée`). Cohérence fonctionnelle **à vérifier**
+  (non tranchée par grep).
+- **Code mort** (défini, **aucun site d'appel trouvé par grep**) :
+  `grouperParSemaine`, `initPaie`, `sauverNote`, `rechargerDetailPaie`,
+  **`calculerPaiePeriode`** (seule autre occurrence = un commentaire) et
+  **`toggleValidation`** — ⚠️ à NE PAS confondre avec `toggleValidationModal`,
+  qui, lui, est appelé (`onclick` du bouton « Valider »).
+- **Vivant, NE PAS supprimer** : `toggleCollab` (appelé via `onclick`) et
+  `toggleValidationModal`.
