@@ -729,3 +729,138 @@ Pistes d'amélioration (à concevoir plus tard, pas urgent) :
 ## Chantiers à venir (notés)
 - Démarrer un PROCESSUS.md (règles métier + processus, au fil de l'eau).
 - Inventaire Edge Function (lecture seule) avant migration sécurité.
+
+## Contrats & dossiers — modèle CONSOLIDÉ (17/07/2026)
+
+> Cette section FAIT FOI et SUPERSÈDE les sections « HISTORISATION DES
+> CONTRATS — conception figée (14/06/2026) » et « Historisation des
+> contrats — MODÈLE JOURNAL (28/06/2026) » sur tous les points qu'elle
+> recouvre.
+
+### Les 3 règles
+
+1. Un dossier = une démarche en cours.
+2. Le dossier meurt en donnant un contrat.
+3. Rien d'hypothétique dans le moteur de paie.
+
+### Séparation des natures de données
+
+- `collaborateurs` = QUI (administratif, état courant).
+- `historique_contrats` = LE FAIT JURIDIQUE, daté. Journal append-only.
+  Lu par la paie. Une ligne n'apparaît QU'À LA SIGNATURE.
+- `dossiers` (à créer, chantier séparé) = L'INTENTION. Dates prévues,
+  statut de la démarche, tâches (DPAE, contrat, FDP, signature).
+  Physiquement AILLEURS : une donnée hypothétique dans une autre table
+  ne peut pas être lue par erreur par la paie. Jamais un champ
+  « statut : prévu » dans historique_contrats.
+
+### Une fiche = une personne + UN employeur
+
+Un collaborateur qui travaille dans 2 structures a 2 fiches (cas réels :
+Eric BOEHM = SAS + 6 Saveurs, Alice HAGER = TESA SAS + CDI SARL). Ce
+n'est PAS un bricolage : en paie française, 1 contrat dans 1 structure
+= 1 matricule Silae, 1 DPAE, 1 bulletin. Le modèle épouse le réel.
+
+Conséquences :
+- `jour_id = collab_id_date` tient (2 fiches = 2 jours le même samedi).
+- Pas de `contrat_id` sur les jours.
+- Le cache de la fiche reste possible (1 fiche = 1 contrat en vigueur).
+- Dette assumée : les données de personne (RIB, carte vitale) sont en
+  double sur les 2 fiches. Un `personne_id` viendra plus tard si le
+  nombre de cas grandit. Aujourd'hui : 2 cas sur ~50 → on note, on
+  n'implémente pas.
+
+### Le garde-fou anti-chevauchement est CONSERVÉ
+
+⚠️ SUPERSÈDE la note du 28/06 qui disait « à revoir car chevauchement
+autorisé ». Le chevauchement était censé couvrir le multi-structure ;
+le multi-structure passe par des fiches séparées. Donc dans une fiche,
+2 contrats qui se recouvrent = ERREUR DE SAISIE. Le garde-fou de
+`ajouter_contrat` reste. La résolution « le plus récent par created_at
+gagne » est ABANDONNÉE : elle masquerait un bug.
+
+### Pas de détection automatique de changement de champ
+
+⚠️ SUPERSÈDE le point 2 du backlog du 14/06. Les champs contractuels ne
+sont PAS modifiables dans la fiche et sauverCollab ne détecte RIEN.
+Ils ne changent QUE par un geste explicite et daté. Sinon, corriger une
+faute de frappe dans « TESA » déclencherait un changement de contrat.
+
+### Deux gestes, pas un
+
+Un contrat s'arrête = un événement. Un autre démarre = un autre
+événement. Pas de `changer_contrat` atomique : il fabriquerait un
+événement composite qui n'existe pas dans le réel, et rendrait
+impossible le trou (qui est un fait). Le filet de sécurité n'est pas la
+transaction, c'est la timeline qui montre l'état.
+
+### Le cache de la fiche : GARDÉ, mais réparé (option A1)
+
+`generer_jour_aujourdhui()` lit `collaborateurs.type_periode`, pas le
+journal. C'est un cache. Décision : le garder (le supprimer toucherait
+la génération des jours + tout le front qui lit ces colonnes).
+
+État réel constaté le 17/07 (grep + pg_proc) :
+- `ajouter_contrat` EXISTE en base mais N'EST APPELÉE PAR AUCUN FRONT.
+  Elle fait un `update collaborateurs` INCONDITIONNEL → un contrat à
+  effet futur met la fiche à jour DÈS LA SAISIE (trop tôt).
+- `cloturer_contrat` ne touche PAS la fiche (asymétrie avec la
+  précédente).
+- AUCUNE fonction du projet ne rafraîchit la fiche à la date d'effet :
+  `trigger_quotidien` a 4 étapes, aucune ne lit `historique_contrats`.
+  Le cron prévu par la note du 28/06 n'a jamais été écrit.
+
+À faire (chantier séparé) : une fonction unique
+`rafraichir_fiche_collab(p_collab_id)` portant la règle « contrat en
+vigueur aujourd'hui », appelée par 3 endroits :
+- `ajouter_contrat` (remplace l'update inconditionnel)
+- `cloturer_contrat` (corrige l'asymétrie)
+- `trigger_quotidien` en ÉTAPE 3,5 — APRÈS `generer_periodes_suivantes`,
+  AVANT `generer_jour_aujourdhui`. L'ordre est CRITIQUE : après, le jour
+  est déjà créé dans la mauvaise période et `ON CONFLICT DO NOTHING` ne
+  le corrigera jamais.
+
+Le trou (aucun contrat en vigueur) : le rafraîchissement NE TOUCHE À
+RIEN (la fiche garde l'ancienne valeur, le collab continue de saisir) et
+le trou est signalé dans le rapport texte de `trigger_quotidien`. On ne
+bloque pas la saisie pour punir une saisie admin en retard.
+
+### La timeline (prochain chantier, lecture seule)
+
+Remplace `chargerContratActuel()` (admin-v2.html ~l.861), qui est faux :
+`.is('date_fin', null).maybeSingle()` ignore un contrat en cours ayant
+une date de fin connue → affiche « Aucun contrat en cours » à quelqu'un
+qui en a un, et plante s'il y a 2 lignes ouvertes.
+
+La timeline affiche TOUTES les lignes du collab : passé (gris) /
+en cours (vert) / à venir (violet). Les TROUS NE SONT PAS AFFICHÉS :
+un trou est ambigu (fin définitive ? pause saisonnière ? attente d'un
+CDI ?) et le journal ne sait pas lequel. L'incertitude appartient au
+dossier, pas au journal.
+
+### Manques identifiés (non traités, notés)
+
+- `ajouter_contrat` et `creer_collaborateur_avec_contrat` n'ont PAS de
+  paramètre `date_fin` (écrit en dur à null) → aucun TESA ne peut naître
+  avec sa date de fin, alors qu'un TESA est un contrat à terme connu à
+  la signature. Conséquence : l'alerte J-5 « fin de contrat » ne pourra
+  jamais se déclencher tant que ce n'est pas corrigé.
+- Le TAUX HORAIRE n'existe nulle part dans l'appli (le tableau TESA le
+  porte : 9,85 à 16 €). Donnée contractuelle et datée → sa place serait
+  dans le journal. À décider : dans l'appli ou chez Silae ?
+- `heures_hebdo` : 6 Saveurs raisonne en MENSUEL, pas en hebdo.
+- `cree_par` et `note` : prévus par la note du 28/06, jamais créés.
+- `creer_collaborateur_avec_contrat` fait `date_debut = p_date_activation`
+  et `historique_contrats.date_debut` est NOT NULL → créer un collab
+  sans date d'activation fait planter la création. Bloquant pour le
+  chantier « prospect ».
+
+### Vérifié le 17/07 (grep, pas de mémoire)
+
+- Drum picker (index.html) : FAIT.
+- Bug créneaux CP/AT/CS : traité côté index.html (`isAbsence`), à
+  vérifier côté admin-v2.html.
+- Code mort confirmé (définis, jamais appelés) : `grouperParSemaine`,
+  `initPaie`, `sauverNote`, `rechargerDetailPaie`.
+- Encore branchés, NE PAS supprimer : `calculerPaiePeriode`,
+  `toggleValidation`, `toggleCollab`.
