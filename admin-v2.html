@@ -967,10 +967,58 @@ async function confirmerFinContrat() {
   await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline
 }
 
-// Placeholder du futur geste "Nouvel événement" (fin / nouveau contrat) — étape suivante.
+// Déplie INLINE (dans #contrat-fin-zone) le formulaire d'ajout de contrat.
+// Champs propres, préfixés "nc-" (nouveau contrat) — aucune collision avec le formulaire de création.
 function nouvelEvenementPlaceholder() {
-  const msg = document.getElementById('contrat-msg');
-  if (msg) { msg.textContent = 'Nouvel événement — à venir (prochaine étape).'; msg.style.color = 'var(--texte3)'; msg.style.display = 'block'; }
+  const inp = 'font-size:13px;padding:5px 8px;border-radius:8px;border:1.5px solid #dce6f0';
+  const lbl = 'font-size:13px;color:var(--texte2);min-width:110px';
+  const row = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+  document.getElementById('contrat-fin-zone').innerHTML =
+    '<div style="display:flex;flex-direction:column;gap:8px;background:#f7fafd;border:1px solid #e8f0f8;border-radius:10px;padding:12px">'
+    + '<div style="font-weight:600;font-size:13px;color:var(--texte2)">Nouveau contrat</div>'
+    + '<div style="'+row+'"><label style="'+lbl+'">Date de début *</label><input type="date" id="nc-date-debut" style="'+inp+'"></div>'
+    + '<div style="'+row+'"><label style="'+lbl+'">Structure *</label><select id="nc-structure" style="'+inp+'"><option value="">— Choisir —</option><option>SARL</option><option>SAS</option><option>SCEA</option></select></div>'
+    + '<div style="'+row+'"><label style="'+lbl+'">Type contrat *</label><select id="nc-contrat" style="'+inp+'"><option value="">— Choisir —</option><option value="CDI">CDI</option><option value="TESA">TESA</option><option value="CDD">CDD</option><option value="APP">Apprentissage</option></select></div>'
+    + '<div style="'+row+'"><label style="'+lbl+'">Type période *</label><select id="nc-periode" style="'+inp+'"><option value="">— Choisir —</option><option value="civil">Civile</option><option value="decalee">Décalée</option></select></div>'
+    + '<div style="'+row+'"><label style="'+lbl+'">Heures / semaine *</label><input type="number" id="nc-heures" step="0.5" min="0" style="'+inp+';width:100px"></div>'
+    + '<div style="'+row+'"><label style="'+lbl+'">Matricule Silae</label><input type="text" id="nc-matricule" style="'+inp+'"></div>'
+    + '<div style="'+row+'"><label style="'+lbl+'">Date de fin</label><input type="date" id="nc-date-fin" style="'+inp+'"></div>'
+    + '<div id="nc-msg" style="display:none;font-size:13px;margin-top:2px"></div>'
+    + '<div style="display:flex;gap:8px;margin-top:4px"><button type="button" class="btn btn-success btn-sm" onclick="confirmerNouveauContrat()">Enregistrer le contrat</button><button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById(\'contrat-fin-zone\').innerHTML=\'\'">Annuler</button></div>'
+    + '</div>';
+}
+
+// Ajoute un contrat (RPC ajouter_contrat via l'Edge Function), puis rafraîchit la timeline.
+// Calqué sur confirmerFinContrat. Pas de validation métier ici : les RAISE du RPC remontent lisibles.
+async function confirmerNouveauContrat() {
+  const msg = document.getElementById('nc-msg');   // message DANS le formulaire inline (toujours visible)
+  const showMsg = (txt, ok) => { if (msg) { msg.textContent = txt; msg.style.color = ok ? 'var(--vert)' : 'var(--rouge)'; msg.style.display = 'block'; } };
+  const v = id => ((document.getElementById(id) || {}).value || '').trim();
+  const date_debut = v('nc-date-debut');
+  const structure = v('nc-structure');
+  const type_contrat = v('nc-contrat');
+  const type_periode = v('nc-periode');
+  const heuresRaw = v('nc-heures');
+  const matricule_silae = v('nc-matricule') || null;   // vide -> null (jamais "")
+  const date_fin = v('nc-date-fin') || null;            // vide -> null (jamais "")
+  if (!date_debut || !structure || !type_contrat || !type_periode || !heuresRaw) {
+    showMsg('Date de début, structure, type de contrat, type de période et heures sont obligatoires.', false); return;
+  }
+  const heures_hebdo = Number(heuresRaw.replace(',', '.'));
+  if (Number.isNaN(heures_hebdo)) { showMsg('Heures / semaine : valeur numérique attendue.', false); return; }
+    const { data, error } = await sb.functions.invoke('ajouter-contrat', {
+      body: { admin_token: ADMIN_TOKEN, collab_id: collabEnEdition.collabId, date_debut, structure, type_contrat, type_periode, heures_hebdo, matricule_silae, date_fin }
+    });
+    if (error) {
+      let detail = 'erreur';
+      try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+      showMsg('Échec de l\'ajout de contrat : ' + detail, false); return;
+    }
+    if (!data || data.ok !== true) {
+      showMsg('Échec de l\'ajout de contrat : ' + ((data && data.error) || 'inconnu'), false); return;
+    }
+  showMsg('✓ Contrat ajouté.', true);
+  await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline (et vide #contrat-fin-zone)
 }
 
 function rendreModalDeplacable(modalEl) {
