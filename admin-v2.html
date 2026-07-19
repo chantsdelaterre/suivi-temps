@@ -103,6 +103,7 @@ textarea { resize: vertical; min-height: 72px; }
 .modal-overlay.open { display: flex; }
 .modal { background: white; border-radius: 16px; width: 560px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
 #modal-collab .modal { width: 760px; }   /* max-width:95vw hérité → responsable petit écran */
+#modal-collab { align-items: flex-start; padding-top: 5vh; }   /* remonte la fiche vers le haut (au lieu du centrage vertical) ; horizontal + scroll interne inchangés */
 .modal-header { padding: 20px 24px; border-bottom: 1px solid #e8f0f8; display: flex; align-items: center; justify-content: space-between; }
 .modal-title { font-size: 16px; font-weight: 600; }
 .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--texte3); line-height: 1; padding: 4px; }
@@ -906,8 +907,10 @@ async function chargerContratActuel(collabId) {
   const iso = s => s ? String(s).slice(0,10) : null;
   const tpLbl = t => t === 'decalee' ? 'Décalée' : t === 'civil' ? 'Civile' : (t || '—');
 
+  window._contratsRows = data;   // cache : retrouver une ligne par id à l'édition
   box.innerHTML = data.map(r => {
     const dd = iso(r.date_debut), df = iso(r.date_fin);
+    const estTermine = !!(df && df < today);
     const ctx = '<strong>' + (r.structure || '—') + '</strong> · ' + (r.type_contrat || '—')
               + ' · ' + (r.heures_hebdo != null ? r.heures_hebdo + ' h/sem' : '—')
               + ' · ' + tpLbl(r.type_periode);
@@ -925,11 +928,15 @@ async function chargerContratActuel(collabId) {
     const finBtn = estPresentOuvert
       ? '<button type="button" class="btn btn-danger btn-sm" onclick="afficherChampFinContrat()" style="flex:0 0 auto;background:#fff;border:1px solid #f1cfc8">Fin de contrat</button>'
       : '';
+    // Crayon d'édition UNIQUEMENT sur les lignes NON terminées (en cours + à venir)
+    const editBtn = estTermine ? ''
+      : '<button type="button" class="btn btn-secondary btn-sm" onclick="editerLigneContrat('+r.id+')" style="flex:0 0 auto" title="Corriger cette ligne">✏️</button>';
     return '<div style="display:flex;align-items:center;gap:10px;background:'+bg+';color:'+coul+';padding:8px 11px;margin-bottom:6px;border-radius:8px;'+op+'">'
          + '<div style="flex:1">'
          +   '<div style="font-size:15px;line-height:1.5">' + ctx + '</div>'
          +   '<div style="font-size:13px;margin-top:2px;font-weight:600">' + libelle + '</div>'
          + '</div>'
+         + editBtn
          + finBtn
          + '</div>';
   }).join('');
@@ -969,16 +976,24 @@ async function confirmerFinContrat() {
   await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline
 }
 
-// Déplie INLINE (dans #contrat-fin-zone) le formulaire d'ajout de contrat.
-// Champs propres, préfixés "nc-" (nouveau contrat) — aucune collision avec le formulaire de création.
-function nouvelEvenementPlaceholder() {
+// Formulaire de contrat PARTAGÉ création/édition, déplié inline dans #contrat-fin-zone.
+// Champs propres préfixés "nc-" (aucune collision avec le formulaire de création de collab).
+// Mode : ncEditId = null -> création ; ncEditId = <id> -> correction de cette ligne.
+let ncEditId = null;
+
+// Construit le formulaire selon le mode. opts : { mode:'create'|'edit', values?, commence? }.
+function renderFormContrat(opts) {
+  const mode = opts.mode;
+  const commence = !!opts.commence;
+  const titre = mode === 'edit' ? 'Corriger le contrat' : 'Nouveau contrat';
+  const btnLabel = mode === 'edit' ? 'Enregistrer la correction' : 'Enregistrer le contrat';
   const inp = 'font-size:13px;padding:5px 8px;border-radius:8px;border:1.5px solid #dce6f0;width:100%;box-sizing:border-box';
   const lbl = 'font-size:12px;color:var(--texte2)';
   const cell = 'display:flex;flex-direction:column;gap:3px';
   const grid = 'display:grid;grid-template-columns:1fr 1fr;gap:8px 12px';
   document.getElementById('contrat-fin-zone').innerHTML =
     '<div style="display:flex;flex-direction:column;gap:8px;background:#f7fafd;border:1px solid #e8f0f8;border-radius:10px;padding:12px">'
-    + '<div style="font-weight:600;font-size:13px;color:var(--texte2)">Nouveau contrat</div>'
+    + '<div style="font-weight:600;font-size:13px;color:var(--texte2)">' + titre + '</div>'
     + '<div style="'+grid+'">'
     +   '<div style="'+cell+'"><label style="'+lbl+'">Date de début *</label><input type="date" id="nc-date-debut" style="'+inp+'"></div>'
     +   '<div style="'+cell+'"><label style="'+lbl+'">Structure *</label><select id="nc-structure" style="'+inp+'"><option value="">— Choisir —</option><option>SARL</option><option>SAS</option><option>SCEA</option></select></div>'
@@ -987,15 +1002,68 @@ function nouvelEvenementPlaceholder() {
     +   '<div style="'+cell+'"><label style="'+lbl+'">Heures / semaine *</label><input type="number" id="nc-heures" step="0.5" min="0" style="'+inp+'"></div>'
     +   '<div style="'+cell+'"><label style="'+lbl+'">Matricule Silae</label><input type="text" id="nc-matricule" style="'+inp+'"></div>'
     +   '<div style="'+cell+'"><label style="'+lbl+'">Date de fin</label><input type="date" id="nc-date-fin" style="'+inp+'"></div>'
+    +   (commence ? '<div style="grid-column:1/-1;font-size:11px;color:var(--texte3)">🔒 Structure et type de période non modifiables — contrat déjà commencé.</div>' : '')
     + '</div>'
     + '<div id="nc-msg" style="display:none;font-size:13px;margin-top:2px"></div>'
-    + '<div style="display:flex;gap:8px;margin-top:4px"><button type="button" class="btn btn-success btn-sm" onclick="confirmerNouveauContrat()">Enregistrer le contrat</button><button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById(\'contrat-fin-zone\').innerHTML=\'\'">Annuler</button></div>'
+    + '<div style="display:flex;gap:8px;margin-top:4px"><button type="button" class="btn btn-success btn-sm" onclick="confirmerContrat()">' + btnLabel + '</button><button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById(\'contrat-fin-zone\').innerHTML=\'\'">Annuler</button></div>'
     + '</div>';
+  // Pré-remplissage (édition)
+  if (opts.values) {
+    const val = opts.values;
+    const setv = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); };
+    setv('nc-date-debut', val.date_debut);
+    setv('nc-structure', val.structure);
+    setv('nc-contrat', val.type_contrat);
+    setv('nc-periode', val.type_periode);
+    setv('nc-heures', val.heures_hebdo);
+    setv('nc-matricule', val.matricule_silae);
+    setv('nc-date-fin', val.date_fin);
+  }
+  // Grisage structure + type de période si le contrat est déjà commencé (le RPC re-verrouille de toute façon).
+  // NB : un <select disabled> conserve sa .value (lisible en JS) -> renvoyée à l'identique au submit.
+  if (commence) {
+    ['nc-structure','nc-periode'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.disabled = true; el.style.background = '#eef1f5'; el.style.color = 'var(--texte3)'; }
+    });
+  }
 }
 
-// Ajoute un contrat (RPC ajouter_contrat via l'Edge Function), puis rafraîchit la timeline.
-// Calqué sur confirmerFinContrat. Pas de validation métier ici : les RAISE du RPC remontent lisibles.
-async function confirmerNouveauContrat() {
+// Mode CRÉATION (bouton "+ Nouvel événement").
+function nouvelEvenementPlaceholder() {
+  ncEditId = null;
+  renderFormContrat({ mode: 'create' });
+}
+
+// Mode ÉDITION (crayon d'une ligne). Confirm d'avertissement, puis pré-remplissage de la ligne.
+function editerLigneContrat(id) {
+  if (!confirm('Cette correction sert à réparer une erreur de saisie, pas à modifier les termes du contrat. Pour un vrai changement, clôturez et créez un nouveau contrat.')) return;
+  const r = (window._contratsRows || []).find(x => String(x.id) === String(id));
+  if (!r) { alert('Ligne de contrat introuvable — rechargez la fiche.'); return; }
+  const iso = s => s ? String(s).slice(0,10) : '';
+  const dd = iso(r.date_debut);
+  const dNow = new Date();
+  const today = String(dNow.getFullYear()) + '-' + String(dNow.getMonth()+1).padStart(2,'0') + '-' + String(dNow.getDate()).padStart(2,'0');
+  const commence = !!dd && dd <= today;   // déjà commencé -> structure/période verrouillées
+  ncEditId = id;
+  renderFormContrat({
+    mode: 'edit',
+    commence,
+    values: {
+      date_debut: dd,
+      structure: r.structure,
+      type_contrat: r.type_contrat,
+      type_periode: r.type_periode,
+      heures_hebdo: r.heures_hebdo,
+      matricule_silae: r.matricule_silae,
+      date_fin: iso(r.date_fin),
+    },
+  });
+}
+
+// Enregistre le contrat via l'Edge Function : ajouter-contrat (création) OU modifier-contrat (édition).
+// Mode déterminé par ncEditId. Pas de validation métier ici : les RAISE du RPC remontent lisibles dans #nc-msg.
+async function confirmerContrat() {
   const msg = document.getElementById('nc-msg');   // message DANS le formulaire inline (toujours visible)
   const showMsg = (txt, ok) => { if (msg) { msg.textContent = txt; msg.style.color = ok ? 'var(--vert)' : 'var(--rouge)'; msg.style.display = 'block'; } };
   const v = id => ((document.getElementById(id) || {}).value || '').trim();
@@ -1011,18 +1079,26 @@ async function confirmerNouveauContrat() {
   }
   const heures_hebdo = Number(heuresRaw.replace(',', '.'));
   if (Number.isNaN(heures_hebdo)) { showMsg('Heures / semaine : valeur numérique attendue.', false); return; }
-    const { data, error } = await sb.functions.invoke('ajouter-contrat', {
-      body: { admin_token: ADMIN_TOKEN, collab_id: collabEnEdition.collabId, date_debut, structure, type_contrat, type_periode, heures_hebdo, matricule_silae, date_fin }
-    });
-    if (error) {
-      let detail = 'erreur';
-      try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
-      showMsg('Échec de l\'ajout de contrat : ' + detail, false); return;
-    }
-    if (!data || data.ok !== true) {
-      showMsg('Échec de l\'ajout de contrat : ' + ((data && data.error) || 'inconnu'), false); return;
-    }
-  showMsg('✓ Contrat ajouté.', true);
+  // Garde-fou TESA sans date de fin (création ET édition) — avertit, laisse passer si confirmé.
+  if (type_contrat === 'TESA' && !date_fin) {
+    if (!confirm('Contrat TESA sans date de fin. Êtes-vous sûr ?')) return;
+  }
+  const enEdition = ncEditId != null;
+  const fn = enEdition ? 'modifier-contrat' : 'ajouter-contrat';
+  const body = enEdition
+    ? { admin_token: ADMIN_TOKEN, id: ncEditId, date_debut, date_fin, structure, type_contrat, type_periode, heures_hebdo, matricule_silae }
+    : { admin_token: ADMIN_TOKEN, collab_id: collabEnEdition.collabId, date_debut, structure, type_contrat, type_periode, heures_hebdo, matricule_silae, date_fin };
+  const libErr = enEdition ? 'Échec de la correction : ' : 'Échec de l\'ajout de contrat : ';
+  const { data, error } = await sb.functions.invoke(fn, { body });
+  if (error) {
+    let detail = 'erreur';
+    try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+    showMsg(libErr + detail, false); return;
+  }
+  if (!data || data.ok !== true) {
+    showMsg(libErr + ((data && data.error) || 'inconnu'), false); return;
+  }
+  showMsg(enEdition ? '✓ Correction enregistrée.' : '✓ Contrat ajouté.', true);
   await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline (et vide #contrat-fin-zone)
 }
 
