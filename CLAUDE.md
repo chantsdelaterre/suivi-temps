@@ -729,6 +729,7 @@ Pistes d'amélioration (à concevoir plus tard, pas urgent) :
 ## Chantiers à venir (notés)
 - Démarrer un PROCESSUS.md (règles métier + processus, au fil de l'eau).
 - Inventaire Edge Function (lecture seule) avant migration sécurité.
+- Onboarding collaborateur & fiche RH étendue → voir CADRAGE_onboarding.md
 
 ## Contrats & dossiers — modèle CONSOLIDÉ (17/07/2026)
 
