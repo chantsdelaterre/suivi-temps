@@ -911,6 +911,7 @@ async function chargerContratActuel(collabId) {
   box.innerHTML = data.map(r => {
     const dd = iso(r.date_debut), df = iso(r.date_fin);
     const estTermine = !!(df && df < today);
+    const estAVenir = (dd > today);
     const ctx = '<strong>' + (r.structure || '—') + '</strong> · ' + (r.type_contrat || '—')
               + ' · ' + (r.heures_hebdo != null ? r.heures_hebdo + ' h/sem' : '—')
               + ' · ' + tpLbl(r.type_periode);
@@ -931,12 +932,17 @@ async function chargerContratActuel(collabId) {
     // Crayon d'édition UNIQUEMENT sur les lignes NON terminées (en cours + à venir)
     const editBtn = estTermine ? ''
       : '<button type="button" class="btn btn-secondary btn-sm" onclick="editerLigneContrat('+r.id+')" style="flex:0 0 auto" title="Corriger cette ligne">✏️</button>';
+    // Corbeille UNIQUEMENT sur les lignes À VENIR (dd > today)
+    const suppBtn = estAVenir
+      ? '<button type="button" class="btn btn-danger btn-sm" onclick="supprimerLigneContrat('+r.id+')" style="flex:0 0 auto;background:#fff;border:1px solid #f1cfc8" title="Supprimer ce contrat à venir">🗑️</button>'
+      : '';
     return '<div style="display:flex;align-items:center;gap:10px;background:'+bg+';color:'+coul+';padding:8px 11px;margin-bottom:6px;border-radius:8px;'+op+'">'
          + '<div style="flex:1">'
          +   '<div style="font-size:15px;line-height:1.5">' + ctx + '</div>'
          +   '<div style="font-size:13px;margin-top:2px;font-weight:600">' + libelle + '</div>'
          + '</div>'
          + editBtn
+         + suppBtn
          + finBtn
          + '</div>';
   }).join('');
@@ -1059,6 +1065,27 @@ function editerLigneContrat(id) {
       date_fin: iso(r.date_fin),
     },
   });
+}
+
+// Supprime une ligne de contrat À VENIR (RPC supprimer_contrat via l'Edge Function).
+// Le RAISE serveur (contrat non à venir) remonte lisible dans #contrat-msg.
+async function supprimerLigneContrat(id) {
+  if (!confirm('Supprimer définitivement ce contrat à venir ? Cette action est irréversible.')) return;
+  const msg = document.getElementById('contrat-msg');
+  const showMsg = (txt, ok) => { if (msg) { msg.textContent = txt; msg.style.color = ok ? 'var(--vert)' : 'var(--rouge)'; msg.style.display = 'block'; } };
+  const { data, error } = await sb.functions.invoke('supprimer-contrat', {
+    body: { admin_token: ADMIN_TOKEN, id }
+  });
+  if (error) {
+    let detail = 'erreur';
+    try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+    showMsg('Échec de la suppression : ' + detail, false); return;
+  }
+  if (!data || data.ok !== true) {
+    showMsg('Échec de la suppression : ' + ((data && data.error) || 'inconnu'), false); return;
+  }
+  showMsg('✓ Contrat supprimé.', true);
+  await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline
 }
 
 // Enregistre le contrat via l'Edge Function : ajouter-contrat (création) OU modifier-contrat (édition).
