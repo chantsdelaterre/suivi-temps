@@ -372,44 +372,46 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
       <button class="modal-close" onclick="fermerModal()">×</button>
     </div>
     <div class="modal-body">
-      <div id="form-titre-identite" style="display:none;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);margin-bottom:10px">Identité</div>
-      <div class="form-grid">
-        <div class="form-group"><label>Prénom *</label><input type="text" id="f-prenom" placeholder="Marie"></div>
-        <div class="form-group"><label>Nom *</label><input type="text" id="f-nom" placeholder="Dupont"></div>
-        <div class="form-group"><label>Email</label><input type="email" id="f-email" placeholder="marie@exemple.fr"></div>
-        <div class="form-group"><label>Téléphone</label><input type="text" id="f-telephone" placeholder="06-12-34-56-78"></div>
-        <div class="form-group contrat-field"><label>Structure *</label>
-          <select id="f-structure"><option value="">— Choisir —</option><option>SCEA</option><option>SAS</option><option>SARL</option></select>
+      <!-- BLOC IDENTITÉ -->
+      <div style="background:#f7fafd;border:1px solid #e8f0f8;border-radius:10px;padding:14px;margin-bottom:14px">
+        <div id="form-titre-identite" style="display:none;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);margin-bottom:10px">Identité</div>
+        <div class="form-grid">
+          <div class="form-group"><label>Prénom *</label><input type="text" id="f-prenom" placeholder="Marie"></div>
+          <div class="form-group"><label>Nom *</label><input type="text" id="f-nom" placeholder="Dupont"></div>
+          <div class="form-group"><label>Email</label><input type="email" id="f-email" placeholder="marie@exemple.fr"></div>
+          <div class="form-group"><label>Téléphone</label><input type="text" id="f-telephone" placeholder="06-12-34-56-78"></div>
+          <div class="form-group contrat-field"><label>Structure *</label>
+            <select id="f-structure"><option value="">— Choisir —</option><option>SCEA</option><option>SAS</option><option>SARL</option></select>
+          </div>
+          <div class="form-group contrat-field"><label>Type contrat *</label>
+            <select id="f-contrat"><option value="">— Choisir —</option><option>CDI</option><option>TESA</option><option>CDD</option></select>
+          </div>
+          <div class="form-group contrat-field"><label>Type période *</label>
+            <select id="f-type-periode"><option value="">— Choisir —</option><option value="decalee">Décalée</option><option value="civil">Civile</option></select>
+          </div>
+          <div class="form-group contrat-field"><label>Heures / semaine</label><input type="number" id="f-heures" placeholder="35" min="1" max="60"></div>
+          <div class="form-group"><label>Statut</label>
+            <select id="f-statut"><option value="en_attente">En attente</option><option value="actif">Actif</option><option value="inactif">Inactif</option></select>
+          </div>
+          <div class="form-group"><label>Date d'activation</label><input type="date" id="f-date-activation"></div>
+          <div class="form-group"><label>Matricule Silae</label><input type="text" id="f-matricule-silae" placeholder="ex: 00042"></div>
+          <div class="form-group">
+            <label>Équipe</label>
+            <select id="f-equipe"><option value="">— Aucune équipe —</option></select>
+          </div>
         </div>
-        <div class="form-group contrat-field"><label>Type contrat *</label>
-          <select id="f-contrat"><option value="">— Choisir —</option><option>CDI</option><option>TESA</option><option>CDD</option></select>
-        </div>
-        <div class="form-group contrat-field"><label>Type période *</label>
-          <select id="f-type-periode"><option value="">— Choisir —</option><option value="decalee">Décalée</option><option value="civil">Civile</option></select>
-        </div>
-        <div class="form-group contrat-field"><label>Heures / semaine</label><input type="number" id="f-heures" placeholder="35" min="1" max="60"></div>
-        <div class="form-group"><label>Statut</label>
-          <select id="f-statut"><option value="en_attente">En attente</option><option value="actif">Actif</option><option value="inactif">Inactif</option></select>
-        </div>
-        <div class="form-group"><label>Date d'activation</label><input type="date" id="f-date-activation"></div>
-        <div class="form-group"><label>Matricule Silae</label><input type="text" id="f-matricule-silae" placeholder="ex: 00042"></div>
-        <div class="form-group full">
-          <label>Équipe</label>
-          <select id="f-equipe"><option value="">— Aucune équipe —</option></select>
+        <div id="modal-error" style="display:none;margin-top:12px" class="error-banner"></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:12px">
+          <button class="btn btn-primary" id="btn-sauver" onclick="sauverCollab()">Enregistrer l'identité</button>
         </div>
       </div>
-      <div id="zone-contrat" style="display:none;margin-top:18px;border-top:1px solid #e8f0f8;padding-top:14px">
+      <!-- BLOC CONTRATS -->
+      <div id="zone-contrat" style="display:none;background:#f7fafd;border:1px solid #e8f0f8;border-radius:10px;padding:14px">
         <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);margin-bottom:8px">Contrats</div>
         <div id="contrat-actuel"></div>
         <div id="contrat-fin-zone" style="margin-top:10px"></div>
         <div id="contrat-msg" style="display:none;font-size:13px;margin-top:8px"></div>
       </div>
-      <div id="modal-error" style="display:none;margin-top:14px" class="error-banner"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="fermerModal()">Annuler</button>
-      <button class="btn btn-primary" id="btn-sauver" onclick="sauverCollab()">Enregistrer</button>
-
     </div>
   </div>
 </div>
@@ -873,7 +875,7 @@ function ouvrirModalCollabData(encoded) {
   document.getElementById('f-equipe').value = c.equipeId||'';
   document.getElementById('modal-error').style.display = 'none';
   document.getElementById('btn-sauver').disabled = false;
-  document.getElementById('btn-sauver').textContent = 'Enregistrer';
+  document.getElementById('btn-sauver').textContent = 'Enregistrer l\'identité';
   document.querySelectorAll('.contrat-field').forEach(el => el.style.display = 'none');
   document.getElementById('form-titre-identite').style.display = 'block';
   document.getElementById('zone-contrat').style.display = 'block';
@@ -970,19 +972,22 @@ async function confirmerFinContrat() {
 // Déplie INLINE (dans #contrat-fin-zone) le formulaire d'ajout de contrat.
 // Champs propres, préfixés "nc-" (nouveau contrat) — aucune collision avec le formulaire de création.
 function nouvelEvenementPlaceholder() {
-  const inp = 'font-size:13px;padding:5px 8px;border-radius:8px;border:1.5px solid #dce6f0';
-  const lbl = 'font-size:13px;color:var(--texte2);min-width:110px';
-  const row = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+  const inp = 'font-size:13px;padding:5px 8px;border-radius:8px;border:1.5px solid #dce6f0;width:100%;box-sizing:border-box';
+  const lbl = 'font-size:12px;color:var(--texte2)';
+  const cell = 'display:flex;flex-direction:column;gap:3px';
+  const grid = 'display:grid;grid-template-columns:1fr 1fr;gap:8px 12px';
   document.getElementById('contrat-fin-zone').innerHTML =
     '<div style="display:flex;flex-direction:column;gap:8px;background:#f7fafd;border:1px solid #e8f0f8;border-radius:10px;padding:12px">'
     + '<div style="font-weight:600;font-size:13px;color:var(--texte2)">Nouveau contrat</div>'
-    + '<div style="'+row+'"><label style="'+lbl+'">Date de début *</label><input type="date" id="nc-date-debut" style="'+inp+'"></div>'
-    + '<div style="'+row+'"><label style="'+lbl+'">Structure *</label><select id="nc-structure" style="'+inp+'"><option value="">— Choisir —</option><option>SARL</option><option>SAS</option><option>SCEA</option></select></div>'
-    + '<div style="'+row+'"><label style="'+lbl+'">Type contrat *</label><select id="nc-contrat" style="'+inp+'"><option value="">— Choisir —</option><option value="CDI">CDI</option><option value="TESA">TESA</option><option value="CDD">CDD</option><option value="APP">Apprentissage</option></select></div>'
-    + '<div style="'+row+'"><label style="'+lbl+'">Type période *</label><select id="nc-periode" style="'+inp+'"><option value="">— Choisir —</option><option value="civil">Civile</option><option value="decalee">Décalée</option></select></div>'
-    + '<div style="'+row+'"><label style="'+lbl+'">Heures / semaine *</label><input type="number" id="nc-heures" step="0.5" min="0" style="'+inp+';width:100px"></div>'
-    + '<div style="'+row+'"><label style="'+lbl+'">Matricule Silae</label><input type="text" id="nc-matricule" style="'+inp+'"></div>'
-    + '<div style="'+row+'"><label style="'+lbl+'">Date de fin</label><input type="date" id="nc-date-fin" style="'+inp+'"></div>'
+    + '<div style="'+grid+'">'
+    +   '<div style="'+cell+'"><label style="'+lbl+'">Date de début *</label><input type="date" id="nc-date-debut" style="'+inp+'"></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'">Structure *</label><select id="nc-structure" style="'+inp+'"><option value="">— Choisir —</option><option>SARL</option><option>SAS</option><option>SCEA</option></select></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'">Type contrat *</label><select id="nc-contrat" style="'+inp+'"><option value="">— Choisir —</option><option value="CDI">CDI</option><option value="TESA">TESA</option><option value="CDD">CDD</option><option value="APP">Apprentissage</option></select></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'">Type période *</label><select id="nc-periode" style="'+inp+'"><option value="">— Choisir —</option><option value="civil">Civile</option><option value="decalee">Décalée</option></select></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'">Heures / semaine *</label><input type="number" id="nc-heures" step="0.5" min="0" style="'+inp+'"></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'">Matricule Silae</label><input type="text" id="nc-matricule" style="'+inp+'"></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'">Date de fin</label><input type="date" id="nc-date-fin" style="'+inp+'"></div>'
+    + '</div>'
     + '<div id="nc-msg" style="display:none;font-size:13px;margin-top:2px"></div>'
     + '<div style="display:flex;gap:8px;margin-top:4px"><button type="button" class="btn btn-success btn-sm" onclick="confirmerNouveauContrat()">Enregistrer le contrat</button><button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById(\'contrat-fin-zone\').innerHTML=\'\'">Annuler</button></div>'
     + '</div>';
@@ -1116,7 +1121,8 @@ async function sauverCollab() {
   const errBox = document.getElementById('modal-error');
   errBox.style.display = 'none';
   btn.disabled = true; btn.textContent = '⏳ Enregistrement…';
-  const showErr = m => { errBox.textContent = m; errBox.style.display = 'block'; btn.disabled = false; btn.textContent = 'Enregistrer'; };
+  const showErr = m => { errBox.textContent = m; errBox.style.color = ''; errBox.style.background = ''; errBox.style.borderColor = ''; errBox.style.display = 'block'; btn.disabled = false; btn.textContent = collabEnEdition ? 'Enregistrer l\'identité' : 'Enregistrer'; };
+  const showOk = m => { errBox.textContent = m; errBox.style.color = 'var(--vert)'; errBox.style.background = '#eaf5ea'; errBox.style.borderColor = '#bfe0bf'; errBox.style.display = 'block'; setTimeout(() => { if (errBox.textContent === m) errBox.style.display = 'none'; }, 2500); };
   const cap = s => { s = (s||'').trim(); return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : ''; };
   const orNull = v => { v = (typeof v === 'string') ? v.trim() : v; return (v === '' || v == null) ? null : v; };
   // Reformate en 06-12-34-56-78 SI 10 chiffres nets ; sinon garde la saisie telle quelle.
@@ -1180,7 +1186,10 @@ async function sauverCollab() {
           showErr('Échec de l\'enregistrement : ' + ((data && data.error) || 'inconnu'));
           return;
         }
-        fermerModal();
+        // Édition : modale OUVERTE (feedback bref), bouton ré-activé, liste rafraîchie derrière.
+        btn.disabled = false;
+        btn.textContent = 'Enregistrer l\'identité';
+        showOk('✓ Identité enregistrée');
         chargerCollabs();
       } else {
         // ── CRÉATION ── via Edge Function creer-collab (auth admin, id/token générés serveur)
