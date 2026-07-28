@@ -514,6 +514,37 @@ let triColonne = 'nom';
 let triDesc = false;
 let recapPeriodeId = '';
 
+// Rapatrie TOUTES les lignes d'une requête, par pages de 500, pour contourner le
+// plafond PostgREST (~1000 lignes par défaut). supabase-js ne permet PAS de réutiliser
+// un builder après exécution → on passe une FONCTION qui reconstruit la requête à chaque page.
+// buildQuery : () => PostgrestFilterBuilder (ex. () => sb.from('jours').select('*').eq('periode_id', id)).
+// ⚠️ Pour des pages cohérentes, buildQuery devrait inclure un tri stable (ex. .order('id')).
+// Retour : { data, error } — même forme que supabase-js (error != null en cas d'échec).
+// pageSize = 500 (< 1000) : le "Max rows" du projet est à 1000 ; à pageSize=1000 la marge
+//   serait nulle et `data.length < pageSize` deviendrait un FAUX signal de fin si le plafond
+//   serveur descendait sous pageSize. 500 garde une marge franche.
+// Garde anti-boucle : 400 pages max (= 200 000 lignes à pageSize=500). Filet contre une pagination
+//   qui NE PROGRESSE PAS (tri non déterministe), PAS une limite de volume métier : calculerCountsPaie
+//   lit paie_detail sur PLUSIEURS périodes (.in('periode_id', ids)), volume qui croît (~55 collabs ×
+//   ~30 j × 12 mois ≈ 20 000 lignes/an) — à 50 pages (25 000 lignes) le plafond tomberait en ~15 mois,
+//   donnant Y=0 → clôture impossible sans message. Le seuil doit rester TRÈS au-dessus du volume réel.
+async function fetchAllPages(buildQuery, pageSize = 500) {
+  const out = [];
+  const MAX_PAGES = 400;
+  let page = 0;
+  for (let from = 0; ; from += pageSize) {
+    if (page++ >= MAX_PAGES) {
+      return { data: null, error: { message: 'fetchAllPages : plafond de pages atteint (pagination probablement inopérante)' } };
+    }
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+    if (error) return { data: null, error };
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < pageSize) break;   // dernière page atteinte
+  }
+  return { data: out, error: null };
+}
+
 function fmtHeure(v) {
   if (!v) return '';
   const s = String(v).trim();
@@ -1476,10 +1507,11 @@ async function calculerPaieDepuisPaieDetail(periodeId) {
   if (!periodeId) { console.warn('calculerPaieDepuisPaieDetail : periodeId manquant'); return []; }
 
   // 1) Lignes paie_detail de la période
-  const { data: detail, error: ed } = await sb
+  const { data: detail, error: ed } = await fetchAllPages(() => sb
     .from('paie_detail')
     .select('*')
-    .eq('periode_id', periodeId);
+    .eq('periode_id', periodeId)
+    .order('id'));
   if (ed) { console.error('Erreur lecture paie_detail :', ed); return []; }
 
   // Bornes de la période (résolution du contrat en vigueur)
@@ -1580,31 +1612,18 @@ async function calculerPaieDepuisPaieDetail(periodeId) {
 }
 
 // MOTEUR DE PAIE — PHASE 3, ÉTAPE A : IMPORT/FIGEMENT dans paie_detail (PREMIÈRE ÉCRITURE).
-// Copie fidèle des `jours` (couche 1) + couche 2 pré-remplie (valeurs de départ ajustables).
-// Idempotent : n'écrit QUE si paie_detail est vide pour la période (+ protégé par
-// l'unicité (periode_id, collab_id, date_jour)). Testable en console, NON branchée à l'UI.
+// Import DIFFÉRENTIEL des `jours` d'une période vers paie_detail : copie fidèle (couche 1) +
+// couche 2 pré-remplie. REJOUABLE — n'envoie QUE les couples (collab_id, date_jour) absents de
+// paie_detail ; l'Edge upsert avec ignoreDuplicates, donc un rejeu n'écrase jamais un ajustement admin.
 async function importerPaiePeriode(periodeId) {
   if (!periodeId) { console.warn('importerPaiePeriode : periodeId manquant'); return {ok:false, raison:'periodeId manquant'}; }
 
-  // 1) DÉTECTION : compter les lignes existantes SANS rapatrier les données
-  const { count, error: ecount } = await sb
-    .from('paie_detail')
-    .select('id', { count: 'exact', head: true })
-    .eq('periode_id', periodeId);
-  if (ecount) {
-    console.error('importerPaiePeriode : erreur count', ecount);
-    return {ok:false, raison:'erreur count', error:ecount};
-  }
-  if (count > 0) {
-    console.log('importerPaiePeriode : déjà importé (' + count + ' lignes) — aucune écriture.');
-    return {ok:true, importe:false, lignes:count, message:'déjà importé'};
-  }
-
-  // 2) IMPORT : lire tous les jours de la période
-  const { data: jours, error: ej } = await sb
+  // 1) Lire tous les jours de la période (source de l'import)
+  const { data: jours, error: ej } = await fetchAllPages(() => sb
     .from('jours')
     .select('*')
-    .eq('periode_id', periodeId);
+    .eq('periode_id', periodeId)
+    .order('jour_id'));
   if (ej) {
     console.error('importerPaiePeriode : erreur lecture jours', ej);
     return {ok:false, raison:'erreur lecture jours', error:ej};
@@ -1653,15 +1672,48 @@ async function importerPaiePeriode(periodeId) {
     };
   });
 
-  const { data: dImp, error: eins } = await sb.functions.invoke('importer-paie', {
-    body: { admin_token: ADMIN_TOKEN, lignes }
-  });
-  if (eins || !dImp || dImp.ok !== true) {
-    console.error('importerPaiePeriode : erreur import', eins || dImp);
-    return { ok:false, raison:'erreur insert', error: eins || (dImp && dImp.error) };
+  // 2) DIFFÉRENTIEL : couples (collab_id, date_jour) DÉJÀ présents dans paie_detail.
+  const { data: dejaLa, error: edeja } = await fetchAllPages(() => sb
+    .from('paie_detail')
+    .select('collab_id, date_jour')
+    .eq('periode_id', periodeId)
+    .order('id'));
+  if (edeja) {
+    console.error('importerPaiePeriode : erreur lecture paie_detail existant', edeja);
+    return {ok:false, raison:'erreur lecture existant', error:edeja};
   }
-  console.log('importerPaiePeriode : import via Edge pour ' + periodeId + ' — ' + JSON.stringify(dImp));
-  return { ok:true, importe: dImp.importe !== false, lignes: dImp.n ?? lignes.length };
+  // Normalisation YYYY-MM-DD des DEUX côtés : jours.date_jour et paie_detail.date_jour sont tous deux
+  // de type `date` → PostgREST renvoie "YYYY-MM-DD" ; slice(0,10) est un garde-fou anti-dérive de format.
+  const cle = (collab, dj) => collab + '|' + String(dj).slice(0, 10);
+  const present = new Set((dejaLa || []).map(d => cle(d.collab_id, d.date_jour)));
+  const aEnvoyer = lignes.filter(l => !present.has(cle(l.collab_id, l.date_jour)));
+
+  // 3) Rien à envoyer → court-circuit "à jour", sans invoquer l'Edge.
+  if (!aEnvoyer.length) {
+    return {ok:true, importe:false, lignes:0, message:'à jour'};
+  }
+
+  // 4) Envoi par LOTS de 500, invoke SÉQUENTIEL (jamais Promise.all : pas d'invocations concurrentes).
+  // Motif du lot (doc Supabase) : aucune limite publiée de taille de corps, MAIS 2 s de CPU max par
+  // requête (hors I/O). Le parse JSON + la boucle COLS de l'Edge (jusqu'à ~1650×28) est du CPU pur ;
+  // des lots de 500 divisent le pic CPU par ~3. Rejeu d'un lot sans risque (ignoreDuplicates) : la
+  // relance suivante complète ce qui manque.
+  const CHUNK = 500;
+  let envoye = 0, lots = 0;
+  for (let i = 0; i < aEnvoyer.length; i += CHUNK) {
+    const lot = aEnvoyer.slice(i, i + CHUNK);
+    const { data: dImp, error: eins } = await sb.functions.invoke('importer-paie', {
+      body: { admin_token: ADMIN_TOKEN, lignes: lot }
+    });
+    if (eins || !dImp || dImp.ok !== true) {
+      console.error('importerPaiePeriode : erreur import (lot ' + (lots + 1) + ')', eins || dImp);
+      return {ok:false, raison:'erreur insert', error: eins || (dImp && dImp.error), lotsOk: lots};
+    }
+    envoye += (dImp.n ?? lot.length);
+    lots++;
+  }
+  console.log('importerPaiePeriode : ' + envoye + ' ligne(s) envoyée(s) en ' + lots + ' lot(s) pour ' + periodeId);
+  return {ok:true, importe:true, lignes: envoye};
 }
 window.importerPaiePeriode = importerPaiePeriode;
 
@@ -2484,10 +2536,10 @@ async function calculerCountsPaie(ids) {
   ids.forEach(id => { out[id] = { x:0, y:0, _data:new Set(), _valid:new Set() }; });
   if (!ids.length) return out;
   // Y = collabs ayant des données (distinct collab_id dans paie_detail) — cohérent avec renderPaie
-  const { data: det, error: ed } = await sb.from('paie_detail').select('periode_id, collab_id').in('periode_id', ids);
+  const { data: det, error: ed } = await fetchAllPages(() => sb.from('paie_detail').select('periode_id, collab_id').in('periode_id', ids).order('id'));
   if (!ed) (det||[]).forEach(d => { if (out[d.periode_id]) out[d.periode_id]._data.add(d.collab_id); });
   // X = collabs validés (recap_paie.statut_validation='valide')
-  const { data: rec, error: er } = await sb.from('recap_paie').select('periode_id, collab_id, statut_validation').in('periode_id', ids);
+  const { data: rec, error: er } = await fetchAllPages(() => sb.from('recap_paie').select('periode_id, collab_id, statut_validation').in('periode_id', ids).order('id'));
   if (!er) (rec||[]).forEach(r => { if (out[r.periode_id] && r.statut_validation==='valide') out[r.periode_id]._valid.add(r.collab_id); });
   ids.forEach(id => { out[id].y = out[id]._data.size; out[id].x = out[id]._valid.size; });
   return out;
