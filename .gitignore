@@ -1,0 +1,9 @@
+# Donnees personnelles salaries — NE JAMAIS versionner
+*.xlsx
+*.xls
+~$*
+# Exports et dumps locaux
+_export_claude/
+sortie_*.sql
+# macOS
+.DS_Store
