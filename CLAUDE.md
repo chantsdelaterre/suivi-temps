@@ -891,3 +891,44 @@ appartient au dossier, pas au journal.
   qui, lui, est appelé (`onclick` du bouton « Valider »).
 - **Vivant, NE PAS supprimer** : `toggleCollab` (appelé via `onclick`) et
   `toggleValidationModal`.
+
+## Import paie & lectures Supabase — décisions du LOT 1 (30/07/2026)
+
+### 1. Pagination des lectures — helper `fetchAllPages`
+- Le **« Max rows » du projet est à 1000** : toute lecture non bornée **tronque
+  SILENCIEUSEMENT**. Toute nouvelle lecture susceptible de dépasser 1000 lignes
+  **doit** passer par le helper.
+- **pageSize = 500** (et non 1000) : à pageSize égal au plafond serveur, la
+  condition d'arrêt `data.length < pageSize` deviendrait un **faux signal de fin**
+  si le plafond descendait. 500 garde une marge franche.
+- **MAX_PAGES = 400** : filet contre une pagination qui **ne progresse pas**, PAS
+  une limite de volume métier. Un seuil trop bas produit une erreur → Y=0 →
+  clôture impossible **sans message**.
+- **Tri stable obligatoire, sur une colonne PROUVÉE** : `jour_id` pour `jours`
+  (aucune colonne `id` prouvable — pas de `CREATE TABLE` versionné), `id` pour
+  `paie_detail` et `recap_paie`.
+
+### 2. Import paie DIFFÉRENTIEL (remplace l'idempotence par comptage)
+- L'ancienne garde `count > 0 → skip` était au niveau **PÉRIODE** : une seule
+  ligne écrite dans `paie_detail` avant le gel **neutralisait l'import de TOUTE la
+  période**, et la clôture globale passait **silencieusement** avec des collabs
+  manquants (`X === Y` satisfait sur une poignée de collabs).
+- Remplacée par un **différentiel sur (collab_id, date_jour)** + **upsert
+  `ignoreDuplicates`** sur l'unique `(periode_id, collab_id, date_jour)`.
+- **Conséquence architecturale** : « un recalcul n'écrase jamais un ajustement
+  admin » devient une **propriété du SCHÉMA**, plus une convention.
+- **Contrepartie à retenir** : une ligne importée n'est **PLUS JAMAIS rafraîchie
+  depuis `jours`**. On n'importe donc que des jours **DÉFINITIFS** — soit période
+  gelée, soit jours d'un collab bornés jusqu'à sa date de fin. **Ne jamais
+  déclencher un import sur une période ouverte en cours de saisie.**
+
+### 3. Envoi par lots de 500 vers les Edge Functions
+- **Aucune limite de taille de corps** de requête publiée par Supabase, **MAIS
+  2 s de temps CPU maximum par invocation** (hors I/O). Le parsing JSON et la
+  boucle de whitelist sont du **CPU pur**. **Découper reste la règle** pour tout
+  envoi volumineux.
+
+### 4. Ordre de déploiement Edge / front — NON COMMUTATIF
+- **Edge d'abord, front ensuite.** L'inverse (front avant Edge) donne un état où
+  **plus AUCUNE ligne ne s'importe jamais, sans erreur visible**. À retenir pour
+  tout futur changement touchant les deux côtés.
