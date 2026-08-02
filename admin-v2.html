@@ -188,7 +188,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
           <button class="btn btn-primary btn-sm" onclick="ouvrirModalCollab()">+ Nouveau</button>
         </div>
         <div class="filter-bar">
-          <input type="text" class="filter-search" id="search-collab" placeholder="🔍 Rechercher…" oninput="filtrerCollabs()">
+          <input type="search" class="filter-search" id="search-collab" placeholder="🔍 Rechercher…" oninput="filtrerCollabs()">
           <div class="filter-group">
             <button class="filter-btn active" onclick="setFilter('statut','',this)">Tous</button>
             <button class="filter-btn" onclick="setFilter('statut','actif',this)">Actifs</button>
@@ -253,7 +253,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
           <span class="card-title" id="recap-titre">Récapitulatif</span>
         </div>
         <div class="filter-bar">
-          <input type="text" class="filter-search" id="search-recap" placeholder="🔍 Rechercher…" oninput="filtrerRecap()">
+          <input type="search" class="filter-search" id="search-recap" placeholder="🔍 Rechercher…" oninput="filtrerRecap()">
           <div class="filter-group">
             <button class="filter-btn active" onclick="setFiltreRecap('structure','',this)">Toutes</button>
             <button class="filter-btn" onclick="setFiltreRecap('structure','SCEA',this)">SCEA</button>
@@ -2652,8 +2652,8 @@ async function chargerArchivesCloturees() {
   }
   entete.innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
   const ids = cloturees.map(p => p.periodeId);
-  // 1 requête recap_paie pour TOUTES les périodes clôturées
-  const { data: recs, error } = await sb.from('recap_paie').select('*').in('periode_id', ids);
+  // Lecture PAGINÉE de recap_paie pour TOUTES les périodes clôturées (fetchAllPages : > 1000 lignes possibles)
+  const { data: recs, error } = await fetchAllPages(() => sb.from('recap_paie').select('*').in('periode_id', ids).order('id'));
   if (error) { entete.innerHTML = '<div class="error-banner">Erreur de chargement des archives.</div>'; return; }
   // Structure (absente de recap_paie) croisée depuis collaborateurs — lus une fois.
   const collabMap = {};
@@ -2702,7 +2702,12 @@ async function chargerArchivesCloturees() {
       + periodesOpts.map(([id, nom]) => '<option value="'+id+'">'+nom+'</option>').join('') + '</select>'
     + '<span class="filter-count" id="arch-count"></span>'
     + '</div>'
+    + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:14px">'
+    +   '<button class="btn btn-primary btn-sm" id="arch-btn-print" onclick="imprimerRihSelection()" disabled>🖨️ Imprimer les relevés sélectionnés</button>'
+    +   '<span id="arch-sel-count" style="font-size:13px;color:var(--texte2)">0 relevé sélectionné</span>'
+    + '</div>'
     + '<div class="table-wrap"><table><thead><tr>'
+    + '<th style="width:32px;text-align:center"><input type="checkbox" id="arch-check-all" onchange="basculerToutesArchives(this.checked)"></th>'
     + '<th>Période</th><th>Collaborateur</th><th style="text-align:center">Structure</th>'
     + '<th style="text-align:center">Heures trav.</th><th style="text-align:center">AT</th><th style="text-align:center">CS</th>'
     + '<th style="text-align:center">CP</th><th style="text-align:center">Jours trav.</th><th>Note admin</th><th>Détail</th>'
@@ -2726,10 +2731,11 @@ function renderArchivesFiltered() {
   // AT/CS : "Xh / Yj" (heures recap + nb de jours recap) ; "—" si 0h ET 0j
   const fmtHJ = (h, j) => (!h && !j) ? '—' : (h||0) + 'h / ' + (j||0) + 'j';
   tb.innerHTML = list.length === 0
-    ? '<tr><td colspan="10" style="text-align:center;color:var(--texte3);padding:32px">Aucune ligne pour ces filtres</td></tr>'
+    ? '<tr><td colspan="11" style="text-align:center;color:var(--texte3);padding:32px">Aucune ligne pour ces filtres</td></tr>'
     : list.map(r => {
       const collabEnc = encodeURIComponent(r.collabId);
       return '<tr>'
+        + '<td style="text-align:center"><input type="checkbox" class="arch-check" data-collab="'+r.collabId+'" data-periode="'+r.periodeId+'" onchange="majSelectionArchives()"></td>'
         + '<td>'+r.nomPeriode+'</td>'
         + '<td><strong>'+r.nomAffiche+'</strong></td>'
         + '<td style="text-align:center">'+r.structure+'</td>'
@@ -2743,6 +2749,85 @@ function renderArchivesFiltered() {
           + '<button class="btn btn-secondary btn-sm" onclick="genererPdfReleve(\''+collabEnc+'\',\''+r.periodeId+'\')">📄 PDF</button></td>'
         + '</tr>';
     }).join('');
+  majSelectionArchives();   // #arch-tbody réécrit → cases réinitialisées : compteur à 0, bouton grisé, check-all décoché
+}
+
+// Coche/décoche toutes les cases ACTUELLEMENT rendues (= lignes visibles après filtrage).
+function basculerToutesArchives(coche) {
+  document.querySelectorAll('#arch-tbody .arch-check').forEach(cb => { cb.checked = coche; });
+  majSelectionArchives();
+}
+
+// Met à jour le compteur de sélection + l'état du bouton d'impression + la case "tout cocher".
+function majSelectionArchives() {
+  const cases = [...document.querySelectorAll('#arch-tbody .arch-check')];
+  const n = cases.filter(cb => cb.checked).length;
+  const cnt = document.getElementById('arch-sel-count');
+  if (cnt) cnt.textContent = (n === 0) ? '0 relevé sélectionné'
+    : n + ' relevé' + (n > 1 ? 's' : '') + ' sélectionné' + (n > 1 ? 's' : '');
+  const btn = document.getElementById('arch-btn-print');
+  if (btn) btn.disabled = (n === 0);
+  const all = document.getElementById('arch-check-all');
+  if (all) all.checked = (cases.length > 0 && n === cases.length);
+}
+
+// Impression groupée des relevés sélectionnés : UN seul document, un relevé par page.
+async function imprimerRihSelection() {
+  const sel = [...document.querySelectorAll('#arch-tbody .arch-check')]
+    .filter(cb => cb.checked)
+    .map(cb => ({ collabId: cb.dataset.collab, periodeId: cb.dataset.periode }));
+  if (!sel.length) return;
+
+  // 1) Ouvrir la fenêtre EN PREMIER (pendant que le clic est « frais » — sinon Chrome bloque après les await).
+  const w = window.open('', '_blank');
+  if (!w) { alert('Autorise les fenêtres pop-up pour générer les relevés.'); return; }
+  w.document.write('<p style="font-family:sans-serif;padding:24px">Préparation des relevés…</p>');
+
+  // 2) Grouper la sélection par période.
+  const parPeriode = {};
+  sel.forEach(s => { (parPeriode[s.periodeId] ||= []).push(s.collabId); });
+
+  // 3) Lire paie_detail par période (PAGINÉ, tri stable sur id ; collab_id inclus pour regrouper).
+  const detParCle = {};   // "periodeId|collabId" -> lignes
+  for (const [pid, collabIds] of Object.entries(parPeriode)) {
+    const { data: det, error } = await fetchAllPages(() => sb.from('paie_detail')
+      .select('date_jour, jour_semaine, type_jour_valide, c1_debut_valide, c1_fin_valide, c2_debut_valide, c2_fin_valide, c3_debut_valide, c3_fin_valide, heures_valide, collab_id')
+      .eq('periode_id', pid)
+      .in('collab_id', collabIds)
+      .order('id'));
+    if (error) {
+      w.document.open();
+      w.document.write('<p style="font-family:sans-serif;padding:24px;color:#b00">Erreur de lecture des relevés : ' + (error.message || error.code || 'inconnue') + '</p>');
+      w.document.close();
+      return;
+    }
+    // 4) Regrouper par collab_id.
+    (det || []).forEach(d => { (detParCle[pid + '|' + d.collab_id] ||= []).push(d); });
+  }
+
+  // 4bis) Retrier chaque groupe par date_jour croissant (le tri id de la pagination ne l'a PAS fait).
+  Object.values(detParCle).forEach(arr => arr.sort((a, b) =>
+    String(a.date_jour).slice(0,10).localeCompare(String(b.date_jour).slice(0,10))));
+
+  // 5) Ordre des relevés = structure puis nomAffiche (depuis archivesRecap, déjà affiché) ; période depuis periodesData.
+  //    On itère sur la SÉLECTION (pas sur les lignes lues) → un collab sans ligne produit quand même sa page (point 8).
+  const ordre = sel.map(s => {
+    const meta = (archivesRecap || []).find(r => r.collabId === s.collabId && r.periodeId === s.periodeId) || {};
+    const periode = (periodesData || []).find(p => p.periodeId === s.periodeId) || {};
+    return {
+      structure:  meta.structure || '',
+      nomAffiche: meta.nomAffiche || s.collabId,
+      periode,
+      det: detParCle[s.periodeId + '|' + s.collabId] || []
+    };
+  }).sort((a, b) =>
+    (a.structure || '').localeCompare(b.structure || '') ||
+    (a.nomAffiche || '').localeCompare(b.nomAffiche || ''));
+
+  // 6-7) Assemblage : une page par relevé, dans une seule enveloppe, puis écriture dans la fenêtre déjà ouverte.
+  const pages = ordre.map(x => construirePageReleve(x.nomAffiche, x.structure, x.periode, x.det)).join('');
+  const html = enveloppePdf(pages);   // sans 2e argument → titre générique
+  w.document.open(); w.document.write(html); w.document.close();
 }
 
 // Détail d'une archive : fixe la période de la ligne puis réutilise ouvrirSaisiesPaie (consultation + re-validation).
@@ -2752,71 +2837,11 @@ async function ouvrirDetailArchive(collabIdEnc, periodeId, btn) {
   await ouvrirSaisiesPaie(collabIdEnc, btn);
 }
 
-// Génère le relevé d'heures imprimable (PDF via window.print) d'un collab sur une période.
-async function genererPdfReleve(collabIdEnc, periodeId) {
-  const collabId = decodeURIComponent(collabIdEnc);
-  // 1) paie_detail (couche 2) trié par date
-  const { data: det, error } = await sb.from('paie_detail')
-    .select('date_jour, jour_semaine, type_jour_valide, c1_debut_valide, c1_fin_valide, c2_debut_valide, c2_fin_valide, c3_debut_valide, c3_fin_valide, heures_valide')
-    .eq('collab_id', collabId).eq('periode_id', periodeId).order('date_jour');
-  if (error) { alert('Erreur de lecture du relevé : ' + (error.message || error.code)); return; }
-  if (!det || !det.length) { alert('Aucune donnée pour ce relevé.'); return; }
-  // 2) Contexte collab (structure depuis collaborateurs / collabsData) + période
-  const collab = (collabsData || []).find(c => c.collabId === collabId) || {};
-  let structure = collab.structure, nomAffiche = collab.nomAffiche;
-  if (!structure || !nomAffiche) {
-    const { data } = await sb.from('collaborateurs').select('nom_affiche, structure').eq('collab_id', collabId).maybeSingle();
-    if (data) { structure = structure || data.structure; nomAffiche = nomAffiche || data.nom_affiche; }
-  }
-  nomAffiche = nomAffiche || collabId;
-  const SOC = { SCEA:'SCEA Chants de la Terre', SAS:'SAS Chants de la Terre', SARL:'SARL Les 6 Saveurs' };
-  const societe = SOC[structure] || 'Chants de la Terre';
-  const periode = (periodesData || []).find(p => p.periodeId === periodeId) || {};
-  // Helpers
-  const fmtJJMMAAAA = iso => { if (!iso) return ''; const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : String(iso); };
-  const fmtJJMM = iso => { const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1] : String(iso); };
-  const toDate = iso => { const p = String(iso).slice(0,10).split('-'); return new Date(+p[0], +p[1]-1, +p[2]); };
-  const keyLundi = d => { const dow = d.getDay()===0?6:d.getDay()-1; const l = new Date(d); l.setDate(d.getDate()-dow); return String(l.getFullYear())+String(l.getMonth()+1).padStart(2,'0')+String(l.getDate()).padStart(2,'0'); };
-  const abrJour = (js, d) => js ? (js.slice(0,3) + '.') : ['Dim.','Lun.','Mar.','Mer.','Jeu.','Ven.','Sam.'][d.getDay()];
-  const fmtH = n => (Number(n)||0).toFixed(2).replace('.', ',') + ' h';
-  const cr = (deb, fin) => (fmtHeure(deb) && fmtHeure(fin)) ? fmtHeure(deb)+'–'+fmtHeure(fin) : null;
-  // Colonne Créneau 3 : seulement si au moins un jour en a un
-  const showC3 = det.some(d => fmtHeure(d.c3_debut_valide) && fmtHeure(d.c3_fin_valide));
-  // 3) Lignes + total sem. à la volée (reset chaque lundi) + total global
-  const badge = t => t==='CP' ? '<span class="badge b-cp">CP</span>'
-    : t==='AT' ? '<span class="badge b-at">AT</span>'
-    : t==='CS' ? '<span class="badge b-cs">CS</span>' : 'travaillée';
-  const cell = v => v ? '<td class="creneau">'+v+'</td>' : '<td class="vide">—</td>';
-  let weekKey = null, weekCumul = 0, totalGlobal = 0;
-  const rows = det.map(d => {
-    const dt = toDate(d.date_jour), wk = keyLundi(dt);
-    if (wk !== weekKey) { weekKey = wk; weekCumul = 0; }
-    const h = Number(d.heures_valide) || 0;
-    weekCumul += h; totalGlobal += h;
-    const dow = dt.getDay();
-    const trCls = dow===6 ? ' class="sam"' : dow===0 ? ' class="dim"' : '';
-    const trav = d.type_jour_valide === 'travaillée';
-    const c1v = trav ? cr(d.c1_debut_valide,d.c1_fin_valide) : null;
-    const c2v = trav ? cr(d.c2_debut_valide,d.c2_fin_valide) : null;
-    const c3v = trav ? cr(d.c3_debut_valide,d.c3_fin_valide) : null;
-    const aCreneau = !!(c1v || c2v || c3v);
-    // 'travaillée' masqué si jour vide (0h ET aucun créneau) → "—" ; CP/AT/CS inchangés
-    const typeHtml = (trav && h === 0 && !aCreneau) ? '<span class="vide">—</span>' : badge(d.type_jour_valide);
-    return '<tr'+trCls+'>'
-      + '<td class="l date">'+abrJour(d.jour_semaine, dt)+' '+fmtJJMM(d.date_jour)+'</td>'
-      + '<td class="type">'+typeHtml+'</td>'
-      + cell(c1v)
-      + cell(c2v)
-      + (showC3 ? cell(c3v) : '')
-      + '<td class="tot">'+fmtH(h)+'</td>'
-      + '<td class="sem">'+fmtH(weekCumul)+'</td>'
-      + '</tr>';
-  }).join('');
-  const auj = new Date();
-  const editeLe = String(auj.getDate()).padStart(2,'0')+'/'+String(auj.getMonth()+1).padStart(2,'0')+'/'+auj.getFullYear();
-  // 4) Document A4 (CSS maquette) + impression auto
-  const html = `<!DOCTYPE html>
-<html lang="fr"><head><meta charset="UTF-8"><title>Relevé d'heures — ${nomAffiche}</title>
+// Enveloppe HTML du document imprimable : <head> + TOUT le CSS (@media print / @page) +
+// <body> contenant `contenu` (inséré tel quel) + le <script> d'impression auto.
+function enveloppePdf(contenu, titre) {
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>${titre || "Relevé d'heures"}</title>
 <style>
 :root{--txt:#1a1a1a;--txt2:#555;--bord:#d0d0d0;--bord2:#ececec;--sam:#ebebeb;--dim:#d8d8d8;--entete:#2d4a3e;}
 *{box-sizing:border-box}
@@ -2853,9 +2878,62 @@ tbody tr.dim td{background:var(--dim);}
 .sign .g .role{font-size:9.5px;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;}
 .sign .g .nom{font-size:12px;font-weight:600;margin-top:1px;}
 .sign .date{font-size:10px;color:var(--txt2);margin-top:2px;}
-@media print{body{background:#fff;}.page{margin:0;box-shadow:none;width:auto;min-height:auto;padding:10mm;}tbody tr.sam td,tbody tr.dim td{-webkit-print-color-adjust:exact;print-color-adjust:exact;}@page{size:A4;margin:10mm;}}
+@media print{body{background:#fff;}.page{margin:0;box-shadow:none;width:auto;min-height:auto;padding:10mm;}.page:not(:last-child){break-after:page;page-break-after:always;}tbody tr.sam td,tbody tr.dim td{-webkit-print-color-adjust:exact;print-color-adjust:exact;}@page{size:A4;margin:10mm;}}
 </style></head>
-<body><div class="page">
+<body>${contenu}
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`;
+}
+
+// Construit UNIQUEMENT le <div class="page">…</div> d'un relevé (AUCUNE requête).
+// det = lignes paie_detail DÉJÀ triées par date_jour. Le cumul hebdo (reset au changement de
+// lundi) et le totalGlobal sont recalculés ici. periode = l'entrée de periodesData (dates).
+function construirePageReleve(nomAffiche, structure, periode, det) {
+  const SOC = { SCEA:'SCEA Chants de la Terre', SAS:'SAS Chants de la Terre', SARL:'SARL Les 6 Saveurs' };
+  const societe = SOC[structure] || 'Chants de la Terre';
+  // Helpers
+  const fmtJJMMAAAA = iso => { if (!iso) return ''; const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : String(iso); };
+  const fmtJJMM = iso => { const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1] : String(iso); };
+  const toDate = iso => { const p = String(iso).slice(0,10).split('-'); return new Date(+p[0], +p[1]-1, +p[2]); };
+  const keyLundi = d => { const dow = d.getDay()===0?6:d.getDay()-1; const l = new Date(d); l.setDate(d.getDate()-dow); return String(l.getFullYear())+String(l.getMonth()+1).padStart(2,'0')+String(l.getDate()).padStart(2,'0'); };
+  const abrJour = (js, d) => js ? (js.slice(0,3) + '.') : ['Dim.','Lun.','Mar.','Mer.','Jeu.','Ven.','Sam.'][d.getDay()];
+  const fmtH = n => (Number(n)||0).toFixed(2).replace('.', ',') + ' h';
+  const cr = (deb, fin) => (fmtHeure(deb) && fmtHeure(fin)) ? fmtHeure(deb)+'–'+fmtHeure(fin) : null;
+  // Colonne Créneau 3 : seulement si au moins un jour en a un
+  const showC3 = det.some(d => fmtHeure(d.c3_debut_valide) && fmtHeure(d.c3_fin_valide));
+  // Lignes + total sem. à la volée (reset chaque lundi) + total global
+  const badge = t => t==='CP' ? '<span class="badge b-cp">CP</span>'
+    : t==='AT' ? '<span class="badge b-at">AT</span>'
+    : t==='CS' ? '<span class="badge b-cs">CS</span>' : 'travaillée';
+  const cell = v => v ? '<td class="creneau">'+v+'</td>' : '<td class="vide">—</td>';
+  let weekKey = null, weekCumul = 0, totalGlobal = 0;
+  const rows = det.map(d => {
+    const dt = toDate(d.date_jour), wk = keyLundi(dt);
+    if (wk !== weekKey) { weekKey = wk; weekCumul = 0; }
+    const h = Number(d.heures_valide) || 0;
+    weekCumul += h; totalGlobal += h;
+    const dow = dt.getDay();
+    const trCls = dow===6 ? ' class="sam"' : dow===0 ? ' class="dim"' : '';
+    const trav = d.type_jour_valide === 'travaillée';
+    const c1v = trav ? cr(d.c1_debut_valide,d.c1_fin_valide) : null;
+    const c2v = trav ? cr(d.c2_debut_valide,d.c2_fin_valide) : null;
+    const c3v = trav ? cr(d.c3_debut_valide,d.c3_fin_valide) : null;
+    const aCreneau = !!(c1v || c2v || c3v);
+    // 'travaillée' masqué si jour vide (0h ET aucun créneau) → "—" ; CP/AT/CS inchangés
+    const typeHtml = (trav && h === 0 && !aCreneau) ? '<span class="vide">—</span>' : badge(d.type_jour_valide);
+    return '<tr'+trCls+'>'
+      + '<td class="l date">'+abrJour(d.jour_semaine, dt)+' '+fmtJJMM(d.date_jour)+'</td>'
+      + '<td class="type">'+typeHtml+'</td>'
+      + cell(c1v)
+      + cell(c2v)
+      + (showC3 ? cell(c3v) : '')
+      + '<td class="tot">'+fmtH(h)+'</td>'
+      + '<td class="sem">'+fmtH(weekCumul)+'</td>'
+      + '</tr>';
+  }).join('');
+  const auj = new Date();
+  const editeLe = String(auj.getDate()).padStart(2,'0')+'/'+String(auj.getMonth()+1).padStart(2,'0')+'/'+auj.getFullYear();
+  return `<div class="page">
   <div class="entete"><div class="societe">${societe}</div><div class="doc">Relevé d'heures</div></div>
   <div class="ident"><div class="nom">${nomAffiche}</div><div class="periode">Période du ${fmtJJMMAAAA(periode.dateDebut)} au ${fmtJJMMAAAA(periode.dateFin)}</div></div>
   <table><thead><tr>
@@ -2866,9 +2944,30 @@ tbody tr.dim td{background:var(--dim);}
     <div class="sign"><div class="g"><div class="role">Signature de l'employé</div><div class="nom">${nomAffiche}<span style="margin-left:32px">Date :</span></div></div></div>
     <div class="sign"><div class="g"><div class="role">Signature de l'employeur</div><div class="nom">${societe}<span style="margin-left:32px">Date :</span></div></div></div>
   </div>
-</div>
-<script>window.onload=function(){window.print();}<\/script>
-</body></html>`;
+</div>`;
+}
+
+// Génère le relevé d'heures imprimable (PDF via window.print) d'un collab sur une période.
+async function genererPdfReleve(collabIdEnc, periodeId) {
+  const collabId = decodeURIComponent(collabIdEnc);
+  // 1) paie_detail (couche 2) trié par date
+  const { data: det, error } = await sb.from('paie_detail')
+    .select('date_jour, jour_semaine, type_jour_valide, c1_debut_valide, c1_fin_valide, c2_debut_valide, c2_fin_valide, c3_debut_valide, c3_fin_valide, heures_valide')
+    .eq('collab_id', collabId).eq('periode_id', periodeId).order('date_jour');
+  if (error) { alert('Erreur de lecture du relevé : ' + (error.message || error.code)); return; }
+  if (!det || !det.length) { alert('Aucune donnée pour ce relevé.'); return; }
+  // 2) Contexte collab (structure depuis collaborateurs / collabsData) + période
+  const collab = (collabsData || []).find(c => c.collabId === collabId) || {};
+  let structure = collab.structure, nomAffiche = collab.nomAffiche;
+  if (!structure || !nomAffiche) {
+    const { data } = await sb.from('collaborateurs').select('nom_affiche, structure').eq('collab_id', collabId).maybeSingle();
+    if (data) { structure = structure || data.structure; nomAffiche = nomAffiche || data.nom_affiche; }
+  }
+  nomAffiche = nomAffiche || collabId;
+  const periode = (periodesData || []).find(p => p.periodeId === periodeId) || {};
+  // 3) Construction (page) + enveloppe, puis impression
+  const page = construirePageReleve(nomAffiche, structure, periode, det);
+  const html = enveloppePdf(page, "Relevé d'heures — " + nomAffiche);
   const w = window.open('', '_blank');
   if (!w) { alert('Autorise les fenêtres pop-up pour générer le PDF.'); return; }
   w.document.write(html); w.document.close();
