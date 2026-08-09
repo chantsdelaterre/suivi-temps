@@ -2111,7 +2111,7 @@ async function enregistrerEtValider() {
       updates.push(u);
     }
   });
-  // 1b) écriture couche 2 (jamais `jours`, jamais date_ajuste_admin)
+  // 1b) écriture couche 2 (jamais `jours`) — date_ajuste_admin est posée côté serveur par ajuster-paie, pas ici
   const erreurs = [];
   if (updates.length) {
     const { data: dAdj, error: eAdj } = await sb.functions.invoke('ajuster-paie', {
@@ -2156,7 +2156,6 @@ async function ouvrirSaisiesPaie(collabId, btn, nomAffiche) {
   const btnVal = document.getElementById('btn-valider-collab');
   if (noteEl) noteEl.value = ligne ? (ligne.note_admin||'') : '';
   if (btnVal) {
-    const valide = ligne && ligne.statut_validation==='valide';
     window._paie_mode_edit = false;
     window._paie_filtre_current = 'tous';
     const btnC = document.getElementById('btn-pill-consult');
@@ -2166,8 +2165,10 @@ async function ouvrirSaisiesPaie(collabId, btn, nomAffiche) {
       btnM.classList.remove('pill-active'); btnM.textContent = '✏️ Modification';
     }
     btnVal.textContent = '💾 Enregistrer et valider le relevé';
-    btnVal.style.opacity = valide ? '0.45' : '1';
-    btnVal.disabled = valide;
+    // Bouton TOUJOURS actif : la re-validation depuis Détail est le mécanisme de correction d'un
+    // relevé déjà validé (décision 14/06 — verrou lecture seule ABANDONNÉ). Le griser fermerait la seule porte.
+    btnVal.disabled = false;
+    btnVal.style.opacity = '1';
     btnVal.className = 'btn btn-success btn-sm';
     poserBadgePaie();
   }
@@ -2204,7 +2205,11 @@ async function ouvrirSaisiesPaie(collabId, btn, nomAffiche) {
     c3Debut:     d.c3_debut_valide || '',
     c3Fin:       d.c3_fin_valide || '',
     totalHeures: d.heures_valide,       // COUCHE 2
-    commentaire: d.commentaire || ''
+    commentaire: d.commentaire || '',
+    ajusteAdmin:       d.ajuste_admin === true,     // couche 2 — ajustement admin
+    dateAjusteAdmin:   d.date_ajuste_admin || '',   // horodatage admin (branché le 09/08 ; NULL sur les ajustements antérieurs)
+    nbModifications:   d.nb_modifications || 0,      // couche 1 (recopiée de jours)
+    dateDerniereModif: d.date_derniere_modif || ''   // couche 1
   }));
   renderSaisiesPaie(jours, collabId);
 }
@@ -2251,7 +2256,7 @@ function buildTableSaisies(jours, filtre, collabId) {
   const collabPaie = collabsData.find(c => c.collabId === collabId) || {};
   const fmtH = v => v && v!=='--:--' ? v : '—';
   return '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'
-    + th('Date')+th('Type')+th('Matin')+th('Après-midi')+th('Créneau 3')+th('Total')+th('Sem.')+th('Commentaire')+th('Modifications')
+    + th('Date')+th('Type')+th('Matin')+th('Après-midi')+th('Créneau 3')+th('Total')+th('Sem.')+th('Commentaire')+th('Modif admin')+th('Modif collab')
     + '</tr></thead><tbody>'
     + (() => {
         const JOURS_P = ['Dim.','Lun.','Mar.','Mer.','Jeu.','Ven.','Sam.'];
@@ -2298,6 +2303,19 @@ function buildTableSaisies(jours, filtre, collabId) {
               ? '<input type="text" id="jp'+idx+'-comm" value="'+(j.commentaire||'').replace(/"/g,"&quot;")+'" placeholder="Commentaire…" style="width:140px;font-size:12px;padding:3px 6px">'
               : '<span style="font-size:12px;color:var(--texte2)">'+((j.commentaire||'').replace(/</g,'&lt;')||'—')+'</span>')
           + (function(){
+              // Modif admin — ajuste_admin (couche 2) + date_ajuste_admin (branché le 09/08 ; NULL sur les ajustements
+              // antérieurs → « Modif admin » sans date, jamais masqué). Format « JJ/MM HH:MM » (comme Modif collab),
+              // heure locale — fmtModif ne sait PAS formater un timestamptz ISO, donc formatage en ligne.
+              let txt = '—';
+              if (j.ajusteAdmin) {
+                const dt = j.dateAjusteAdmin ? new Date(j.dateAjusteAdmin) : null;
+                const p = n => String(n).padStart(2,'0');
+                txt = (dt && !isNaN(dt)) ? p(dt.getDate())+'/'+p(dt.getMonth()+1)+' '+p(dt.getHours())+':'+p(dt.getMinutes()) : 'Modif admin';
+              }
+              return td('<span style="font-size:12px;color:var(--texte2)">'+txt+'</span>','white-space:nowrap');
+            })()
+          + (function(){
+              // Modif collab — couche 1 (nb_modifications / date_derniere_modif recopiées de jours)
               const nbm = Number(j.nbModifications) || 0;
               const txt = nbm === 0 ? '—' : nbm + ' modif' + (nbm > 1 ? 's' : '') + (j.dateDerniereModif ? ' · ' + fmtModif(j.dateDerniereModif) : '');
               return td('<span style="font-size:12px;color:var(--texte2)">'+txt+'</span>','white-space:nowrap');
