@@ -460,6 +460,26 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     </div>
   </div>
 </div>
+
+<div class="modal-overlay" id="modal-cloture-anticipee">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Validation anticipée de la paie</span>
+      <button class="modal-close" onclick="fermerModal('modal-cloture-anticipee')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-weight:600;margin-bottom:10px" id="cloture-nom"></div>
+      <div style="font-size:13px;color:var(--texte2);margin-bottom:16px" id="cloture-texte"></div>
+      <div class="form-group"><label>Date de fin</label><input type="date" id="cloture-date"></div>
+      <div id="cloture-warning" style="display:none;margin-top:12px" class="remarque-existante"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fermerModal('modal-cloture-anticipee')">Annuler</button>
+      <button class="btn btn-primary" id="btn-cloture-confirmer">Confirmer</button>
+    </div>
+  </div>
+</div>
+
     <div class="vue" id="vue-equipes">
       <div class="card">
         <div class="card-header">
@@ -1196,24 +1216,30 @@ async function upsertRecapPaieCourant() {
   if (!ligne) return { ok:false, error:{ message:'totaux du collaborateur introuvables (recharge la période)' } };
   const now = new Date();
   const dateValidation = String(now.getFullYear()) + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+  const recapBody = {
+    periode_id:          paieCurrentPeriode,
+    collab_id:           cid,
+    nom_affiche:         ligne.nomAffiche,
+    heures_travaillees:  ligne.heures_travaillees,
+    heures_at:           ligne.heures_at,
+    heures_cs:           ligne.heures_cs,
+    nb_at:               ligne.nb_at,
+    nb_cs:               ligne.nb_cs,
+    nb_cp:               ligne.nb_cp,
+    nb_jours_travailles: ligne.nb_jours_travailles,
+    statut_validation:   'valide',
+    date_validation:     dateValidation,
+    note_admin:          note
+  };
+  // Clôture anticipée : borne de validation. Clé AJOUTÉE seulement si renseignée — JAMAIS null explicite
+  // (l'Edge filtre par `if (k in recap)` : clé absente = valeur en base préservée ; null = valeur effacée).
+  if (window._cloture_borne_en_cours) recapBody.date_fin_validation = window._cloture_borne_en_cours;
   const { data: dRec, error } = await sb.functions.invoke('valider-recap', {
-    body: { admin_token: ADMIN_TOKEN, recap: {
-      periode_id:          paieCurrentPeriode,
-      collab_id:           cid,
-      nom_affiche:         ligne.nomAffiche,
-      heures_travaillees:  ligne.heures_travaillees,
-      heures_at:           ligne.heures_at,
-      heures_cs:           ligne.heures_cs,
-      nb_at:               ligne.nb_at,
-      nb_cs:               ligne.nb_cs,
-      nb_cp:               ligne.nb_cp,
-      nb_jours_travailles: ligne.nb_jours_travailles,
-      statut_validation:   'valide',
-      date_validation:     dateValidation,
-      note_admin:          note
-    } }
+    body: { admin_token: ADMIN_TOKEN, recap: recapBody }
   });
-  return (error || !dRec || dRec.ok !== true) ? { ok:false, error: error || (dRec && dRec.error) } : { ok:true };
+  if (error || !dRec || dRec.ok !== true) return { ok:false, error: error || (dRec && dRec.error) };
+  window._cloture_borne_en_cours = null;   // borne consommée : ne pas la ré-appliquer à une autre validation
+  return { ok:true };
 }
 
 // Feedback de succès (bouton + pills + badge) — factorisé.
@@ -1373,6 +1399,9 @@ async function toggleCollab(collabId, btn) {
 // ── PAIE ─────────────────────────────────────────────────────────────────────
 let paieCurrentPeriode = '';
 let paieSousOnglet = 'gelee';   // sous-onglet Paie actif : 'gelee' (À traiter) | 'cloturee' (Clôturées)
+let _candidatsCloture = [];             // candidats à la clôture anticipée gardés en mémoire (cf. renderBlocCandidatsCloture)
+let _paieContexteRetour = null;         // 'cloture-anticipee' quand le détail est ouvert hors liste "À traiter"
+window._cloture_borne_en_cours = null;  // date de fin (AAAA-MM-JJ) portée jusqu'à l'upsert recap_paie, puis remise à null
 let filtrePaieStructure = '';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1578,7 +1607,7 @@ async function calculerPaieDepuisPaieDetail(periodeId) {
   // Statut de validation figé (recap_paie) par collab, pour cette période
   const { data: recaps } = await sb
     .from('recap_paie')
-    .select('collab_id, statut_validation, note_admin')
+    .select('collab_id, statut_validation, note_admin, date_fin_validation')
     .eq('periode_id', periodeId);
   const recapByCollab = {};
   (recaps || []).forEach(rp => { recapByCollab[rp.collab_id] = rp; });
@@ -1606,7 +1635,8 @@ async function calculerPaieDepuisPaieDetail(periodeId) {
       nb_cp:              acc.nb_cp,
       nb_jours_travailles: acc.nb_jours_travailles,
       statut_validation:  rec.statut_validation || null,
-      note_admin:         rec.note_admin || null
+      note_admin:         rec.note_admin || null,
+      date_fin_validation: rec.date_fin_validation || null
     };
   }).sort((a, b) => (a.nomAffiche||'').localeCompare(b.nomAffiche||''));
 }
@@ -1615,15 +1645,37 @@ async function calculerPaieDepuisPaieDetail(periodeId) {
 // Import DIFFÉRENTIEL des `jours` d'une période vers paie_detail : copie fidèle (couche 1) +
 // couche 2 pré-remplie. REJOUABLE — n'envoie QUE les couples (collab_id, date_jour) absents de
 // paie_detail ; l'Edge upsert avec ignoreDuplicates, donc un rejeu n'écrase jamais un ajustement admin.
-async function importerPaiePeriode(periodeId) {
+async function importerPaiePeriode(periodeId, opts) {
   if (!periodeId) { console.warn('importerPaiePeriode : periodeId manquant'); return {ok:false, raison:'periodeId manquant'}; }
 
+  // Garde-fou lot 2 : sur import de période ENTIÈRE (opts absent), n'importer QUE si la période
+  // n'est plus ouverte — un import entier d'une période ouverte figerait les saisies en cours de
+  // tous les collabs, et depuis le lot 1 une ligne importée n'est PLUS JAMAIS rafraîchie.
+  // L'import BORNÉ d'un seul collab (opts fourni) reste légitime sur une période ouverte → contrôle sauté.
+  if (!opts) {
+    let statut = ((periodesData || []).find(p => p.periodeId === periodeId) || {}).statut;
+    if (!statut) {
+      // Secours hors onglet Paie (periodesData pas garanti peuplé)
+      const { data: pRow, error: ep } = await sb
+        .from('periodes').select('statut').eq('periode_id', periodeId).maybeSingle();
+      statut = (!ep && pRow) ? pRow.statut : undefined;
+    }
+    if (statut === 'ouverte') {
+      // ok:true VOULU : chargerPaie doit enchaîner sur le calcul et afficher les collabs déjà bornés.
+      return {ok:true, importe:false, lignes:0, message:'periode ouverte'};
+    }
+    if (!statut) {
+      // Indéterminable : dans le doute on n'importe pas, et l'admin voit un message plutôt qu'un vide.
+      return {ok:false, raison:'statut de periode indeterminable'};
+    }
+  }
+
   // 1) Lire tous les jours de la période (source de l'import)
-  const { data: jours, error: ej } = await fetchAllPages(() => sb
-    .from('jours')
-    .select('*')
-    .eq('periode_id', periodeId)
-    .order('jour_id'));
+  const { data: jours, error: ej } = await fetchAllPages(() => {
+    let q = sb.from('jours').select('*').eq('periode_id', periodeId);
+    if (opts) q = q.eq('collab_id', opts.collabId).lte('date_jour', opts.dateFin);  // borné : 1 collab, jours définitifs
+    return q.order('jour_id');   // colonne stable prouvée
+  });
   if (ej) {
     console.error('importerPaiePeriode : erreur lecture jours', ej);
     return {ok:false, raison:'erreur lecture jours', error:ej};
@@ -1673,11 +1725,11 @@ async function importerPaiePeriode(periodeId) {
   });
 
   // 2) DIFFÉRENTIEL : couples (collab_id, date_jour) DÉJÀ présents dans paie_detail.
-  const { data: dejaLa, error: edeja } = await fetchAllPages(() => sb
-    .from('paie_detail')
-    .select('collab_id, date_jour')
-    .eq('periode_id', periodeId)
-    .order('id'));
+  const { data: dejaLa, error: edeja } = await fetchAllPages(() => {
+    let q = sb.from('paie_detail').select('collab_id, date_jour').eq('periode_id', periodeId);
+    if (opts) q = q.eq('collab_id', opts.collabId);   // inutile de rapatrier toute la période pour 1 collab
+    return q.order('id');
+  });
   if (edeja) {
     console.error('importerPaiePeriode : erreur lecture paie_detail existant', edeja);
     return {ok:false, raison:'erreur lecture existant', error:edeja};
@@ -1824,6 +1876,20 @@ async function sauverNote(collabId, note) {
 }
 
 function retourPaie() {
+  // Clôture anticipée : on revient au bloc "À traiter" SANS chargerPaie (la période est OUVERTE,
+  // elle n'existe pas dans la liste "À traiter" → chargerPaie atterrirait sur une carte fantôme).
+  if (_paieContexteRetour === 'cloture-anticipee') {
+    _paieContexteRetour = null;
+    window._cloture_borne_en_cours = null;
+    _paieCurrentCollab = null;
+    paieCurrentPeriode = '';
+    document.getElementById('paie-detail').style.display = 'none';
+    document.querySelector('#vue-paie .card:first-child').style.display = 'block';
+    document.getElementById('paie-card').style.display = 'none';
+    document.getElementById('paie-indicateur').style.display = 'none';
+    renderEntetePaie(false);   // le bloc "Clôtures anticipées" se reconstruit sans le candidat traité
+    return;
+  }
   document.getElementById('paie-detail').style.display = 'none';
   document.querySelector('#vue-paie .card:first-child').style.display = 'block';
   _paieCurrentCollab = null;
@@ -2065,6 +2131,7 @@ async function enregistrerEtValider() {
   }
   // 2) recalcul des totaux depuis paie_detail (recap_paie recevra les valeurs ajustées)
   window._paie_recap_current = await calculerPaieDepuisPaieDetail(paieCurrentPeriode);
+  garantirEntreeRecapCloture();   // clôture anticipée d'un collab sans saisie : ré-injecte l'entrée à zéro (no-op sinon)
   // 3) validation recap_paie via le cœur partagé (SANS alert)
   const res = await upsertRecapPaieCourant();
   if (!res.ok) {
@@ -2078,12 +2145,13 @@ async function enregistrerEtValider() {
   retourPaie();   // masque le détail, ré-affiche la liste, chargerPaie recharge la période
 }
 
-async function ouvrirSaisiesPaie(collabId, btn) {
+async function ouvrirSaisiesPaie(collabId, btn, nomAffiche) {
   _paieCurrentCollab = collabId;
-  const nomAffiche = btn.closest('tr').querySelector('td strong').textContent;
+  const cid = decodeURIComponent(collabId);
+  const nom = (nomAffiche != null) ? nomAffiche : btn.closest('tr').querySelector('td strong').textContent;
   // Initialiser note et bouton valider
   const paieRecap = window._paie_recap_current || [];
-  const ligne = paieRecap.find(r => r.collab_id===collabId);
+  const ligne = paieRecap.find(r => r.collabId === cid);
   const noteEl = document.getElementById('modal-note-admin');
   const btnVal = document.getElementById('btn-valider-collab');
   if (noteEl) noteEl.value = ligne ? (ligne.note_admin||'') : '';
@@ -2104,7 +2172,7 @@ async function ouvrirSaisiesPaie(collabId, btn) {
     poserBadgePaie();
   }
   // Afficher vue détail
-  document.getElementById('paie-detail-titre').textContent = 'Détail — ' + nomAffiche;
+  document.getElementById('paie-detail-titre').textContent = 'Détail — ' + nom;
   document.getElementById('paie-card').style.display = 'none';
   document.getElementById('paie-indicateur').style.display = 'none';
   document.querySelector('#vue-paie .card:first-child').style.display = 'none';
@@ -2114,7 +2182,6 @@ async function ouvrirSaisiesPaie(collabId, btn) {
   document.getElementById('table-saisies-paie').innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
   document.getElementById('filtres-paie').innerHTML = '';
   // Lecture depuis paie_detail (couche 2 = validation admin), cohérent avec la liste récap.
-  const cid = decodeURIComponent(collabId);
   const { data: detail, error } = await sb
     .from('paie_detail')
     .select('*')
@@ -2143,8 +2210,11 @@ async function ouvrirSaisiesPaie(collabId, btn) {
 }
 
 function renderSaisiesPaie(jours, collabId) {
-  const body = document.getElementById('saisies-body');
-  if (!jours.length) { body.innerHTML = '<div style="text-align:center;color:var(--texte3);padding:40px">Aucune saisie.</div>'; return; }
+  if (!jours.length) {
+    document.getElementById('filtres-paie').innerHTML = '';
+    document.getElementById('table-saisies-paie').innerHTML = '<div style="text-align:center;color:var(--texte3);padding:40px">Aucune saisie.</div>';
+    return;
+  }
   const typeLabel = t => ({travaille:'Travaillé',conge:'Congé',absence:'Absence',ferie:'Férié',travaillée:'Travaillé',CP:'CP',AT:'AT',CS:'Congé spécial'}[t]||t||'—');
   const typeBadge = t => {
     const cls = (t==='travaille'||t==='travaillée')?'badge-actif':t==='CP'?'badge-attente':t==='AT'?'badge-inactif':t==='CS'?'badge-attente':'badge-inactif';
@@ -2562,6 +2632,146 @@ function viderRecapPaie(message) {
   }
 }
 
+// Récupère les collaborateurs en fin de contrat éligibles à une clôture anticipée de paie
+// (RPC candidats_cloture_anticipee, exposée par l'Edge candidats-cloture).
+// SILENCIEUX : erreur ou réponse inattendue → renvoie [] (ne casse jamais l'onglet Paie).
+async function chargerCandidatsCloture() {
+  try {
+    const { data, error } = await sb.functions.invoke('candidats-cloture', {
+      body: { admin_token: ADMIN_TOKEN }
+    });
+    if (error || !data || data.ok !== true || !Array.isArray(data.candidats)) return [];
+    return data.candidats;
+  } catch (_) {
+    return [];
+  }
+}
+
+// Construit le HTML du bloc "Clôtures anticipées". Chaîne vide si aucun candidat → rien ne s'affiche.
+function renderBlocCandidatsCloture(cands) {
+  _candidatsCloture = cands || [];   // gardés en mémoire : le bouton retrouve l'entrée par (collab, période)
+  if (!cands || !cands.length) return '';
+  const lignes = cands.map(c =>
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 14px;border:1.5px solid #e8f0f8;border-radius:10px;margin-bottom:8px;background:#fff">'
+    + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      + '<strong>' + c.nom_affiche + '</strong>'
+      + '<span style="color:var(--texte2)">· ' + c.structure + '</span>'
+      + '<span style="color:var(--texte2)">· fin de contrat le ' + fmtDate(c.date_fin_contrat) + '</span>'
+      + '<span style="color:var(--texte2)">· ' + c.nom_periode + '</span>'
+    + '</div>'
+    + '<button class="btn btn-warning btn-sm" onclick="ouvrirClotureAnticipee(\'' + c.collab_id + '\',\'' + c.periode_id + '\')">Clôturer sa paie</button>'
+    + '</div>'
+  ).join('');
+  return '<div style="margin-bottom:14px">'
+    + '<div style="font-weight:700;margin-bottom:8px">⏹️ Clôtures anticipées — ' + cands.length + ' collaborateur(s)</div>'
+    + lignes
+    + '</div>';
+}
+
+// Garantit une entrée (à zéro si besoin) pour le collab courant dans _paie_recap_current.
+// Nécessaire en clôture anticipée d'un collab SANS saisie : absent du tableau issu de paie_detail,
+// il serait introuvable à l'upsert. No-op hors clôture anticipée (garde sur _cloture_borne_en_cours).
+function garantirEntreeRecapCloture() {
+  if (!window._cloture_borne_en_cours) return;
+  const cand = (_candidatsCloture || []).find(c => c.collab_id === _paieCurrentCollab);
+  if (!cand) return;
+  window._paie_recap_current = window._paie_recap_current || [];
+  if (window._paie_recap_current.some(r => r.collabId === _paieCurrentCollab)) return;
+  window._paie_recap_current.push({
+    collabId: _paieCurrentCollab, nomAffiche: cand.nom_affiche, structure: cand.structure,
+    heures_travaillees: 0, heures_at: 0, heures_cs: 0,
+    nb_at: 0, nb_cs: 0, nb_cp: 0, nb_jours_travailles: 0,
+    statut_validation: null, note_admin: null, date_fin_validation: null
+  });
+}
+
+// Modale de saisie de la date de fin (input date natif, borné min/max). Résout avec la date ISO
+// choisie, ou null si Annuler / fermeture. Confirmer désactivé tant que l'input est vide ou hors bornes.
+function demanderDateCloture(candidat) {
+  return new Promise(resolve => {
+    const finContratISO = String(candidat.date_fin_contrat || '').slice(0, 10);
+    const pDeb = String(candidat.periode_date_debut).slice(0, 10);
+    const pFin = String(candidat.periode_date_fin).slice(0, 10);
+    const input = document.getElementById('cloture-date');
+    const warn = document.getElementById('cloture-warning');
+    const btnOk = document.getElementById('btn-cloture-confirmer');
+    const btnAnnuler = document.querySelector('#modal-cloture-anticipee .btn-secondary');
+    const btnClose = document.querySelector('#modal-cloture-anticipee .modal-close');
+
+    document.getElementById('cloture-nom').textContent = candidat.nom_affiche;
+    document.getElementById('cloture-texte').textContent =
+      'Les jours du ' + fmtDate(pDeb) + ' à la date choisie seront figés pour la paie. '
+      + 'Cette date pourra être allongée, mais pas raccourcie.';
+    input.min = pDeb; input.max = pFin; input.value = finContratISO;
+
+    const majEtat = () => {
+      const v = input.value;
+      const horsBornes = !v || v < pDeb || v > pFin;
+      btnOk.disabled = horsBornes;
+      btnOk.style.opacity = horsBornes ? '0.45' : '1';
+      if (v && finContratISO && v > finContratISO) {
+        warn.style.display = 'block';
+        warn.textContent = 'La date dépasse la fin de contrat (' + fmtDate(finContratISO) + ').';
+      } else {
+        warn.style.display = 'none';
+      }
+    };
+
+    // Nettoyage + résolution unique (fermeture par Confirmer, Annuler ou ×).
+    const fermer = (val) => {
+      input.removeEventListener('input', majEtat);
+      btnOk.onclick = null; btnAnnuler.onclick = null; btnClose.onclick = null;
+      fermerModal('modal-cloture-anticipee');
+      resolve(val);
+    };
+    input.addEventListener('input', majEtat);
+    btnOk.onclick = () => fermer(input.value || null);
+    btnAnnuler.onclick = () => fermer(null);
+    btnClose.onclick = () => fermer(null);
+
+    majEtat();
+    document.getElementById('modal-cloture-anticipee').classList.add('open');
+  });
+}
+
+// Parcours de clôture anticipée : valide la paie d'un collab en fin de contrat, bornée à une date,
+// sur une période encore OUVERTE.
+async function ouvrirClotureAnticipee(collabId, periodeId) {
+  // a) Retrouver le candidat complet par le couple (collab, période).
+  const candidat = (_candidatsCloture || []).find(c => c.collab_id === collabId && c.periode_id === periodeId);
+  if (!candidat) { alert('Candidat introuvable, recharge la page.'); return; }
+
+  // b) Demander la date de fin via la modale (input date natif, borné min/max, avertissement fin de contrat).
+  const dateFin = await demanderDateCloture(candidat);
+  if (!dateFin) return;   // annulation / fermeture
+
+  // c) Garde-fou bornes (min/max respectés par le calendrier, mais pas garantis à la saisie clavier).
+  const pDeb = String(candidat.periode_date_debut).slice(0, 10);
+  const pFin = String(candidat.periode_date_fin).slice(0, 10);
+  if (dateFin < pDeb || dateFin > pFin) {
+    alert('La date doit être comprise entre le début (' + fmtDate(pDeb) + ') et la fin (' + fmtDate(pFin) + ') de la période.');
+    return;
+  }
+
+  // d) Import borné jusqu'à la date de fin (incluse).
+  const imp = await importerPaiePeriode(periodeId, { collabId, dateFin });
+  if (!imp.ok) { alert('Import impossible : ' + (imp.raison || 'erreur inconnue') + '.'); return; }
+  // imp.ok avec importe:false / 'aucun jour' = cas NORMAL (collab sans saisie) → on continue.
+
+  // e) Positionner le contexte SANS chargerPaie (pas de renderPaie, pas d'import non borné).
+  paieCurrentPeriode = periodeId;
+  _paieCurrentCollab = collabId;        // le helper (f) en dépend ; ouvrirSaisiesPaie (g) le repositionnera à l'identique
+  window._paie_recap_current = await calculerPaieDepuisPaieDetail(periodeId);
+  _paieContexteRetour = 'cloture-anticipee';
+  window._cloture_borne_en_cours = dateFin;
+
+  // f) Cas "aucune ligne" : fabriquer l'entrée à zéro (sinon upsert introuvable). Décision : on valide même sans saisie.
+  garantirEntreeRecapCloture();
+
+  // g) Ouvrir l'écran d'ajustement — nom passé en 3e param (pas de <tr> ici).
+  ouvrirSaisiesPaie(collabId, null, candidat.nom_affiche);
+}
+
 // Rend l'en-tête de l'onglet Paie selon le sous-onglet actif.
 // autoLoad=true : sélection automatique (1 seule période, ou période déjà chargée).
 async function renderEntetePaie(autoLoad) {
@@ -2576,13 +2786,16 @@ async function renderEntetePaie(autoLoad) {
   }
 
   // ── "À traiter" (gelee) : X/Y validés + bouton Clôturer par période ──
+  // Bloc additif "Clôtures anticipées" : collabs en fin de contrat éligibles sur une période OUVERTE.
+  // Indépendant des périodes gelées → calculé et affiché même s'il n'y a aucune période à traiter.
+  const candidatsHtml = renderBlocCandidatsCloture(await chargerCandidatsCloture());
   if (!liste.length) {
-    entete.innerHTML = '<div style="color:var(--texte3);padding:6px 2px">Aucune période à traiter.</div>';
+    entete.innerHTML = candidatsHtml + '<div style="color:var(--texte3);padding:6px 2px">Aucune période à traiter.</div>';
     if (autoLoad) viderRecapPaie('Aucune période à traiter.');
     return;
   }
   const counts = await calculerCountsPaie(liste.map(p => p.periodeId));
-  entete.innerHTML = liste.map(p => {
+  entete.innerHTML = candidatsHtml + liste.map(p => {
     const c = counts[p.periodeId] || { x:0, y:0 };
     const tous = c.y > 0 && c.x === c.y;
     const sel = p.periodeId === paieCurrentPeriode;
@@ -2645,16 +2858,31 @@ async function chargerArchivesCloturees() {
   document.getElementById('paie-titre').textContent = 'Paie — périodes clôturées';
   const entete = document.getElementById('paie-entete');
   const cloturees = (periodesData || []).filter(p => p.statut === 'cloturee');
-  if (!cloturees.length) {
+  entete.innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
+  // 1) recap_paie des périodes CLÔTURÉES (fetchAllPages : > 1000 lignes possibles)
+  let recs = [];
+  if (cloturees.length) {
+    const ids = cloturees.map(p => p.periodeId);
+    const { data, error } = await fetchAllPages(() => sb.from('recap_paie').select('*').in('periode_id', ids).order('id'));
+    if (error) { entete.innerHTML = '<div class="error-banner">Erreur de chargement des archives.</div>'; return; }
+    recs = data || [];
+  }
+  // 2) recap_paie BORNÉS (clôture partielle anticipée) — TOUS statuts : une borne peut vivre sur une période
+  //    ouverte. Fusion + dédoublonnage sur (periode_id, collab_id) : une ligne bornée dont la période a été
+  //    clôturée depuis remonte dans les DEUX lectures. Erreur ici → on n'interrompt PAS l'écran : log + on
+  //    continue avec les seules périodes clôturées.
+  const { data: bornes, error: eBornes } = await fetchAllPages(() => sb.from('recap_paie').select('*').not('date_fin_validation', 'is', null).order('id'));
+  if (eBornes) {
+    console.error('chargerArchivesCloturees : lecture des relevés bornés en échec (on continue avec les périodes clôturées)', eBornes);
+  } else {
+    const vus = new Set(recs.map(r => r.periode_id + '|' + r.collab_id));
+    (bornes || []).forEach(r => { const k = r.periode_id + '|' + r.collab_id; if (!vus.has(k)) { vus.add(k); recs.push(r); } });
+  }
+  if (!recs.length) {
     archivesRecap = [];
     entete.innerHTML = '<div style="color:var(--texte3);padding:6px 2px">Aucune période clôturée.</div>';
     return;
   }
-  entete.innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
-  const ids = cloturees.map(p => p.periodeId);
-  // Lecture PAGINÉE de recap_paie pour TOUTES les périodes clôturées (fetchAllPages : > 1000 lignes possibles)
-  const { data: recs, error } = await fetchAllPages(() => sb.from('recap_paie').select('*').in('periode_id', ids).order('id'));
-  if (error) { entete.innerHTML = '<div class="error-banner">Erreur de chargement des archives.</div>'; return; }
   // Structure (absente de recap_paie) croisée depuis collaborateurs — lus une fois.
   const collabMap = {};
   if (collabsData && collabsData.length) {
@@ -2664,7 +2892,7 @@ async function chargerArchivesCloturees() {
     (data||[]).forEach(c => { collabMap[c.collab_id] = { collabId:c.collab_id, nomAffiche:c.nom_affiche, structure:c.structure }; });
   }
   const periodeMap = {};
-  cloturees.forEach(p => { periodeMap[p.periodeId] = p; });
+  (periodesData || []).forEach(p => { periodeMap[p.periodeId] = p; });   // TOUTES les périodes : une borne peut vivre sur une période ouverte
   archivesRecap = (recs || []).map(r => {
     const c = collabMap[r.collab_id] || {};
     const p = periodeMap[r.periode_id] || {};
@@ -2682,7 +2910,8 @@ async function chargerArchivesCloturees() {
       nb_cs: r.nb_cs || 0,
       nb_cp: r.nb_cp || 0,
       nb_jours_travailles: r.nb_jours_travailles || 0,
-      note_admin: r.note_admin || ''
+      note_admin: r.note_admin || '',
+      date_fin_validation: r.date_fin_validation || null
     };
   }).sort((a, b) =>
     (b.dateDebut || '').localeCompare(a.dateDebut || '') ||
@@ -2736,7 +2965,7 @@ function renderArchivesFiltered() {
       const collabEnc = encodeURIComponent(r.collabId);
       return '<tr>'
         + '<td style="text-align:center"><input type="checkbox" class="arch-check" data-collab="'+r.collabId+'" data-periode="'+r.periodeId+'" onchange="majSelectionArchives()"></td>'
-        + '<td>'+r.nomPeriode+'</td>'
+        + '<td>'+r.nomPeriode + (r.date_fin_validation ? '<div style="font-size:11px;color:var(--texte2)">Clôture partielle anticipée au ' + fmtDate(r.date_fin_validation) + '</div>' : '') + '</td>'
         + '<td><strong>'+r.nomAffiche+'</strong></td>'
         + '<td style="text-align:center">'+r.structure+'</td>'
         + '<td style="text-align:center"><span style="font-family:monospace;font-weight:600">'+r.heures_travaillees.toFixed(2)+'h</span></td>'
@@ -2955,7 +3184,7 @@ async function genererPdfReleve(collabIdEnc, periodeId) {
     .select('date_jour, jour_semaine, type_jour_valide, c1_debut_valide, c1_fin_valide, c2_debut_valide, c2_fin_valide, c3_debut_valide, c3_fin_valide, heures_valide')
     .eq('collab_id', collabId).eq('periode_id', periodeId).order('date_jour');
   if (error) { alert('Erreur de lecture du relevé : ' + (error.message || error.code)); return; }
-  if (!det || !det.length) { alert('Aucune donnée pour ce relevé.'); return; }
+  // Un relevé vide est un document VALIDE (atteste qu'aucune heure n'a été faite) : construirePageReleve gère det=[].
   // 2) Contexte collab (structure depuis collaborateurs / collabsData) + période
   const collab = (collabsData || []).find(c => c.collabId === collabId) || {};
   let structure = collab.structure, nomAffiche = collab.nomAffiche;
