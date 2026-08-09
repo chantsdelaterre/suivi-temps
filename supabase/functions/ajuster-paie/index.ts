@@ -31,6 +31,7 @@ Deno.serve(async (req) => {
       type_jour_valide: u.type_jour_valide,
       heures_valide: u.heures_valide,
       ajuste_admin: true,
+      date_ajuste_admin: new Date().toISOString(),   // trace serveur (le front ne l'envoie jamais) — seule trace d'une modif admin, non reconstituable rétroactivement
     };
     for (const col of CREN_COLS) if (u[col] !== undefined) maj[col] = u[col];
     const { error: uErr } = await supabase.from("paie_detail").update(maj).eq("id", u.id);
