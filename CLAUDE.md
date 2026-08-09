@@ -472,7 +472,9 @@ lecture/écriture sur Supabase** (hors clôture/PDF).
   `heures_valide`, `ajuste_admin=true`) **UNIQUEMENT sur les lignes réellement
   modifiées** (comparaison de **nombres arrondis 2 déc.** des deux côtés).
   **Jamais la table `jours`** (couche 1 = trace intouchable). `date_ajuste_admin`
-  **non écrit** (réservé).
+  **écrit par l'Edge `ajuster-paie` depuis le 09/08/2026** (jamais par le front —
+  valeur posée côté serveur). Les ajustements **antérieurs restent NULL** et ne sont
+  **pas reconstituables** → « Modif admin » sans date à l'écran (~113 lignes).
 - **Bouton unique « 💾 Enregistrer et valider le relevé »** (`enregistrerEtValider`) :
   enchaîne **UPDATE `paie_detail`** → recalcul des totaux → **upsert `recap_paie`**
   (cœur partagé **`upsertRecapPaieCourant`**, sans alert). Après succès → **retour
@@ -506,8 +508,9 @@ lecture/écriture sur Supabase** (hors clôture/PDF).
   lecture/insertion/maj (`using/with check (true)`). Consigné dans
   `sql/recap_paie.sql`.
 - **`paie_detail`** : colonne **`date_ajuste_admin`** (`timestamptz`, nullable)
-  ajoutée par `ALTER TABLE` — **existe mais pas encore écrite par le front**.
-  Consignée dans `sql/paie_detail.sql`.
+  ajoutée par `ALTER TABLE` — **écrite par l'Edge `ajuster-paie` depuis le
+  09/08/2026** (jamais par le front). Ajustements antérieurs = NULL, non
+  reconstituables. Consignée dans `sql/paie_detail.sql`.
 
 ## Onglet Paie refondu + PDF + état réel (cadré le 14/06/2026)
 

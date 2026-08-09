@@ -11,7 +11,10 @@
 --      (type_jour, créneaux, totaux, commentaire, nb_modifications…).
 --   2. VALIDATION ADMIN — valeurs finales retenues pour la paie + traçabilité
 --      (type_jour_valide, heures_valide, ajuste_admin, note_admin,
---       date_ajuste_admin [ajoutée 13/06, pas encore écrite par le front]).
+--       date_ajuste_admin [ajoutée 13/06 ; écrite par l'Edge `ajuster-paie`
+--       depuis le 09/08/2026 — jamais par le front, valeur posée côté serveur.
+--       Les ajustements ANTÉRIEURS au 09/08 restent NULL et ne sont pas
+--       reconstituables → « Modif admin » sans date à l'écran (113 lignes)]).
 --
 -- NE stocke PAS le contexte contractuel (structure, heures_hebdo, type_contrat,
 --   matricule_silae…) : on le retrouve via `historique_contrats` (contrat en
@@ -64,7 +67,7 @@ create table public.paie_detail (
   heures_valide       numeric,                -- heures finales validées pour la paie
   ajuste_admin        boolean     default false,  -- jour modifié par l'admin ?
   note_admin          text,
-  date_ajuste_admin   timestamptz,                -- ajoutée le 13/06 (ALTER) — traçabilité future, PAS encore écrite par le front
+  date_ajuste_admin   timestamptz,                -- ajoutée le 13/06 (ALTER) ; écrite par l'Edge `ajuster-paie` depuis le 09/08/2026 (jamais par le front). Ajustements antérieurs = NULL, non reconstituables
 
   constraint paie_detail_collab_id_fkey
     foreign key (collab_id)

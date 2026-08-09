@@ -69,7 +69,7 @@ Photo figée jour par jour (niveau 2). Couche 1 = copie des `jours` ; couche 2 =
 | `heures_valide` | `numeric` | couche 2 (heures retenues paie) |
 | `ajuste_admin` | `boolean` | `default false` (jour modifié admin ?) |
 | `note_admin` | `text` | couche 2 |
-| `date_ajuste_admin` | `timestamptz` | couche 2 — ajoutée le 13/06 (ALTER), nullable, **PAS encore écrite par le front** (traçabilité future) |
+| `date_ajuste_admin` | `timestamptz` | couche 2 — ajoutée le 13/06 (ALTER), nullable. **Écrite par l'Edge `ajuster-paie` depuis le 09/08/2026** (jamais par le front — valeur posée côté serveur). Ajustements **antérieurs = NULL, non reconstituables** → « Modif admin » sans date à l'écran Détail de paie (~113 lignes) |
 
 Contraintes : FK `collab_id` ; **unique `(periode_id, collab_id, date_jour)`**.
 Index : `idx_paie_detail_periode_collab (periode_id, collab_id)`.

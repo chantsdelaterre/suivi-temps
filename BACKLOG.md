@@ -12,11 +12,10 @@ Points relevés au fil de l'eau, hors chantier courant. Priorité indicative.
   de toutes les périodes pour n'en tirer qu'un `count(distinct collab_id)`
   (~20 000 lignes/an). La pagination **repousse le mur, ne le supprime pas**.
   Cible : une **RPC d'agrégation** renvoyant les compteurs par période.
-- **Resynchroniser la doc du schéma** : les colonnes `nb_at` / `nb_cs` existent en
-  base (integer, default 0, ajoutées par un ALTER non tracé) mais sont **absentes
-  du SQL versionné** → resynchroniser `SCHEMA_REEL.md` ET `sql/recap_paie.sql`.
-  Profiter de l'occasion pour **documenter `jours` en base** (aucun `CREATE TABLE`
-  versionné).
+- **Documenter `jours` en base** : aucun `CREATE TABLE` versionné pour cette
+  table. `SCHEMA_REEL.md` la liste en section B (colonnes déduites des inserts,
+  types non garantis). ✅ Resynchro `SCHEMA_REEL.md` + `sql/recap_paie.sql`
+  faite le 09/08/2026 (`nb_at`, `nb_cs`, `date_fin_validation`) — reste `jours`.
 - **`garantirEntreeRecapCloture` compare sur `_paieCurrentCollab` brut** alors
   qu'`upsertRecapPaieCourant` **décode d'abord** (`decodeURIComponent`). Sans
   conséquence aujourd'hui (les identifiants viennent de la RPC en clair), mais un
@@ -54,3 +53,13 @@ Points relevés au fil de l'eau, hors chantier courant. Priorité indicative.
   **période ouverte** portant un relevé borné.
 - **`ouvrirDetailArchive` sur une période ouverte** exécute brièvement `renderPaie`
   sur **toute la période** avant de la masquer — **travail inutile, invisible**.
+- **`ajuster-paie` n'est pas transactionnelle** : la boucle applique un UPDATE par
+  ligne ; un échec en cours laisse les lignes déjà traitées modifiées, avec
+  `ajuste_admin` et `date_ajuste_admin` posés sur **une partie seulement** du lot.
+  Aucun rollback. Sans conséquence connue (le front n'envoie que les lignes
+  réellement modifiées, et l'appel est rejoué à l'identique en cas d'échec), mais à
+  savoir.
+- **`toggleHeuresEdit` contient un contournement devenu inutile** : il réactive le
+  bouton de validation « si badge Validé ». Depuis le 09/08/2026 le bouton n'est
+  plus jamais grisé à l'ouverture — la rustine est **redondante, inoffensive**, à
+  nettoyer un jour.
