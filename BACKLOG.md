@@ -17,6 +17,17 @@ Points relevés au fil de l'eau, hors chantier courant. Priorité indicative.
   du SQL versionné** → resynchroniser `SCHEMA_REEL.md` ET `sql/recap_paie.sql`.
   Profiter de l'occasion pour **documenter `jours` en base** (aucun `CREATE TABLE`
   versionné).
+- **`garantirEntreeRecapCloture` compare sur `_paieCurrentCollab` brut** alors
+  qu'`upsertRecapPaieCourant` **décode d'abord** (`decodeURIComponent`). Sans
+  conséquence aujourd'hui (les identifiants viennent de la RPC en clair), mais un
+  identifiant contenant un **caractère encodé** casserait le lien.
+- **Deux ids dupliqués dans `admin-v2.html`** (panneau Issues de Chrome).
+  `modal-note-admin` **ne mord pas aujourd'hui** — l'ordre du HTML fait que
+  `getElementById` attrape le bon — mais **ça ne tient qu'à cet ordre**.
+- **Lecture de `historique_contrats` dans `calculerPaieDepuisPaieDetail`** : toutes
+  les lignes de tous les collabs, **NON paginée**.
+- **Message « Aucune période clôturée. »** s'affiche désormais quand il n'y a **ni
+  période clôturée ni relevé borné**. « **Aucun relevé clôturé.** » serait plus juste.
 
 ## Priorité basse
 
@@ -34,3 +45,12 @@ Points relevés au fil de l'eau, hors chantier courant. Priorité indicative.
   a form field »**. Aucun impact d'exécution, mais les **id dupliqués sont un piège
   pour `getElementById`** — à regarder **AVANT** de réutiliser l'écran d'ajustement
   depuis un autre onglet.
+- **Vestige GAS** : le mapping de libellés de `renderSaisiesPaie` contient
+  `ferie:'Férié'` (et `conge`/`absence`) pour des types **qui n'existent pas en
+  base**. Piège pour le futur chantier **jours fériés**.
+- **Emoji ⏹️** du bloc « Clôtures anticipées » **ne se rend pas** sur macOS Chrome
+  (carré vide).
+- **Titre « Paie — périodes clôturées » devenu inexact** : la liste peut contenir une
+  **période ouverte** portant un relevé borné.
+- **`ouvrirDetailArchive` sur une période ouverte** exécute brièvement `renderPaie`
+  sur **toute la période** avant de la masquer — **travail inutile, invisible**.

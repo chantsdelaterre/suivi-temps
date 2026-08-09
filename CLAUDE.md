@@ -932,3 +932,105 @@ appartient au dossier, pas au journal.
 - **Edge d'abord, front ensuite.** L'inverse (front avant Edge) donne un état où
   **plus AUCUNE ligne ne s'importe jamais, sans erreur visible**. À retenir pour
   tout futur changement touchant les deux côtés.
+
+## Clôture partielle de paie par collaborateur — décisions du LOT 2 (testé, 09/08/2026)
+
+> Chantier : figer la paie d'UN collaborateur en fin de contrat, borné à une date,
+> sur une période encore OUVERTE — sans attendre le gel de la période, pour sortir
+> son RIH tout de suite.
+
+### 1. Clôture partielle : une BORNE, pas un statut
+- `recap_paie.date_fin_validation` (date, nullable). **NULL = validation normale ;
+  renseignée = validée jusqu'à cette date INCLUSE.**
+- `statut_validation` reste `'valide'` : `calculerCountsPaie` et `cloturerPeriode`
+  sont **inchangés**. Le collab borné compte dans X **comme** dans Y et **ne bloque
+  pas** la clôture globale.
+- Le collab borné **n'est PAS désactivé** par le chantier. La désactivation reste un
+  **geste manuel** (règle : désactiver si aucune ligne de `historique_contrats` n'a
+  `date_fin` nulle ou ≥ aujourd'hui).
+
+### 2. Le déclencheur est `historique_contrats`, pas une décision admin
+- Le geste naît d'une **date de fin posée sur le contrat**, pas d'une intention de
+  clôturer. La date est donc **HÉRITÉE du contrat**, ce qui élimine presque
+  entièrement le risque de **borne trop longue** — le seul coûteux, puisque l'import
+  différentiel **ajoute sans jamais supprimer**.
+- RPC `candidats_cloture_anticipee()` : `DISTINCT ON (collab_id)` trié par
+  `date_debut DESC, date_fin DESC`. Retenir la **ligne de contrat la plus récente**
+  rend la condition « aucun contrat suivant » vraie **PAR CONSTRUCTION** — pas de
+  requête supplémentaire.
+- `date_fin DESC` en second critère : à `date_debut` égale, **NULL d'abord** en
+  Postgres → un contrat **ouvert** l'emporte sur un contrat clos. **Dans le doute,
+  on ne déclare personne parti.**
+- Périmètre volontairement **étroit : les DÉPARTS seulement.** Un changement de
+  contrat en cours de période (« Jonas puissance deux ») reste **hors chantier**.
+- Le bloc **ne filtre JAMAIS sur `actif`** : il se construit depuis
+  `historique_contrats`. Sinon la désactivation **masquerait exactement le travail
+  qu'elle vient de créer**.
+
+### 3. Le garde-fou vit dans `importerPaiePeriode`, pas dans le chemin
+- Un import de période **ENTIÈRE** sur une période **OUVERTE** est **refusé** (retour
+  `ok:true, importe:false, message:'periode ouverte'` — surtout **PAS une erreur**,
+  qui masquerait tout l'écran). L'import **BORNÉ** d'un seul collab reste autorisé.
+- **Pourquoi là et pas dans une variable de contexte** : `retourPaie` appelle
+  `chargerPaie`, et `enregistrerEtValider` se termine **par** `retourPaie`. Le chemin
+  du **SUCCÈS** déclenchait donc l'import de toute la période. Une garde posée **dans
+  la fonction** couvre **tous les appelants**, y compris ceux qu'on n'a pas imaginés.
+- La règle du lot 1 (« on n'importe que des jours **définitifs** ») cesse d'être une
+  convention pour devenir une **propriété du code**.
+
+### 4. La borne se PRÉSERVE par omission, jamais par null
+- `valider-recap` filtre par `if (k in recap)` et fait un upsert **sans**
+  `ignoreDuplicates` : une clé **ABSENTE** du body n'entre pas dans le `SET`, donc la
+  valeur en base est **préservée**. Un `null` **EXPLICITE l'effacerait**.
+- Règle : on envoie `date_fin_validation` **seulement pour POSER ou ALLONGER** une
+  borne. Validation normale ou re-validation d'un collab déjà borné → on **OMET** la
+  clé.
+- **Vérifié en conditions réelles**, pas déduit.
+
+### 5. `importer-paie` écarte les jours post-borne — dernière barrière
+- L'Edge **lit `recap_paie`**, récupère les bornes non nulles, **filtre avant
+  l'upsert**. Le front **ne peut pas** s'en charger : son différentiel compare à ce
+  qui est **DÉJÀ** dans `paie_detail`, or les jours post-borne **n'y sont justement
+  pas encore**.
+- Échec de lecture des bornes → **500, on n'importe PAS « au cas où »**. Une borne
+  ignorée produit un **dégât silencieux et irréversible**.
+- Comparaison sur les **10 premiers caractères ISO** (`YYYY-MM-DD`) : l'ordre
+  lexicographique coïncide avec l'ordre chronologique — aucune conversion, aucun
+  fuseau.
+
+### 6. Un collab SANS saisie doit pouvoir être clos
+- `calculerPaieDepuisPaieDetail` part de `paie_detail` : un collab sans ligne est
+  **ABSENT** du tableau, donc **introuvable à l'upsert**.
+- Une **entrée à zéro** est fabriquée, et **REPOSÉE après** le recalcul
+  d'`enregistrerEtValider` qui l'écraserait sinon.
+- **Décision métier** : un relevé vide est un **document valide** — il atteste
+  qu'aucune heure n'a été faite. Le **PDF se génère aussi sans lignes**.
+
+### 7. Le sous-onglet « Clôturées » montre les RELEVÉS FIGÉS
+- Il lit désormais les **périodes clôturées ET toute ligne portant une borne**, quel
+  que soit le statut de sa période. Sans quoi un collab borné **disparaît** du bloc
+  « Clôtures anticipées » **sans entrer nulle part ailleurs** — invisible, donc pas
+  de RIH, ce qui est le **BUT** du chantier.
+- Le **early-return « aucune période clôturée » a dû être levé** : le cas nominal est
+  justement une borne **alors qu'aucune période n'est encore clôturée**.
+
+### 8. Pas de cache sur la liste des candidats
+- **Un appel Edge par re-rendu** de l'en-tête « À traiter ». C'est **NÉCESSAIRE**,
+  pas un oubli : le bloc doit se reconstruire **sans le candidat traité** après
+  validation. Un cache le laisserait affiché et l'admin **cliquerait deux fois**. **Ne
+  pas « optimiser ».**
+
+### 9. Méthode : un diff MONTRÉ n'est pas un diff APPLIQUÉ
+- **Incident réel** : plusieurs tours de recette sur du code **qui n'existait pas**,
+  puis **124 lignes importées en prod sur une période ouverte**.
+- Tout prompt de modification se termine désormais par « **montre-moi la ligne telle
+  qu'elle est DÉSORMAIS dans le fichier et confirme que le fichier EST modifié** ».
+- **Réflexe de recette** : `<fonction>.toString().includes('<marqueur>')` **avant tout
+  test**, pour savoir quelle version est chargée.
+- Et : toute recette en console se fait **sur localhost, jamais sur la prod**.
+
+### 10. Demander à CC de PROPOSER avant d'écrire, sur les points sensibles
+- Deux pièges évités ainsi : la **contradiction** entre l'entrée fabriquée et le
+  recalcul d'`enregistrerEtValider`, et le fait que `nomPeriode` se **résolvait depuis
+  les seules périodes clôturées**.
+- À faire **chaque fois qu'un diff touche une fonction partagée**.

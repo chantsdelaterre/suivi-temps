@@ -87,17 +87,21 @@ Synthèse agrégée figée (niveau 3). 1 ligne par collab/période.
 | `heures_travaillees` | `numeric` | total |
 | `heures_at` | `numeric` | total (heures) |
 | `heures_cs` | `numeric` | total (heures) |
+| `nb_at` | `integer` | `default 0` — nombre de jours AT |
+| `nb_cs` | `integer` | `default 0` — nombre de jours CS |
 | `nb_cp` | `integer` | nombre de jours CP |
 | `nb_jours_travailles` | `integer` | |
 | `statut_validation` | `text` | workflow |
 | `date_validation` | `text` | workflow |
+| `date_fin_validation` | `date` | **lot 2** — borne de clôture partielle (NULL = validation normale ; date = validé jusqu'à cette date incluse) |
 | `statut_signature` | `text` | workflow |
 | `note_admin` | `text` | workflow |
 | `created_at` | `timestamptz` | `default now()` |
 
 Contraintes : FK `collab_id` ; **unique `(periode_id, collab_id)`** (→ upsert possible).
 RLS : activée ; policies **SELECT / INSERT / UPDATE** `anon` (lecture+écriture ouvertes phase DEV, **ouvertes le 13/06** — `grant` + 3 policies). Consigné dans `sql/recap_paie.sql`. ⚠️ À resécuriser post-15. ✅ **Résolu le 16/07/2026** : écriture anon RÉVOQUÉE, `service_role` dispose des droits, écritures via Edge Functions (voir `sql/coupure_ecriture_anon.sql`).
-Note : stocke `heures_at`/`heures_cs` (heures) et `nb_cp` (jours), **mais pas** `nb_at`/`nb_cs` (nombre de jours AT/CS).
+Note : stocke `heures_at`/`heures_cs` (heures) **et** `nb_at`/`nb_cs` (nombre de jours AT/CS, `default 0`) et `nb_cp` (jours). `date_fin_validation` (lot 2) borne la validation à une date pour la clôture partielle anticipée d'un collaborateur.
+⚠️ **Corrigé le 2026-08-09 (vérifié en base)** : la note précédente affirmait à tort l'**absence** de `nb_at`/`nb_cs` (« mais pas nb_at/nb_cs ») — ces colonnes existent bel et bien en base. Ce n'était donc pas un simple oubli mais une affirmation CONTRAIRE à la base, désormais rectifiée.
 
 ---
 
