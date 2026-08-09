@@ -12,6 +12,7 @@ function json(body: unknown, status = 200): Response {
 const COLS = [
   "periode_id","collab_id","nom_affiche","heures_travaillees","heures_at","heures_cs",
   "nb_at","nb_cs","nb_cp","nb_jours_travailles","statut_validation","date_validation","note_admin",
+  "date_fin_validation",
 ];
 
 Deno.serve(async (req) => {

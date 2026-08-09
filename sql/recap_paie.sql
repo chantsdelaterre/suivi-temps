@@ -14,6 +14,11 @@
 -- NE stocke PAS le contexte contractuel (structure, type_contrat, heures_hebdo,
 --   matricule_silae…) : il vit dans `historique_contrats`.
 --
+-- ⚠️ `nb_at`, `nb_cs` et `date_fin_validation` ont été ajoutées EN BASE par ALTER
+--    (nb_at/nb_cs non tracés ; date_fin_validation = lot 2, 2026-08-09). Elles sont
+--    désormais INTÉGRÉES au CREATE TABLE ci-dessous pour que ce script recrée une
+--    table fidèle à la base.
+--
 -- collab_id : clé étrangère vers `collaborateurs` (saisie manuelle, garde-fou).
 -- Unicité   : (periode_id, collab_id) — une seule ligne de récap par collab et
 --             par période.
@@ -58,12 +63,15 @@ create table public.recap_paie (
   heures_travaillees   numeric,
   heures_at            numeric,
   heures_cs            numeric,
+  nb_at                integer     default 0,   -- nb de jours AT — ajoutée en base par ALTER (non tracé), intégrée au CREATE le 2026-08-09
+  nb_cs                integer     default 0,   -- nb de jours CS — idem
   nb_cp                integer,
   nb_jours_travailles  integer,
 
   -- Workflow
   statut_validation    text,
   date_validation      text,
+  date_fin_validation  date,                    -- lot 2 (2026-08-09) : borne de clôture partielle (NULL = validation normale ; date = validé jusqu'à cette date incluse)
   statut_signature     text,
   note_admin           text,
 
