@@ -236,16 +236,15 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
       <div class="card">
         <div class="card-header">
           <span class="card-title">Périodes</span>
-          <button class="btn btn-primary btn-sm" onclick="ouvrirModalPeriode()">+ Nouvelle période</button>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Nom</th><th>Type période</th><th>Début</th><th>Fin</th><th>Statut</th><th>Actions</th></tr></thead>
-            <tbody id="periodes-tbody"><tr><td colspan="6"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr></tbody>
+            <thead><tr><th>Nom</th><th>Type période</th><th>Début</th><th>Fin</th><th>Statut</th></tr></thead>
+            <tbody id="periodes-tbody"><tr><td colspan="5"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr></tbody>
           </table>
         </div>
       </div>
-      <div style="padding:12px 0;font-size:13px;color:var(--texte3);">💡 Les périodes sont gérées dans Google Sheets. L'ouverture, clôture et génération des jours sont automatiques via le trigger journalier.</div>
+      <div style="padding:12px 0;font-size:13px;color:var(--texte2);">Les périodes sont générées et ouvertes automatiquement chaque nuit. Une correction ponctuelle se fait en SQL.</div>
     </div>
     <div class="vue" id="vue-recap">
       <div class="card">
@@ -435,32 +434,6 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
   </div>
 </div>
 <!-- MODALE PERIODE -->
-<div class="modal-overlay" id="modal-periode">
-  <div class="modal">
-    <div class="modal-header">
-      <span class="modal-title" id="modal-periode-titre">Nouvelle période</span>
-      <button class="modal-close" onclick="fermerModal('modal-periode')">×</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group"><label>Nom</label><input type="text" id="p-nom" readonly style="background:#f5f7fa;color:var(--texte2)"></div>
-        <div class="form-group"><label>Type période</label>
-          <select id="p-type-periode"><option value="">— Choisir —</option><option value="civil">Civil</option><option value="decalee">Décalée</option></select>
-        </div>
-        <div class="form-group"><label>Date début *</label><input type="date" id="p-debut"></div>
-        <div class="form-group"><label>Date fin *</label><input type="date" id="p-fin"></div>
-        <input type="hidden" id="p-cloture">
-
-      </div>
-      <div id="modal-periode-error" style="display:none;margin-top:14px" class="error-banner"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="fermerModal('modal-periode')">Annuler</button>
-      <button class="btn btn-primary" id="btn-sauver-periode" onclick="sauverPeriode()">Enregistrer</button>
-    </div>
-  </div>
-</div>
-
 <div class="modal-overlay" id="modal-cloture-anticipee">
   <div class="modal">
     <div class="modal-header">
@@ -2530,89 +2503,6 @@ function genNomPeriode(dateDebut, typeContrat) {
   return 'PAIE'+suffix+'_'+aa+'_'+mm;
 }
 
-function modifierPeriode(periodeId) {
-  if (!confirm('⚠️ Opération sensible. Veillez à la continuité des périodes et aux dates. Continuer ?')) return;
-  const p = periodesData.find(x => x.periodeId === periodeId);
-  if (!p) return;
-  document.getElementById('modal-periode-titre').textContent = 'Modifier la période';
-  document.getElementById('p-type-periode').value = p.typePeriode || '';
-  document.getElementById('p-debut').value = p.dateDebut ? p.dateDebut.split('/').reverse().join('-') : '';
-  const finVal = p.dateFin ? p.dateFin.split('/').reverse().join('-') : '';
-  document.getElementById('p-fin').value = finVal;
-  if (finVal) { const dc = new Date(finVal); dc.setDate(dc.getDate()+1); document.getElementById('p-cloture').value = dc.toISOString().split('T')[0]; }
-  document.getElementById('p-nom').value = p.nomPeriode || '';
-  document.getElementById('modal-periode-error').style.display = 'none';
-  document.getElementById('btn-sauver-periode').dataset.periodeId = periodeId;
-  document.getElementById('btn-sauver-periode').disabled = false;
-  document.getElementById('btn-sauver-periode').textContent = 'Enregistrer';
-  document.getElementById('modal-periode').classList.add('open');
-}
-
-function ouvrirModalPeriode() {
-  document.getElementById('modal-periode-titre').textContent = 'Nouvelle période';
-  ['p-debut','p-fin'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('p-type-periode').value = '';
-  document.getElementById('p-nom').value = '';
-  document.getElementById('p-cloture').value = '';
-  document.getElementById('modal-periode-error').style.display = 'none';
-  document.getElementById('btn-sauver-periode').disabled = false;
-  document.getElementById('btn-sauver-periode').textContent = 'Enregistrer';
-  delete document.getElementById('btn-sauver-periode').dataset.periodeId;
-  document.getElementById('modal-periode-titre').textContent = 'Nouvelle période';
-  document.getElementById('modal-periode').classList.add('open');
-}
-
-async function supprimerPeriode(periodeId, nomPeriode) {
-  if (!confirm('Supprimer la période "' + nomPeriode + '" ?')) return;
-  try {
-    const d = await jsonpFetch(API_URL + '?action=bo_deletePeriode&token=' + encodeURIComponent(ADMIN_TOKEN) + '&periodeId=' + encodeURIComponent(periodeId));
-    if (d.ok) chargerPeriodes();
-    else alert('Erreur : ' + (d.error || 'inconnue'));
-  } catch(e) { alert('Erreur réseau'); }
-}
-
-async function sauverPeriode() {
-  const periodeId = document.getElementById('btn-sauver-periode').dataset.periodeId || '';
-  const btn = document.getElementById('btn-sauver-periode');
-  const errBox = document.getElementById('modal-periode-error');
-  errBox.style.display = 'none';
-  btn.disabled = true; btn.textContent = '⏳ Enregistrement…';
-  const typePeriode = document.getElementById('p-type-periode').value;
-  const dateDebut = document.getElementById('p-debut').value;
-  const dateFin = document.getElementById('p-fin').value;
-  const dateCloture = document.getElementById('p-cloture').value ||
-    (() => { const d = new Date(dateFin); d.setDate(d.getDate()+1); return d.toISOString().split('T')[0]; })();
-  const nomPeriode = document.getElementById('p-nom').value ||
-    (typePeriode === 'civil' ? 'CIVIL_' : 'DECAL_') + (dateDebut ? dateDebut.slice(0,7).replace('-','_') : '');
-  const params = {
-    token: ADMIN_TOKEN,
-    nomPeriode,
-    typePeriode,
-    dateDebut,
-    dateFin,
-    dateCloture,
-    statut: 'planifiee',
-  };
-  if (periodeId) params.periodeId = periodeId;
-  try {
-    const url = API_URL + '?action=bo_savePeriode&' + Object.entries(params).map(([k,v]) => k+'='+encodeURIComponent(v)).join('&');
-    const d = await jsonpFetch(url);
-    if (!d.ok) {
-      errBox.textContent = d.error || 'Erreur.';
-      errBox.style.display = 'block';
-      btn.disabled = false; btn.textContent = 'Enregistrer';
-      return;
-    }
-    fermerModal('modal-periode');
-    chargerPeriodes();
-  } catch(e) {
-    // JSONP peut rejeter malgré une réponse ok
-    fermerModal('modal-periode');
-    btn.disabled = false; btn.textContent = 'Enregistrer';
-    chargerPeriodes();
-  }
-}
-
 function verifierAlertePeriodes(periodes) {
   const planifiees = periodes.filter(p => p.statut === 'planifiee').length;
   if (planifiees < 2) {
@@ -3267,7 +3157,7 @@ async function chargerPeriodes() {
   //    des requêtes counts hors de l'onglet Paie).
   // 4) tableau des périodes
   const tbody = document.getElementById('periodes-tbody');
-  if (!periodes.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--texte3);padding:32px">Aucune période</td></tr>'; return; }
+  if (!periodes.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--texte3);padding:32px">Aucune période</td></tr>'; return; }
   const stMap = {
     ouverte:   { cls: 'badge-actif',   lbl: 'Ouverte' },
     planifiee: { cls: 'badge-attente', lbl: 'Planifiée' },
@@ -3276,10 +3166,7 @@ async function chargerPeriodes() {
   };
   tbody.innerHTML = periodes.map(p => {
     const st = stMap[p.statut] || { cls: 'badge-attente', lbl: p.statut || '—' };
-    const canEdit = p.statut === 'planifiee';
-    const btnSuppr = canEdit ? `<button class="btn btn-danger btn-sm" onclick="supprimerPeriode('${p.periodeId}','${p.nomPeriode}')">Supprimer</button>` : '';
-    const btnEdit = canEdit ? `<button class="btn btn-primary btn-sm" onclick="modifierPeriode('${p.periodeId}')">Modifier</button>` : '';
-    return `<tr><td><strong>${p.nomPeriode}</strong></td><td>${p.typePeriode||'—'}</td><td>${fmtDate(p.dateDebut)}</td><td>${fmtDate(p.dateFin)}</td><td><span class="badge ${st.cls}">${st.lbl}</span></td><td style="display:flex;gap:6px">${btnEdit}${btnSuppr}</td></tr>`;
+    return `<tr><td><strong>${p.nomPeriode}</strong></td><td>${p.typePeriode||'—'}</td><td>${fmtDate(p.dateDebut)}</td><td>${fmtDate(p.dateFin)}</td><td><span class="badge ${st.cls}">${st.lbl}</span></td></tr>`;
   }).join('');
 }
 
