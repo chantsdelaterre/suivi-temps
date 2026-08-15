@@ -14,8 +14,10 @@ function json(body: unknown, status = 200): Response {
 
 function genToken(): string {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const buf = new Uint8Array(14);
+  crypto.getRandomValues(buf);
   let t = "";
-  for (let i = 0; i < 8; i++) t += chars[Math.floor(Math.random() * chars.length)];
+  for (const b of buf) t += chars[b % chars.length];
   return t;
 }
 
