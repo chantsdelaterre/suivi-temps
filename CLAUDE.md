@@ -227,12 +227,16 @@ Si Supabase n'est **pas prêt à temps**, la paie de juin se fait sur
 
 ## Architecture de déploiement & bascule du 15
 
-### PROD ACTUELLE (vérifié dans Settings → Pages)
+### PROD ACTUELLE (Settings → Pages)
 
-GitHub Pages sert la branche **`main`** — mode **« Deploy from a branch »**,
-dossier **`/ (root)`**. Donc **`main` = 100 % GAS/Sheets** : c'est ce que les
-collègues utilisent en ce moment.
+⚠️ **Bascule faite.** GitHub Pages sert désormais la branche **`supabase`** —
+mode **« Deploy from a branch »**, dossier **`/ (root)`** : c'est l'appli
+Supabase que les collègues utilisent en ce moment.
+**`main` n'est PLUS servie** : elle est la **branche de ROLLBACK** (prod
+GAS/Sheets intacte, à repointer dans Settings → Pages en cas de problème).
 Site live : **https://chantsdelaterre.github.io/suivi-temps/**
+(Les sections « bascule du 15 » ci-dessous sont **historiques** — le plan est
+exécuté.)
 
 ### BRANCHE `supabase`
 

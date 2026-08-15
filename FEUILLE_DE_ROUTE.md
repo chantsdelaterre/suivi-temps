@@ -246,3 +246,9 @@
 - **Jamais `git add .`** — fichiers nommés. Le `.gitignore` ne couvre pas
   les `.csv`.
 - **Push au Terminal natif**, token temporaire révoqué après. Jamais CC.
+- **Un contrôle de « fonction morte » doit chercher le nom NU, pas seulement
+  `fn(`.** `rendreModalDeplacable` a figuré dans deux inventaires successifs
+  comme morte : elle est passée en référence dans un
+  `forEach(rendreModalDeplacable)`, sans parenthèses. La supprimer aurait levé
+  une `ReferenceError` au chargement et tué toute la page. Chercher aussi
+  `map(fn)`, `.then(fn)`, `addEventListener('x', fn)`, `setTimeout(fn, …)`.

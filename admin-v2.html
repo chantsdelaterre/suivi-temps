@@ -505,7 +505,6 @@ let filtreStructure = '';
 let filtreContrat = '';
 let triColonne = 'nom';
 let triDesc = false;
-let recapPeriodeId = '';
 
 // Rapatrie TOUTES les lignes d'une requête, par pages de 500, pour contourner le
 // plafond PostgREST (~1000 lignes par défaut). supabase-js ne permet PAS de réutiliser
@@ -1153,6 +1152,7 @@ async function confirmerContrat() {
   await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline (et vide #contrat-fin-zone)
 }
 
+// Rend une modale déplaçable par son en-tête (appelée sur toutes les modales au DOMContentLoaded).
 function rendreModalDeplacable(modalEl) {
   const header = modalEl.querySelector('.modal-header');
   if (!header) return;
@@ -1350,16 +1350,6 @@ async function sauverCollab() {
   }
 }
 
-// Token d'accès collab : 8 caractères [a-z0-9], aléatoire non biaisé
-function genTokenCollab() {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  const arr = new Uint32Array(8);
-  crypto.getRandomValues(arr);
-  let t = '';
-  for (let i = 0; i < 8; i++) t += chars[arr[i] % chars.length];
-  return t;
-}
-
 async function toggleCollab(collabId, btn) {
   const c = (collabsData || []).find(x => x.collabId === collabId);
   if (!c) { alert('Collaborateur introuvable, recharge la page.'); return; }
@@ -1399,134 +1389,7 @@ let _paieContexteRetour = null;         // 'cloture-anticipee' quand le détail 
 window._cloture_borne_en_cours = null;  // date de fin (AAAA-MM-JJ) portée jusqu'à l'upsert recap_paie, puis remise à null
 let filtrePaieStructure = '';
 
-// ─────────────────────────────────────────────────────────────────────────
-// MOTEUR DE PAIE — PHASE 1 : calcul en LECTURE SEULE (aucune écriture en base).
-// Vérification des chiffres avant de brancher ajustements / validation / clôture.
-// Règles VERROUILLÉES (CLAUDE.md) : travaillée→total_heures ; AT/CS→7 h (défaut,
-// avant tout ajustement admin) ; CP→0 h, compté en jours.
-// ─────────────────────────────────────────────────────────────────────────
-const PAIE_DEFAUT_AT_CS = 7; // heures par défaut AT/CS (forfait, ajustable admin plus tard)
-
-async function calculerPaiePeriode(periodeId) {
-  if (!periodeId) { console.warn('calculerPaiePeriode : periodeId manquant'); return []; }
-
-  // 1) TOUS les jours de la période — un seul fetch
-  const { data: jours, error: ej } = await sb
-    .from('jours')
-    .select('collab_id, date_jour, type_jour, total_heures, c1_debut, c2_debut, c3_debut')
-    .eq('periode_id', periodeId);
-  if (ej) { console.error('Erreur lecture jours :', ej); return []; }
-
-  // Bornes de la période (pour résoudre le contrat en vigueur)
-  const { data: periode } = await sb
-    .from('periodes')
-    .select('periode_id, nom_periode, date_debut, date_fin, statut')
-    .eq('periode_id', periodeId)
-    .maybeSingle();
-  const pDebut = periode ? periode.date_debut : null;
-  const pFin   = periode ? periode.date_fin   : null;
-
-  // 2) Contexte : collaborateurs (réutilise collabsData) + historique_contrats (un fetch)
-  let collabs = (collabsData && collabsData.length) ? collabsData : null;
-  if (!collabs) {
-    const { data } = await sb.from('collaborateurs').select('collab_id, nom_affiche, prenom, nom');
-    collabs = (data || []).map(c => ({ collabId: c.collab_id, nomAffiche: c.nom_affiche, prenom: c.prenom, nom: c.nom }));
-  }
-  const collabById = {};
-  collabs.forEach(c => { collabById[c.collabId] = c; });
-
-  const { data: contrats, error: ec } = await sb
-    .from('historique_contrats')
-    .select('collab_id, date_debut, date_fin, structure, type_contrat, heures_hebdo, type_periode, matricule_silae');
-  if (ec) { console.error('Erreur lecture historique_contrats :', ec); return []; }
-  const contratsByCollab = {};
-  (contrats || []).forEach(k => { (contratsByCollab[k.collab_id] ||= []).push(k); });
-
-  // Résout le(s) contrat(s) chevauchant [pDebut, pFin] (dates ISO comparables en chaîne)
-  const fmtK = k => ({ type_contrat:k.type_contrat, structure:k.structure, heures_hebdo:k.heures_hebdo,
-                       type_periode:k.type_periode, matricule_silae:k.matricule_silae,
-                       date_debut:k.date_debut, date_fin:k.date_fin });
-  const resoudreContrat = (collabId) => {
-    const liste = (contratsByCollab[collabId] || []).slice()
-      .sort((a, b) => (a.date_debut||'').localeCompare(b.date_debut||''));
-    const couvrants = liste.filter(k =>
-      (!pFin || (k.date_debut||'') <= pFin) &&
-      (!k.date_fin || !pDebut || k.date_fin >= pDebut)
-    );
-    if (!couvrants.length) return { contexte:null, changement:false, segments:[] };
-    if (couvrants.length === 1) return { contexte:fmtK(couvrants[0]), changement:false, segments:[fmtK(couvrants[0])] };
-    return { contexte:fmtK(couvrants[couvrants.length-1]), changement:true, segments:couvrants.map(fmtK) };
-  };
-
-  // 3) Agrégation par collab (selon les règles verrouillées)
-  const parCollab = {};
-  const typesInconnus = new Set();
-  (jours || []).forEach(j => {
-    const acc = parCollab[j.collab_id] || (parCollab[j.collab_id] = {
-      heures_travaillees:0, heures_at:0, heures_cs:0, nb_at:0, nb_cs:0, nb_cp:0, nb_jours_travailles:0
-    });
-    const t = j.type_jour;
-    if (t === 'travaillée') {
-      acc.heures_travaillees += Number(j.total_heures) || 0;
-      const saisi = !!(j.c1_debut || j.c2_debut || j.c3_debut) || (Number(j.total_heures) || 0) > 0;
-      if (saisi) acc.nb_jours_travailles += 1;            // jour travaillé = travaillée AVEC vraie saisie
-    } else if (t === 'AT') {
-      acc.heures_at += PAIE_DEFAUT_AT_CS;
-      acc.nb_at += 1;
-    } else if (t === 'CS') {
-      acc.heures_cs += PAIE_DEFAUT_AT_CS;
-      acc.nb_cs += 1;
-    } else if (t === 'CP') {
-      acc.nb_cp += 1;
-    } else if (t) {
-      typesInconnus.add(t);
-    }
-  });
-
-  // 4) Assemblage — un objet par collab AYANT des jours dans la période
-  const resultat = Object.keys(parCollab).map(collabId => {
-    const c = collabById[collabId] || {};
-    const acc = parCollab[collabId];
-    const r = resoudreContrat(collabId);
-    return {
-      collabId,
-      nomAffiche: c.nomAffiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim() || collabId,
-      structure:        r.contexte ? r.contexte.structure : null,
-      type_contrat:     r.contexte ? r.contexte.type_contrat : null,
-      heures_hebdo:     r.contexte ? r.contexte.heures_hebdo : null,
-      type_periode:     r.contexte ? r.contexte.type_periode : null,
-      matricule_silae:  r.contexte ? r.contexte.matricule_silae : null,
-      changement_contrat: r.changement,
-      segments_contrat:   r.segments,
-      heures_travaillees: Math.round(acc.heures_travaillees * 100) / 100,
-      heures_at:          acc.heures_at,
-      heures_cs:          acc.heures_cs,
-      nb_at:              acc.nb_at,
-      nb_cs:              acc.nb_cs,
-      nb_cp:              acc.nb_cp,
-      nb_jours_travailles: acc.nb_jours_travailles
-    };
-  }).sort((a, b) => (a.nomAffiche||'').localeCompare(b.nomAffiche||''));
-
-  // --- Affichage console pour vérification manuelle ---
-  console.log('%cPaie ' + (periode ? periode.nom_periode : periodeId)
-    + ' (statut: ' + (periode ? periode.statut : '?') + ') — ' + resultat.length + ' collab(s)',
-    'font-weight:bold');
-  console.table(resultat.map(r => ({
-    Nom: r.nomAffiche, Structure: r.structure, Contrat: r.type_contrat, 'H/sem': r.heures_hebdo,
-    'H. trav.': r.heures_travaillees, CP: r.nb_cp, AT: r.nb_at, CS: r.nb_cs,
-    'J. trav.': r.nb_jours_travailles, 'H.AT': r.heures_at, 'H.CS': r.heures_cs,
-    'Δcontrat': r.changement_contrat ? '⚠️' : ''
-  })));
-  resultat.filter(r => r.changement_contrat).forEach(r =>
-    console.warn('Changement de contrat sur la période — ' + r.nomAffiche, r.segments_contrat));
-  if (typesInconnus.size) console.warn('type_jour inconnus (ignorés) :', [...typesInconnus]);
-
-  return resultat;
-}
-
 // MOTEUR DE PAIE — lecture depuis paie_detail (COUCHE 2 = validation admin).
-// Même format de sortie que calculerPaiePeriode → renderPaieFiltered inchangé.
 async function calculerPaieDepuisPaieDetail(periodeId) {
   if (!periodeId) { console.warn('calculerPaieDepuisPaieDetail : periodeId manquant'); return []; }
 
@@ -1598,7 +1461,7 @@ async function calculerPaieDepuisPaieDetail(periodeId) {
     }
   });
 
-  // 4) Assemblage — MÊME format que calculerPaiePeriode (renderPaieFiltered inchangé)
+  // 4) Assemblage — format de sortie attendu par renderPaieFiltered
   // Statut de validation figé (recap_paie) par collab, pour cette période
   const { data: recaps } = await sb
     .from('recap_paie')
@@ -1783,18 +1646,6 @@ async function chargerPaie(periodeId) {
   renderPaie(recap, periodeId);
 }
 
-async function initPaie() {
-  if (!paieCurrentPeriode) return;
-  const btn = document.getElementById('btn-init-paie');
-  btn.disabled = true; btn.textContent = '⏳ Calcul…';
-  try {
-    const d = await jsonpFetch(API_URL + '?action=bo_initRecapPaie&token=' + encodeURIComponent(ADMIN_TOKEN) + '&periodeId=' + encodeURIComponent(paieCurrentPeriode));
-    if (d.ok) { chargerPaie(paieCurrentPeriode); }
-    else alert('Erreur : ' + (d.error||'inconnue'));
-  } catch(e) { alert('Erreur réseau'); }
-  btn.disabled = false; btn.textContent = '🔄 Initialiser / Recalculer';
-}
-
 function renderPaie(recap, periodeId) {
   window._paie_recap_current = recap;
   // Phase LECTURE SEULE : recap_paie non peuplé → pas de statut de validation figé
@@ -1851,25 +1702,6 @@ function renderPaieFiltered() {
     }).join('');
 }
 
-async function toggleValidation(collabId) {
-  try {
-    const d = await jsonpFetch(API_URL + '?action=bo_validerCollab&token=' + encodeURIComponent(ADMIN_TOKEN)
-      + '&periodeId=' + encodeURIComponent(paieCurrentPeriode)
-      + '&collabId=' + encodeURIComponent(collabId));
-    if (d.ok) chargerPaie(paieCurrentPeriode);
-    else alert('Erreur : ' + (d.error||'inconnue'));
-  } catch(e) { alert('Erreur réseau'); }
-}
-
-async function sauverNote(collabId, note) {
-  try {
-    await jsonpFetch(API_URL + '?action=bo_saveNoteAdmin&token=' + encodeURIComponent(ADMIN_TOKEN)
-      + '&periodeId=' + encodeURIComponent(paieCurrentPeriode)
-      + '&collabId=' + encodeURIComponent(collabId)
-      + '&note=' + encodeURIComponent(note));
-  } catch(e) {}
-}
-
 function retourPaie() {
   // Clôture anticipée : on revient au bloc "À traiter" SANS chargerPaie (la période est OUVERTE,
   // elle n'existe pas dans la liste "À traiter" → chargerPaie atterrirait sur une carte fantôme).
@@ -1900,27 +1732,6 @@ function retourPaie() {
   chargerPaie(paieCurrentPeriode);
 }
 
-
-function grouperParSemaine(jours) {
-  const semaines = {};
-  jours.forEach(j => {
-    const s = j.dateJour || '';
-    let d;
-    if (s.includes('/')) { const [dd,mm,yy] = s.split('/'); d = new Date(yy, mm-1, dd); }
-    else d = new Date(s);
-    if (isNaN(d)) return;
-    const jourSem = d.getDay() === 0 ? 6 : d.getDay() - 1;
-    const lundi = new Date(d); lundi.setDate(d.getDate() - jourSem);
-    const key = lundi.toISOString().split('T')[0];
-    if (!semaines[key]) {
-      const dim = new Date(lundi); dim.setDate(lundi.getDate() + 6);
-      const fmt = dt => String(dt.getDate()).padStart(2,'0') + '/' + String(dt.getMonth()+1).padStart(2,'0');
-      semaines[key] = { lundi: key, label: 'Semaine du ' + fmt(lundi) + ' au ' + fmt(dim), jours: [] };
-    }
-    semaines[key].jours.push(j);
-  });
-  return Object.values(semaines).sort((a,b) => a.lundi.localeCompare(b.lundi));
-}
 
 function renderSaisies(jours, collabId) {
   const body = document.getElementById('saisies-body');
@@ -2047,22 +1858,6 @@ function poserBadgePaie() {
   badge.innerHTML = cloturee
     ? '<span style="display:inline-flex;align-items:center;gap:6px;background:#e8f8ee;color:#2d7a4f;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#2d7a4f;display:inline-block"></span>Relevé validé (période clôturée)</span>'
     : '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff3e0;color:#c8833a;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#c8833a;display:inline-block"></span>Relevé en attente de validation</span>';
-}
-
-// Recharge le détail courant depuis paie_detail (confirme la persistance).
-async function rechargerDetailPaie() {
-  const cid = decodeURIComponent(_paieCurrentCollab);
-  const { data: detail, error } = await sb.from('paie_detail').select('*')
-    .eq('collab_id', cid).eq('periode_id', paieCurrentPeriode).order('date_jour');
-  if (error) { document.getElementById('table-saisies-paie').innerHTML = '<div class="error-banner">Erreur de rechargement.</div>'; return; }
-  const fmtISO = iso => { if (!iso) return ''; const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : String(iso); };
-  const jours = (detail||[]).map(d => ({
-    jourId:String(d.id), dateJour:fmtISO(d.date_jour), jourSemaine:d.jour_semaine,
-    typeJour:d.type_jour_valide, c1Debut:d.c1_debut||'', c1Fin:d.c1_fin||'',
-    c2Debut:d.c2_debut||'', c2Fin:d.c2_fin||'', c3Debut:d.c3_debut||'', c3Fin:d.c3_fin||'',
-    totalHeures:d.heures_valide, commentaire:d.commentaire||''
-  }));
-  renderSaisiesPaie(jours, _paieCurrentCollab);
 }
 
 // Enchaîne : UPDATE paie_detail (lignes MODIFIÉES, couche 2) → validation recap_paie (cœur partagé).
@@ -2388,119 +2183,6 @@ function majTotalPaie(idx) {
     tot.value = '0';
     lecture();
   }
-}
-
-async function sauverJourPaie(idx, jourId, collabId) {
-  const msg = document.getElementById('jpmsg-'+idx);
-  msg.style.display = 'none';
-  const get = id => (document.getElementById(id)?.value||'').trim();
-  const params = {
-    action: 'bo_saveJour',
-    token: ADMIN_TOKEN,
-    jourId,
-    collabId,
-    typeJour: get('jp'+idx+'-type'),
-    c1Debut: get('jp'+idx+'-c1d'),
-    c1Fin:   get('jp'+idx+'-c1f'),
-    c2Debut: get('jp'+idx+'-c2d'),
-    c2Fin:   get('jp'+idx+'-c2f'),
-    c3Debut: get('jp'+idx+'-c3d'),
-    c3Fin:   get('jp'+idx+'-c3f'),
-    commentaire: get('jp'+idx+'-comm'),
-  };
-  try {
-    const url = API_URL+'?'+Object.entries(params).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
-    const d = await jsonpFetch(url);
-    msg.style.display = 'block';
-    msg.style.color = d.ok ? 'var(--vert)' : 'var(--rouge)';
-    msg.textContent = d.ok ? '✓ Sauvegardé' : (d.error||'Erreur');
-    if (d.ok) majTotalPaie(idx);
-  } catch(e) {
-    msg.style.display = 'block';
-    msg.style.color = 'var(--rouge)';
-    msg.textContent = 'Erreur réseau';
-  }
-}
-
-
-function sauverRemarque(idx, jourId) {
-  const msg = document.getElementById('jmsg-'+idx);
-  const remarque = (document.getElementById('j'+idx+'-rem')?.value || '').trim();
-  msg.style.display = 'none';
-  const url = API_URL + '?action=bo_saveRemarqueManager&token=' + encodeURIComponent(ADMIN_TOKEN)
-    + '&jourId=' + encodeURIComponent(jourId)
-    + '&remarque=' + encodeURIComponent(remarque);
-  jsonpFetch(url).then(d => {
-    msg.style.display = 'block';
-    if (d.ok) {
-      msg.style.color = 'var(--vert)';
-      msg.textContent = '✓ Remarque enregistrée';
-      const inp = document.getElementById('j'+idx+'-rem');
-      if (inp) { inp.style.borderColor = remarque ? 'var(--orange)' : ''; inp.style.background = remarque ? 'var(--orange-pale)' : ''; }
-    } else {
-      msg.style.color = 'var(--rouge)';
-      msg.textContent = d.error || 'Erreur.';
-    }
-  }).catch(() => {
-    msg.style.display = 'block';
-    msg.style.color = 'var(--rouge)';
-    msg.textContent = 'Erreur réseau.';
-  });
-}
-
-async function sauverJour(idx, jourId, collabId) {
-  const row = document.getElementById('jr-'+idx);
-  const msg = document.getElementById('jmsg-'+idx);
-  row.classList.add('saving');
-  msg.style.display = 'none';
-  const get = id => (document.getElementById(id)?.value || '').trim();
-  const params = {
-    action:          'bo_saveJour',
-    token:           ADMIN_TOKEN,
-    jourId,
-    collabId,
-    c1Debut:         get(`j${idx}-c1d`),
-    c1Fin:           get(`j${idx}-c1f`),
-    c2Debut:         get(`j${idx}-c2d`),
-    c2Fin:           get(`j${idx}-c2f`),
-    c3Debut:         get(`j${idx}-c3d`),
-    c3Fin:           get(`j${idx}-c3f`),
-    commentaire:     get(`j${idx}-comm`),
-    remarqueManager: get(`j${idx}-rem`),
-  };
-  // Validation type_periode obligatoire
-  if (!params.typePeriode) {
-    errBox.textContent = 'Aucune période de paie définie pour ce collaborateur — veuillez sélectionner un type de période.';
-    errBox.style.display = 'block';
-    btn.disabled = false; btn.textContent = 'Enregistrer';
-    return;
-  }
-  try {
-    const url = API_URL + '?' + Object.entries(params).map(([k,v]) => k+'='+encodeURIComponent(v)).join('&');
-    const d = await jsonpFetch(url);
-    msg.style.display = 'block';
-    if (d.ok) {
-      msg.style.color = 'var(--vert)';
-      msg.textContent = '✓ Sauvegardé';
-    } else {
-      msg.style.color = 'var(--rouge)';
-      msg.textContent = d.error || 'Erreur lors de la sauvegarde.';
-    }
-  } catch(e) {
-    msg.style.display = 'block';
-    msg.style.color   = 'var(--rouge)';
-    msg.textContent   = 'Erreur réseau.';
-  }
-  row.classList.remove('saving');
-}
-
-function genNomPeriode(dateDebut, typeContrat) {
-  if (!dateDebut) return '';
-  const d = new Date(dateDebut);
-  const aa = d.getFullYear();
-  const mm = String(d.getMonth()+1).padStart(2,'0');
-  const suffix = typeContrat && typeContrat !== '' ? '_'+typeContrat : '';
-  return 'PAIE'+suffix+'_'+aa+'_'+mm;
 }
 
 function verifierAlertePeriodes(periodes) {
