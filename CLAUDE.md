@@ -68,6 +68,9 @@ La saisie d'un jour par un collaborateur est possible **si et seulement si les 4
 ## Méthode de travail
 - **Éditions chirurgicales uniquement** : ne jamais réécrire un fichier entier.
 - **Une seule modification à la fois** : on discute, on valide, ensuite on code.
+- **`BACKLOG.md` est remplacé par `FEUILLE_DE_ROUTE.md` depuis le 12/08/2026** —
+  document de suivi unique (correctifs, chantiers ouverts, évolutions, ce qu'il
+  ne faut pas changer, méthode).
 
 ## Architecture de la paie (cadré le 06/06/2026)
 
