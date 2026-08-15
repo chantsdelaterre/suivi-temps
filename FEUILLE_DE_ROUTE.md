@@ -14,26 +14,25 @@
 
 ### 1.1 Bugs actifs
 
-- [ ] **`chargerRecap` lit TOUTE la table `jours`, sans aucun filtre.**
+- [x] **`chargerRecap` lit TOUTE la table `jours`, sans aucun filtre.**
   ~18 000 lignes à un an, tronquées à 1000 par PostgREST. L'onglet Récap
-  affiche donc déjà des « dernières saisies » fausses pour les collaborateurs
-  les moins récents — silencieusement. *Seul bug de données actif.*
-  → filtrer par période courante, ou `fetchAllPages`. **2 h**
+  affichait des « dernières saisies » fausses pour les collaborateurs les
+  moins récents — silencieusement. **Fait (8c34be5)** : remplacé par la RPC
+  d'agrégation `derniere_saisie_par_collab()` (le critère « saisi » vit
+  désormais en base).
 
-- [ ] **Les deux boutons de l'onglet Périodes ne font rien.**
-  `sauverPeriode` appelle du GAS disparu → `ReferenceError`, et son `catch`
-  **simule un succès** (ferme la modale, recharge la liste). L'admin croit
-  avoir enregistré. `supprimerPeriode` affiche « Erreur réseau » — faux
-  motif, mais échec visible.
-  **Décision requise** : retirer, ou écrire une Edge `modifier-periode`.
-  Aucune Edge ne crée / modifie / supprime une période aujourd'hui.
-  *Le code actuel est faux de toute façon : il force `statut:'planifiee'`
-  même en modification, et envoie `dateCloture`, colonne abandonnée.
-  Et supprimer une période laisserait des orphelins — `periode_id` n'a
-  aucune clé étrangère.* **2 h retirer · 1 j réimplémenter**
-
-- [ ] **`fetchJoursCollab` non paginée** — tous les jours d'un collab, sans
-  borne de date. Croît indéfiniment. Bouton « Voir » du Récap. **1 h**
+- [x] **Les deux boutons de l'onglet Périodes ne font rien.**
+  `sauverPeriode` appelait du GAS disparu → `ReferenceError`, et son `catch`
+  **simulait un succès** (fermait la modale, rechargeait la liste). L'admin
+  croyait avoir enregistré. `supprimerPeriode` affichait « Erreur réseau » —
+  faux motif, mais échec visible.
+  **Décision : RETIRÉS. Fait (c861b2c)** — les boutons Nouvelle période /
+  Modifier / Supprimer, la modale `#modal-periode` et les 4 fonctions
+  associées sont supprimés ; l'onglet Périodes est en consultation. Le cycle
+  de vie reste piloté par le cron ; une correction ponctuelle se fait en SQL,
+  avec `sql/controle_jointure_periodes.sql` pour vérifier la jointure après
+  coup. (Pas d'Edge `modifier-periode` : un bouton naïf casserait l'invariant
+  de jointure — trois gestes coordonnés requis.)
 
 ### 1.2 Sécurité
 
@@ -200,6 +199,12 @@
   plusieurs recettes sur du code inexistant, puis 124 lignes importées en
   prod. Tout prompt finit par « montre-moi la ligne telle qu'elle est
   DÉSORMAIS et confirme que le fichier EST modifié ».
+- **Un inventaire n'a pas plus d'autorité qu'un diff montré.** L'item
+  « fetchJoursCollab non paginée » a figuré en §1.1 sur la foi d'un tableau
+  d'inventaire, alors que la fonction porte un `.limit(60)` depuis toujours —
+  la lecture initiale s'était arrêtée aux premières lignes. Toute entrée
+  d'inventaire qui commande un correctif se revérifie sur le corps complet
+  avant d'être inscrite.
 - **Avant tout test** : `<fonction>.toString().includes('<marqueur>')`.
 - **Recette console sur localhost, jamais sur la prod.**
 - **Faire PROPOSER CC avant d'écrire** dès qu'un diff touche une fonction
