@@ -3355,23 +3355,18 @@ function renderRecapFiltered(list) {
 async function chargerRecap() {
   const tbody = document.getElementById('recap-tbody');
   tbody.innerHTML = '<tr><td colspan="7"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
-  // Dernière saisie : un seul fetch léger (colonnes utiles), trié par date décroissante
-  const { data: jours, error } = await sb
-    .from('jours')
-    .select('collab_id, date_jour, c1_debut, c2_debut, c3_debut, type_jour')
-    .order('date_jour', {ascending:false});
+  // Dernière saisie : agrégée EN BASE par la RPC derniere_saisie_par_collab (max(date_jour) par
+  // collab sur les jours réellement saisis). Remplace l'ancien fetch intégral de `jours` (tronqué à
+  // 1000 lignes par PostgREST → « — » à tort pour les collabs sans saisie récente).
+  // ⚠️ Le critère « saisi » (début de créneau non vide OU type_jour dans CP/AT/CS) vit DÉSORMAIS
+  //    dans la RPC : toute évolution de ce critère se fait EN BASE, plus ici.
+  const { data: dernieres, error } = await sb.rpc('derniere_saisie_par_collab');
   if (error) {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
     return;
   }
-  // Pour chaque collab : date_jour la plus récente parmi ses VRAIES saisies.
-  // Ordre décroissant ⇒ la 1ʳᵉ saisie rencontrée par collab est la plus récente.
   const dern = {};
-  (jours || []).forEach(j => {
-    if (dern[j.collab_id]) return;
-    const saisi = !!(j.c1_debut || j.c2_debut || j.c3_debut) || ['CP','AT','CS'].includes(j.type_jour);
-    if (saisi) dern[j.collab_id] = j.date_jour;
-  });
+  (dernieres || []).forEach(d => { dern[d.collab_id] = d.derniere_saisie; });
   // Contexte contractuel : réutilise collabsData (tous les collabs, déjà mappé camelCase)
   recapData = (collabsData || []).map(c => ({
     collabId: c.collabId,
