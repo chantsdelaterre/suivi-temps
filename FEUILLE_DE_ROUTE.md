@@ -1,7 +1,7 @@
 # FEUILLE DE ROUTE — suivi-temps
 
 > Document de suivi unique. **Remplace `BACKLOG.md`.**
-> `[ ]` à faire · `[x]` fait · ~~barré~~ abandonné.
+> `[ ]` à faire · `[~]` partiellement fait · `[x]` fait · ~~barré~~ abandonné.
 > Établi le 12/08/2026 — sources : BACKLOG, reconnaissance du 12/08,
 > session du 09/08, inventaire CC du 12/08, documents d'amorçage.
 >
@@ -36,12 +36,21 @@
 
 ### 1.2 Sécurité
 
-- [ ] **Tokens collaborateur en `Math.random()`** ⚠️ *à confirmer* —
-  8 caractères, suite prédictible. → `crypto.randomUUID()` dans
-  `creer-collab`, régénérer, rediffuser les liens. **2 h**
+- [x] **Tokens collaborateur en `Math.random()`** — confirmé : c'était bien
+  `Math.random()`, 8 caractères, suite prédictible. **Fait (8b5b0e5)** :
+  `crypto.getRandomValues`, 14 caractères, Edge `creer-collab` déployée le
+  15/08. **Décision actée : PAS de régénération des 59 tokens existants** —
+  recontacter 59 personnes est disproportionné au regard de ce qu'ouvre un
+  token collaborateur (ses propres heures, en saisie bornée à 3 modifications
+  sur 5 jours). Les anciens s'éteindront au fil des fins de contrat.
 
-- [ ] **Token admin en clair dans l'URL, sans expiration.** Rotation
-  immédiate possible. **1 h**
+- [~] **Token admin en clair dans l'URL, sans expiration.** **Rotation faite
+  le 15/08** pour les trois administrateurs (Guillaume, Elsa, Pauline) via
+  `update admins set token = encode(gen_random_bytes(10),'hex')` — invalide ce
+  qui traînait dans les captures et historiques.
+  ⚠️ N'apporte **NI expiration NI traçabilité** — le vrai correctif reste le
+  chantier Auth (§2). À noter : la table `admins` porte une colonne `actif` →
+  la révocation d'un accès existe déjà, sans passer par Auth.
 
 - [ ] **`admin.html` (ancien backoffice GAS) toujours servi par GitHub
   Pages** → double backoffice accessible. **30 min**
@@ -128,6 +137,10 @@
 - [ ] **Authentification admin** — token applicatif + `verify_jwt = false`
   sur 13 Edge. Migrer vers Supabase Auth (inclus dans l'abonnement) apporte
   mot de passe, session expirante, révocation. **1–2 j**
+  - Les tokens admin vivent dans une table `admins` (nom, token, actif), lue
+    par la RPC `verifier_admin`. Ils ne sont **PAS** dans `collaborateurs`.
+  - `verifier_admin` renvoie un **NOM, jamais persisté** : aucune écriture ne
+    dit QUI l'a faite. Auth apporterait cette identité.
 
 - [ ] **Révocation d'un token collaborateur** sans désactiver la personne.
   N'existe pas.
@@ -137,6 +150,25 @@
   ⚠️ **Changement de méthode, pas une tâche** : les migrations remplacent
   l'intervention directe dans le SQL Editor. Bénéfice annexe : une base
   locale de test — aujourd'hui chaque essai se fait en prod. **½ j**
+
+- [ ] **Rapport quotidien du cron par mail.** `trigger_quotidien()` construit
+  déjà un rapport texte (4 étapes, avec le message d'erreur de chacune) —
+  l'en-tête du fichier dit qu'il est « destiné à être envoyé par mail plus
+  tard via une Edge Function ».
+  **Aujourd'hui ce rapport n'est lisible NULLE PART** : chaque étape attrape
+  ses exceptions, donc `pg_cron` voit toujours `succeeded`, et
+  `return_message` ne journalise que « 1 row », pas le contenu. Trente nuits
+  consécutives « réussies » ne prouvent rien.
+  Contenu à prévoir, au-delà du rapport technique :
+  · **fins de contrat à J-5** (« Havva KUCUK, fin de contrat le 18/08 »)
+  · **contrats échus, collaborateur encore actif** — le cas Jonas, qui aurait
+    crié six semaines au lieu de générer 40 jours morts
+  · **clôtures anticipées en attente** — la RPC `candidats_cloture_anticipee()`
+    renvoie déjà exactement ça
+  ⚠️ Prévoir aussi une **table `journal_cron`** (une ligne par nuit) : sans
+  elle, le mail est la seule trace, et un envoi en panne nous ramène à
+  l'aveuglement actuel.
+  *Edge d'envoi via Resend + RPC d'état + job pg_cron. 1 j*
 
 ---
 
