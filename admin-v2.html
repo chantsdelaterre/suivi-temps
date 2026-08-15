@@ -1388,12 +1388,34 @@ function genTokenCollab() {
 }
 
 async function toggleCollab(collabId, btn) {
+  const c = (collabsData || []).find(x => x.collabId === collabId);
+  if (!c) { alert('Collaborateur introuvable, recharge la page.'); return; }
+  // Sens depuis collabsData (statut), pas depuis le libellé du bouton : actif OU en attente → on désactive
+  // (même logique que le libellé, qui n'affiche « Activer » que pour un statut 'inactif').
+  const desactivation = c.statut !== 'inactif';
+  const nom = c.nomAffiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim() || collabId;
+  if (desactivation && !confirm('Désactiver ' + nom + ' ? Ses jours ne seront plus générés automatiquement.')) return;
+  // statut ET actif bougent TOUJOURS de concert (aucun cas mixte en base).
+  const champs = desactivation ? { statut: 'inactif', actif: false } : { statut: 'actif', actif: true };
   btn.disabled = true;
   try {
-    const d = await jsonpFetch(API_URL + '?action=bo_toggleCollab&collabId=' + encodeURIComponent(collabId) + '&token=' + encodeURIComponent(ADMIN_TOKEN));
-    if (d.ok) chargerCollabs();
-  } catch(e) {}
-  btn.disabled = false;
+    const { data, error } = await sb.functions.invoke('modifier-collab', {
+      body: { admin_token: ADMIN_TOKEN, collab_id: collabId, champs }
+    });
+    if (error) {
+      let detail = 'échec de l\'enregistrement';
+      try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+      alert('Échec : ' + detail);
+      return;
+    }
+    if (!data || data.ok !== true) {
+      alert('Échec : ' + ((data && data.error) || 'inconnu'));
+      return;
+    }
+    chargerCollabs();
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ── PAIE ─────────────────────────────────────────────────────────────────────
