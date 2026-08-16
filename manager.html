@@ -176,21 +176,6 @@ let recapData = [];
 let equipeCollabs = [];
 let managerEquipe = null;
 
-function fmtDate(d) {
-  if (!d || d === '—' || d === '') return '—';
-  const s = String(d);
-  if (s.includes('T') || s.includes('Z')) {
-    const dt = new Date(s);
-    if (!isNaN(dt)) {
-      const p = n => String(n).padStart(2,'0');
-      return p(dt.getDate())+'/'+p(dt.getMonth()+1)+'/'+dt.getFullYear()+' à '+p(dt.getHours())+':'+p(dt.getMinutes());
-    }
-  }
-  const parts = s.split('-');
-  if (parts.length === 3 && parts[0].length === 4) return parts[2]+'/'+parts[1]+'/'+parts[0];
-  return d;
-}
-
 function fmtHeure(v) {
   if (!v) return '';
   const s = String(v).trim();

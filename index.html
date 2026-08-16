@@ -1249,21 +1249,6 @@ tbody td.modif{font-size:9px;color:var(--txt2);white-space:nowrap;}
         if (!w) { showToast('Autorise les fenêtres pop-up pour le PDF', true); return; }
         w.document.write(html); w.document.close();
     }
-    function calculTotal(p) {
-        let t = 0;
-        if (p.c1Debut && p.c1Fin)
-            t += diff(p.c1Debut, p.c1Fin);
-        if (p.c2Debut && p.c2Fin)
-            t += diff(p.c2Debut, p.c2Fin);
-        if (p.c3Debut && p.c3Fin)
-            t += diff(p.c3Debut, p.c3Fin);
-        return t;
-    }
-    function diff(a, b) {
-        const [h1, m1] = a.split(':').map(Number),
-            [h2, m2] = b.split(':').map(Number);
-        return Math.max(0, (h2 * 60 + m2 - h1 * 60 - m1) / 60);
-    }
     async function loadMesJours() {
         if (mesJoursCache) {
             renderMesJours(mesJoursCache.jours, mesJoursCache.periode);

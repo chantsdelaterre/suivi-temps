@@ -424,11 +424,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     <div class="modal-body" id="saisies-body" style="overflow:auto;max-height:60vh;padding:0">
       <div class="loader"><div class="spinner"></div>Chargement…</div>
     </div>
-    <div class="modal-footer" style="justify-content:space-between;align-items:center">
-      <div style="display:flex;align-items:center;gap:10px">
-        <input type="text" id="modal-note-admin" placeholder="Note admin…" style="width:220px;font-size:13px;padding:6px 10px">
-        <button class="btn btn-success btn-sm" id="btn-valider-collab" onclick="toggleValidationModal()">⬜ Valider</button>
-      </div>
+    <div class="modal-footer">
       <button class="btn btn-secondary" onclick="fermerModal('modal-saisies')">Fermer</button>
     </div>
   </div>
@@ -1215,34 +1211,6 @@ async function upsertRecapPaieCourant() {
   return { ok:true };
 }
 
-// Feedback de succès (bouton + pills + badge) — factorisé.
-function feedbackValidationOK() {
-  const btnVal = document.getElementById('btn-valider-collab');
-  if (btnVal) { btnVal.textContent = '✅ Validé'; btnVal.disabled = true; btnVal.style.opacity = '0.45'; }
-  window._paie_mode_edit = false;
-  const btnC = document.getElementById('btn-pill-consult');
-  const btnM = document.getElementById('btn-pill-modif');
-  if (btnC && btnM) {
-    btnC.classList.add('pill-active'); btnC.textContent = '👁 Consultation ✓';
-    btnM.classList.remove('pill-active'); btnM.textContent = '✏️ Modification';
-  }
-  poserBadgePaie();
-}
-
-// Validation seule (bouton de la modale Récap, l.401). Feedback géré ici.
-async function toggleValidationModal() {
-  if (!_paieCurrentCollab) return;
-  const btnVal = document.getElementById('btn-valider-collab');
-  if (btnVal) { btnVal.disabled = true; btnVal.textContent = '⏳ Validation…'; }
-  const res = await upsertRecapPaieCourant();
-  if (!res.ok) {
-    if (btnVal) { btnVal.disabled = false; btnVal.textContent = '💾 Enregistrer et valider le relevé'; btnVal.style.opacity = '1'; }
-    alert('Échec de la validation : ' + (res.error.message || res.error.code || 'erreur Supabase'));
-    return;
-  }
-  feedbackValidationOK();
-}
-
 function fermerModal(id) {
   id = id || 'modal-collab';
   document.getElementById(id).classList.remove('open');
@@ -1843,9 +1811,6 @@ async function ouvrirSaisies(collabId, btn) {
     document.getElementById('saisies-body').innerHTML = '<div class="error-banner">Erreur lors du chargement.</div>';
     return;
   }
-  // Mode lecture seule : masquer note et valider
-  const footer = document.querySelector('#modal-saisies .modal-footer');
-  if (footer) footer.style.display = 'none';
 }
 
 // Pose le badge du détail paie d'après le STATUT RÉEL de la période courante
@@ -1968,8 +1933,6 @@ async function ouvrirSaisiesPaie(collabId, btn, nomAffiche) {
   document.getElementById('paie-indicateur').style.display = 'none';
   document.querySelector('#vue-paie .card:first-child').style.display = 'none';
   document.getElementById('paie-detail').style.display = 'block';
-    const footer = document.querySelector('#modal-saisies .modal-footer');
-    if (footer) footer.style.display = '';
   document.getElementById('table-saisies-paie').innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
   document.getElementById('filtres-paie').innerHTML = '';
   // Lecture depuis paie_detail (couche 2 = validation admin), cohérent avec la liste récap.
@@ -2010,9 +1973,9 @@ function renderSaisiesPaie(jours, collabId) {
     document.getElementById('table-saisies-paie').innerHTML = '<div style="text-align:center;color:var(--texte3);padding:40px">Aucune saisie.</div>';
     return;
   }
-  const typeLabel = t => ({travaille:'Travaillé',conge:'Congé',absence:'Absence',ferie:'Férié',travaillée:'Travaillé',CP:'CP',AT:'AT',CS:'Congé spécial'}[t]||t||'—');
+  const typeLabel = t => ({travaillée:'Travaillé',CP:'CP',AT:'AT',CS:'Congé spécial'}[t]||t||'—');
   const typeBadge = t => {
-    const cls = (t==='travaille'||t==='travaillée')?'badge-actif':t==='CP'?'badge-attente':t==='AT'?'badge-inactif':t==='CS'?'badge-attente':'badge-inactif';
+    const cls = (t==='travaillée')?'badge-actif':t==='CP'?'badge-attente':t==='AT'?'badge-inactif':t==='CS'?'badge-attente':'badge-inactif';
     return '<span class="badge '+cls+'">'+typeLabel(t)+'</span>';
   };
   const th = s => '<th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);border-bottom:1px solid #e8f0f8;background:#fafcff;white-space:nowrap">'+s+'</th>';
@@ -2191,7 +2154,7 @@ function verifierAlertePeriodes(periodes) {
     const alerte = document.createElement('div');
     alerte.className = 'error-banner';
     alerte.style.cssText = 'margin:16px 32px 0;background:#fff3cd;border-color:#ffc107;color:#856404;';
-    alerte.innerHTML = '⚠️ <strong>Attention</strong> — Il reste moins de 2 périodes planifiées. Pensez à saisir les périodes à venir !';
+    alerte.innerHTML = '⚠️ <strong>Moins de 2 périodes planifiées</strong> — la génération automatique ne s\'est peut-être pas faite cette nuit.';
     const main = document.querySelector('.main');
     if (main && !document.getElementById('alerte-periodes')) {
       alerte.id = 'alerte-periodes';
@@ -2285,12 +2248,13 @@ function renderBlocCandidatsCloture(cands) {
 // il serait introuvable à l'upsert. No-op hors clôture anticipée (garde sur _cloture_borne_en_cours).
 function garantirEntreeRecapCloture() {
   if (!window._cloture_borne_en_cours) return;
-  const cand = (_candidatsCloture || []).find(c => c.collab_id === _paieCurrentCollab);
+  const cid = decodeURIComponent(_paieCurrentCollab || '');
+  const cand = (_candidatsCloture || []).find(c => c.collab_id === cid);
   if (!cand) return;
   window._paie_recap_current = window._paie_recap_current || [];
-  if (window._paie_recap_current.some(r => r.collabId === _paieCurrentCollab)) return;
+  if (window._paie_recap_current.some(r => r.collabId === cid)) return;
   window._paie_recap_current.push({
-    collabId: _paieCurrentCollab, nomAffiche: cand.nom_affiche, structure: cand.structure,
+    collabId: cid, nomAffiche: cand.nom_affiche, structure: cand.structure,
     heures_travaillees: 0, heures_at: 0, heures_cs: 0,
     nb_at: 0, nb_cs: 0, nb_cp: 0, nb_jours_travailles: 0,
     statut_validation: null, note_admin: null, date_fin_validation: null
