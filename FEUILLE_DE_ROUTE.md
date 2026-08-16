@@ -52,33 +52,39 @@
   chantier Auth (§2). À noter : la table `admins` porte une colonne `actif` →
   la révocation d'un accès existe déjà, sans passer par Auth.
 
-- [ ] **`admin.html` (ancien backoffice GAS) toujours servi par GitHub
-  Pages** → double backoffice accessible. **30 min**
+- [x] **`admin.html` (ancien backoffice GAS) toujours servi par GitHub
+  Pages** → double backoffice accessible. **Fait (8d2046a)** — supprimé de la
+  branche `supabase`. Vérifié en ligne : `/suivi-temps/admin.html` renvoie 404.
+  Reste intact sur `main`, branche de rollback non servie.
 
 ### 1.3 Nettoyage
 
-- [ ] **12 fonctions mortes dans `admin-v2.html`** : `initPaie`,
-  `toggleValidation`, `sauverNote`, `sauverJourPaie`, `sauverRemarque`,
-  `sauverJour` (GAS) · `grouperParSemaine`, `calculerPaiePeriode`,
-  `rechargerDetailPaie`, `genNomPeriode`, `genTokenCollab`,
-  `rendreModalDeplacable`. Plus la globale morte `recapPeriodeId`.
-  Et `Code.gs` (ancien back-end complet).
-  ⚠️ Ne pas toucher aux 2 fonctions GAS **vivantes** (§1.1) avant décision.
-  **2 h**
+- [x] **Fonctions mortes dans `admin-v2.html`** — **Fait (8d2046a)** :
+  `initPaie`, `toggleValidation`, `sauverNote`, `sauverJourPaie`,
+  `sauverRemarque`, `sauverJour` (GAS) · `grouperParSemaine`,
+  `calculerPaiePeriode`, `rechargerDetailPaie`, `genNomPeriode`,
+  `genTokenCollab`, la globale `recapPeriodeId`, la const `PAIE_DEFAUT_AT_CS`.
+  Plus `Code.gs` et `admin.html` (≈ 2 685 lignes au total).
+  ⚠️ `rendreModalDeplacable` **CONSERVÉE** — near-miss : elle paraissait morte
+  mais était passée en callback `forEach(rendreModalDeplacable)` (cf. §5).
 
-- [ ] **2 ids dupliqués**, tous deux zone Détail de paie ↔ modale Récap :
-  `modal-note-admin` et `btn-valider-collab`. Ça marche par l'ordre du
-  HTML — un déplacement de bloc inverserait le comportement. **1 h**
+- [x] **2 ids dupliqués** → **d6424a4** : le footer mort de `#modal-saisies`
+  retiré (avec `toggleValidationModal` / `feedbackValidationOK`) ;
+  `modal-note-admin` et `btn-valider-collab` sont désormais **UNIQUES**. La
+  chaîne de paie ne dépend plus de l'ordre du HTML.
 
-- [ ] **Vestige `ferie:'Férié'`** (et `conge`, `absence`) dans le mapping de
-  libellés de `renderSaisiesPaie`, pour des types absents de la base.
-  Piège direct pour le chantier fériés. **15 min**
+- [x] **Vestiges de libellés de `renderSaisiesPaie`** → **d6424a4** : `ferie`,
+  `travaille`, `conge`, `absence` retirés (map + test `cls`). Vérifié en base :
+  seuls `travaillée`, `CP`, `AT` existent (+ `CS` prévu).
 
-- [ ] **`garantirEntreeRecapCloture`** compare sur `_paieCurrentCollab` brut
-  quand `upsertRecapPaieCourant` décode d'abord. **15 min**
+- [x] **`garantirEntreeRecapCloture`** → **d6424a4** : décode désormais
+  `_paieCurrentCollab`, comme `upsertRecapPaieCourant`.
 
-- [ ] **`calculTotal`** (index.html) et **`fmtDate`** (manager.html), mortes.
-  **10 min**
+- [x] **`calculTotal`** (index.html) et **`fmtDate`** (manager.html) →
+  **d6424a4**, plus `diff` (index.html) devenue orpheline.
+
+✅ **Plus aucune occurrence d'`API_URL` ni de `jsonpFetch`** dans `admin-v2.html`,
+`index.html`, `manager.html`. Le passif GAS du front est soldé.
 
 ### 1.4 Performance
 
@@ -102,6 +108,9 @@
 - [ ] `ouvrirDetailArchive` exécute `renderPaie` inutilement sur période ouverte
 - [ ] 17 « No label associated with a form field » (accessibilité)
 - [ ] Largeur du tableau Détail avec les 2 colonnes ajoutées ⚠️ *à vérifier*
+- [x] `verifierAlertePeriodes` → **d6424a4** : le bandeau invitait à saisir des
+  périodes à la main (geste retiré le 15/08) ; il signale désormais un défaut
+  possible de la génération automatique.
 
 ---
 
