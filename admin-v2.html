@@ -2175,18 +2175,15 @@ function setPaieSousOnglet(statut) {
 }
 
 // Compte X (validés via recap_paie) et Y (collabs avec données via paie_detail) par période,
-// en 2 requêtes batch (.in) — JAMAIS une requête par période.
+// agrégés EN BASE par la RPC compteurs_paie_periodes (count(distinct collab_id)) — remplace le
+// rapatriement de tout paie_detail + recap_paie (~20 000 lignes/an, volume croissant sans fin).
 async function calculerCountsPaie(ids) {
   const out = {};
-  ids.forEach(id => { out[id] = { x:0, y:0, _data:new Set(), _valid:new Set() }; });
+  ids.forEach(id => { out[id] = { x:0, y:0 }; });
   if (!ids.length) return out;
-  // Y = collabs ayant des données (distinct collab_id dans paie_detail) — cohérent avec renderPaie
-  const { data: det, error: ed } = await fetchAllPages(() => sb.from('paie_detail').select('periode_id, collab_id').in('periode_id', ids).order('id'));
-  if (!ed) (det||[]).forEach(d => { if (out[d.periode_id]) out[d.periode_id]._data.add(d.collab_id); });
-  // X = collabs validés (recap_paie.statut_validation='valide')
-  const { data: rec, error: er } = await fetchAllPages(() => sb.from('recap_paie').select('periode_id, collab_id, statut_validation').in('periode_id', ids).order('id'));
-  if (!er) (rec||[]).forEach(r => { if (out[r.periode_id] && r.statut_validation==='valide') out[r.periode_id]._valid.add(r.collab_id); });
-  ids.forEach(id => { out[id].y = out[id]._data.size; out[id].x = out[id]._valid.size; });
+  const { data, error } = await sb.rpc('compteurs_paie_periodes', { p_periode_ids: ids });
+  if (error) { console.error('calculerCountsPaie', error); return out; }
+  (data || []).forEach(r => { out[r.periode_id] = { x: r.x, y: r.y }; });
   return out;
 }
 
