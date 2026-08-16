@@ -1387,9 +1387,13 @@ async function calculerPaieDepuisPaieDetail(periodeId) {
   const collabById = {};
   collabs.forEach(c => { collabById[c.collabId] = c; });
 
+  // Contrats des SEULS collabs de la période (resoudreContrat n'est appelée que sur eux) → la lecture
+  // scale avec la période, pas avec l'historique de toute la structure. detail vide → .in([]) = 0 ligne.
+  const collabIds = [...new Set((detail || []).map(d => d.collab_id))];
   const { data: contrats, error: ec } = await sb
     .from('historique_contrats')
-    .select('collab_id, date_debut, date_fin, structure, type_contrat, heures_hebdo, type_periode, matricule_silae');
+    .select('collab_id, date_debut, date_fin, structure, type_contrat, heures_hebdo, type_periode, matricule_silae')
+    .in('collab_id', collabIds);
   if (ec) { console.error('Erreur lecture historique_contrats :', ec); return []; }
   const contratsByCollab = {};
   (contrats || []).forEach(k => { (contratsByCollab[k.collab_id] ||= []).push(k); });
