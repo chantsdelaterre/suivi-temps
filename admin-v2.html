@@ -159,7 +159,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     <div class="login-sub">Chants de la Terre — Suivi du temps</div>
     <div class="form-group">
       <label>Token d'accès</label>
-      <input type="password" id="login-token" placeholder="Votre token admin" onkeydown="if(event.key==='Enter') login()">
+      <input type="password" id="login-token" aria-label="Token administrateur" placeholder="Votre token admin" onkeydown="if(event.key==='Enter') login()">
     </div>
     <button class="btn btn-primary" style="width:100%;margin-top:14px;justify-content:center;" onclick="login()">Accéder</button>
     <div class="login-error" id="login-error" style="display:none"></div>
@@ -188,7 +188,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
           <button class="btn btn-primary btn-sm" onclick="ouvrirModalCollab()">+ Nouveau</button>
         </div>
         <div class="filter-bar">
-          <input type="search" class="filter-search" id="search-collab" placeholder="🔍 Rechercher…" oninput="filtrerCollabs()">
+          <input type="search" class="filter-search" id="search-collab" aria-label="Rechercher un collaborateur" placeholder="🔍 Rechercher…" oninput="filtrerCollabs()">
           <div class="filter-group">
             <button class="filter-btn active" onclick="setFilter('statut','',this)">Tous</button>
             <button class="filter-btn" onclick="setFilter('statut','actif',this)">Actifs</button>
@@ -252,7 +252,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
           <span class="card-title" id="recap-titre">Récapitulatif</span>
         </div>
         <div class="filter-bar">
-          <input type="search" class="filter-search" id="search-recap" placeholder="🔍 Rechercher…" oninput="filtrerRecap()">
+          <input type="search" class="filter-search" id="search-recap" aria-label="Rechercher un collaborateur" placeholder="🔍 Rechercher…" oninput="filtrerRecap()">
           <div class="filter-group">
             <button class="filter-btn active" onclick="setFiltreRecap('structure','',this)">Toutes</button>
             <button class="filter-btn" onclick="setFiltreRecap('structure','SCEA',this)">SCEA</button>
@@ -313,7 +313,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <div style="display:flex;align-items:center;gap:12px">
               <span id="badge-validation-paie"></span>
               <div class="toggle-pill" id="toggle-mode"><button class="pill-active" onclick="toggleHeuresEdit()" id="btn-pill-consult">👁 Consultation</button><button onclick="toggleHeuresEdit()" id="btn-pill-modif">✏️ Modification</button></div>
-              <input type="text" id="modal-note-admin" placeholder="Note admin…" style="width:160px;font-size:13px;padding:6px 10px">
+              <input type="text" id="modal-note-admin" aria-label="Note admin" placeholder="Note admin…" style="width:160px;font-size:13px;padding:6px 10px">
               <button class="btn btn-success btn-sm" id="btn-valider-collab" onclick="enregistrerEtValider()" style="font-weight:600;padding:6px 18px">💾 Enregistrer et valider le relevé</button>
             </div>
           </div>
@@ -376,27 +376,27 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
       <div style="background:#f7fafd;border:1px solid #e8f0f8;border-radius:10px;padding:14px;margin-bottom:14px">
         <div id="form-titre-identite" style="display:none;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);margin-bottom:10px">Identité</div>
         <div class="form-grid">
-          <div class="form-group"><label>Prénom *</label><input type="text" id="f-prenom" placeholder="Marie"></div>
-          <div class="form-group"><label>Nom *</label><input type="text" id="f-nom" placeholder="Dupont"></div>
-          <div class="form-group"><label>Email</label><input type="email" id="f-email" placeholder="marie@exemple.fr"></div>
-          <div class="form-group"><label>Téléphone</label><input type="text" id="f-telephone" placeholder="06-12-34-56-78"></div>
-          <div class="form-group contrat-field"><label>Structure *</label>
+          <div class="form-group"><label for="f-prenom">Prénom *</label><input type="text" id="f-prenom" placeholder="Marie"></div>
+          <div class="form-group"><label for="f-nom">Nom *</label><input type="text" id="f-nom" placeholder="Dupont"></div>
+          <div class="form-group"><label for="f-email">Email</label><input type="email" id="f-email" placeholder="marie@exemple.fr"></div>
+          <div class="form-group"><label for="f-telephone">Téléphone</label><input type="text" id="f-telephone" placeholder="06-12-34-56-78"></div>
+          <div class="form-group contrat-field"><label for="f-structure">Structure *</label>
             <select id="f-structure"><option value="">— Choisir —</option><option>SCEA</option><option>SAS</option><option>SARL</option></select>
           </div>
-          <div class="form-group contrat-field"><label>Type contrat *</label>
+          <div class="form-group contrat-field"><label for="f-contrat">Type contrat *</label>
             <select id="f-contrat"><option value="">— Choisir —</option><option>CDI</option><option>TESA</option><option>CDD</option></select>
           </div>
-          <div class="form-group contrat-field"><label>Type période *</label>
+          <div class="form-group contrat-field"><label for="f-type-periode">Type période *</label>
             <select id="f-type-periode"><option value="">— Choisir —</option><option value="decalee">Décalée</option><option value="civil">Civile</option></select>
           </div>
-          <div class="form-group contrat-field"><label>Heures / semaine</label><input type="number" id="f-heures" placeholder="35" min="1" max="60"></div>
-          <div class="form-group"><label>Statut</label>
+          <div class="form-group contrat-field"><label for="f-heures">Heures / semaine</label><input type="number" id="f-heures" placeholder="35" min="1" max="60"></div>
+          <div class="form-group"><label for="f-statut">Statut</label>
             <select id="f-statut"><option value="en_attente">En attente</option><option value="actif">Actif</option><option value="inactif">Inactif</option></select>
           </div>
-          <div class="form-group"><label>Date d'activation</label><input type="date" id="f-date-activation"></div>
-          <div class="form-group"><label>Matricule Silae</label><input type="text" id="f-matricule-silae" placeholder="ex: 00042"></div>
+          <div class="form-group"><label for="f-date-activation">Date d'activation</label><input type="date" id="f-date-activation"></div>
+          <div class="form-group"><label for="f-matricule-silae">Matricule Silae</label><input type="text" id="f-matricule-silae" placeholder="ex: 00042"></div>
           <div class="form-group">
-            <label>Équipe</label>
+            <label for="f-equipe">Équipe</label>
             <select id="f-equipe"><option value="">— Aucune équipe —</option></select>
           </div>
         </div>
@@ -439,7 +439,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     <div class="modal-body">
       <div style="font-weight:600;margin-bottom:10px" id="cloture-nom"></div>
       <div style="font-size:13px;color:var(--texte2);margin-bottom:16px" id="cloture-texte"></div>
-      <div class="form-group"><label>Date de fin</label><input type="date" id="cloture-date"></div>
+      <div class="form-group"><label for="cloture-date">Date de fin</label><input type="date" id="cloture-date"></div>
       <div id="cloture-warning" style="display:none;margin-top:12px" class="remarque-existante"></div>
     </div>
     <div class="modal-footer">
@@ -974,7 +974,7 @@ async function chargerContratActuel(collabId) {
 function afficherChampFinContrat() {
   document.getElementById('contrat-fin-zone').innerHTML =
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-    + '<label style="font-size:13px;color:var(--texte2)">Date de fin :</label>'
+    + '<label style="font-size:13px;color:var(--texte2)" for="contrat-date-fin">Date de fin :</label>'
     + '<input type="date" id="contrat-date-fin" style="font-size:13px;padding:5px 8px;border-radius:8px;border:1.5px solid #dce6f0">'
     + '<button type="button" class="btn btn-danger btn-sm" onclick="confirmerFinContrat()">Confirmer la fin de contrat</button>'
     + '</div>';
@@ -1020,13 +1020,13 @@ function renderFormContrat(opts) {
     '<div style="display:flex;flex-direction:column;gap:8px;background:#f7fafd;border:1px solid #e8f0f8;border-radius:10px;padding:12px">'
     + '<div style="font-weight:600;font-size:13px;color:var(--texte2)">' + titre + '</div>'
     + '<div style="'+grid+'">'
-    +   '<div style="'+cell+'"><label style="'+lbl+'">Date de début *</label><input type="date" id="nc-date-debut" style="'+inp+'"></div>'
-    +   '<div style="'+cell+'"><label style="'+lbl+'">Structure *</label><select id="nc-structure" style="'+inp+'"><option value="">— Choisir —</option><option>SARL</option><option>SAS</option><option>SCEA</option></select></div>'
-    +   '<div style="'+cell+'"><label style="'+lbl+'">Type contrat *</label><select id="nc-contrat" style="'+inp+'"><option value="">— Choisir —</option><option value="CDI">CDI</option><option value="TESA">TESA</option><option value="CDD">CDD</option><option value="APP">Apprentissage</option></select></div>'
-    +   '<div style="'+cell+'"><label style="'+lbl+'">Type période *</label><select id="nc-periode" style="'+inp+'"><option value="">— Choisir —</option><option value="civil">Civile</option><option value="decalee">Décalée</option></select></div>'
-    +   '<div style="'+cell+'"><label style="'+lbl+'">Heures / semaine *</label><input type="number" id="nc-heures" step="0.5" min="0" style="'+inp+'"></div>'
-    +   '<div style="'+cell+'"><label style="'+lbl+'">Matricule Silae</label><input type="text" id="nc-matricule" style="'+inp+'"></div>'
-    +   '<div style="'+cell+'"><label style="'+lbl+'">Date de fin</label><input type="date" id="nc-date-fin" style="'+inp+'"></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-date-debut">Date de début *</label><input type="date" id="nc-date-debut" style="'+inp+'"></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-structure">Structure *</label><select id="nc-structure" style="'+inp+'"><option value="">— Choisir —</option><option>SARL</option><option>SAS</option><option>SCEA</option></select></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-contrat">Type contrat *</label><select id="nc-contrat" style="'+inp+'"><option value="">— Choisir —</option><option value="CDI">CDI</option><option value="TESA">TESA</option><option value="CDD">CDD</option><option value="APP">Apprentissage</option></select></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-periode">Type période *</label><select id="nc-periode" style="'+inp+'"><option value="">— Choisir —</option><option value="civil">Civile</option><option value="decalee">Décalée</option></select></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-heures">Heures / semaine *</label><input type="number" id="nc-heures" step="0.5" min="0" style="'+inp+'"></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-matricule">Matricule Silae</label><input type="text" id="nc-matricule" style="'+inp+'"></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-date-fin">Date de fin</label><input type="date" id="nc-date-fin" style="'+inp+'"></div>'
     +   (commence ? '<div style="grid-column:1/-1;font-size:11px;color:var(--texte3)">🔒 Structure et type de période non modifiables — contrat déjà commencé.</div>' : '')
     + '</div>'
     + '<div id="nc-msg" style="display:none;font-size:13px;margin-top:2px"></div>'
@@ -2097,8 +2097,6 @@ async function toggleHeuresEdit() {
       const isValide = badge && badge.innerHTML.includes('Validé');
       if (isValide) {
         poserBadgePaie();
-        const btnVal = document.getElementById('btn-valider-collab');
-        if (btnVal) { btnVal.disabled = false; btnVal.style.opacity = '1'; }
       }
     } else {
       btnM.classList.remove('pill-active');
@@ -2239,7 +2237,7 @@ function renderBlocCandidatsCloture(cands) {
     + '</div>'
   ).join('');
   return '<div style="margin-bottom:14px">'
-    + '<div style="font-weight:700;margin-bottom:8px">⏹️ Clôtures anticipées — ' + cands.length + ' collaborateur(s)</div>'
+    + '<div style="font-weight:700;margin-bottom:8px">⏱️ Clôtures anticipées — ' + cands.length + ' collaborateur(s)</div>'
     + lignes
     + '</div>';
 }
@@ -2432,7 +2430,7 @@ async function chargerArchivesCloturees() {
   document.getElementById('paie-card').style.display = 'none';
   document.getElementById('paie-indicateur').style.display = 'none';
   document.querySelector('#vue-paie .card:first-child').style.display = 'block';
-  document.getElementById('paie-titre').textContent = 'Paie — périodes clôturées';
+  document.getElementById('paie-titre').textContent = 'Paie — relevés clôturés';
   const entete = document.getElementById('paie-entete');
   const cloturees = (periodesData || []).filter(p => p.statut === 'cloturee');
   entete.innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
@@ -2457,7 +2455,7 @@ async function chargerArchivesCloturees() {
   }
   if (!recs.length) {
     archivesRecap = [];
-    entete.innerHTML = '<div style="color:var(--texte3);padding:6px 2px">Aucune période clôturée.</div>';
+    entete.innerHTML = '<div style="color:var(--texte3);padding:6px 2px">Aucun relevé clôturé.</div>';
     return;
   }
   // Structure (absente de recap_paie) croisée depuis collaborateurs — lus une fois.
@@ -2501,10 +2499,10 @@ async function chargerArchivesCloturees() {
   const selStyle = 'font-size:13px;padding:6px 10px;border-radius:8px;border:1.5px solid #dce6f0';
   entete.innerHTML =
     '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'
-    + '<select id="arch-f-structure" onchange="renderArchivesFiltered()" style="'+selStyle+'"><option value="">Toutes structures</option><option>SCEA</option><option>SAS</option><option>SARL</option></select>'
-    + '<select id="arch-f-collab" onchange="renderArchivesFiltered()" style="'+selStyle+'"><option value="">Tous collaborateurs</option>'
+    + '<select id="arch-f-structure" aria-label="Filtrer par structure" onchange="renderArchivesFiltered()" style="'+selStyle+'"><option value="">Toutes structures</option><option>SCEA</option><option>SAS</option><option>SARL</option></select>'
+    + '<select id="arch-f-collab" aria-label="Filtrer par collaborateur" onchange="renderArchivesFiltered()" style="'+selStyle+'"><option value="">Tous collaborateurs</option>'
       + collabsOpts.map(([id, nom]) => '<option value="'+id+'">'+nom+'</option>').join('') + '</select>'
-    + '<select id="arch-f-periode" onchange="renderArchivesFiltered()" style="'+selStyle+'"><option value="">Toutes périodes</option>'
+    + '<select id="arch-f-periode" aria-label="Filtrer par période" onchange="renderArchivesFiltered()" style="'+selStyle+'"><option value="">Toutes périodes</option>'
       + periodesOpts.map(([id, nom]) => '<option value="'+id+'">'+nom+'</option>').join('') + '</select>'
     + '<span class="filter-count" id="arch-count"></span>'
     + '</div>'
@@ -2513,7 +2511,7 @@ async function chargerArchivesCloturees() {
     +   '<span id="arch-sel-count" style="font-size:13px;color:var(--texte2)">0 relevé sélectionné</span>'
     + '</div>'
     + '<div class="table-wrap"><table><thead><tr>'
-    + '<th style="width:32px;text-align:center"><input type="checkbox" id="arch-check-all" onchange="basculerToutesArchives(this.checked)"></th>'
+    + '<th style="width:32px;text-align:center"><input type="checkbox" id="arch-check-all" aria-label="Tout sélectionner" onchange="basculerToutesArchives(this.checked)"></th>'
     + '<th>Période</th><th>Collaborateur</th><th style="text-align:center">Structure</th>'
     + '<th style="text-align:center">Heures trav.</th><th style="text-align:center">AT</th><th style="text-align:center">CS</th>'
     + '<th style="text-align:center">CP</th><th style="text-align:center">Jours trav.</th><th>Note admin</th><th>Détail</th>'
@@ -2638,8 +2636,12 @@ async function imprimerRihSelection() {
 
 // Détail d'une archive : fixe la période de la ligne puis réutilise ouvrirSaisiesPaie (consultation + re-validation).
 async function ouvrirDetailArchive(collabIdEnc, periodeId, btn) {
+  // Chargeur léger : import + calcul + pose du global, SANS renderPaie ni manip DOM de chargerPaie
+  // (ouvrirSaisiesPaie masque aussitôt le récap → renderPaie serait du travail jeté).
   paieCurrentPeriode = periodeId;
-  await chargerPaie(periodeId);          // _paie_recap_current pour CETTE période + import idempotent
+  const imp = await importerPaiePeriode(periodeId);   // idempotent (no-op sur clôturée ; refusé/ok sur ouverte)
+  if (!imp.ok) { alert('Impossible de préparer le relevé.'); return; }
+  window._paie_recap_current = await calculerPaieDepuisPaieDetail(periodeId);
   await ouvrirSaisiesPaie(collabIdEnc, btn);
 }
 
