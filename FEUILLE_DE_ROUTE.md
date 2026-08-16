@@ -12,6 +12,9 @@
 
 ## 1 · CORRIGER
 
+> **15/08/2026 — §1.1, §1.3, §1.5 soldées. §1.2 : reste le chantier Auth.
+> §1.4 : reste `ajuster-paie` transactionnelle.**
+
 ### 1.1 Bugs actifs
 
 - [x] **`chargerRecap` lit TOUTE la table `jours`, sans aucun filtre.**
@@ -88,12 +91,20 @@
 
 ### 1.4 Performance
 
-- [ ] **`calculerCountsPaie`** rapatrie tout `paie_detail` de toutes les
+- [x] **`calculerCountsPaie`** rapatriait tout `paie_detail` de toutes les
   périodes pour un `count(distinct collab_id)` — ~20 000 lignes/an.
-  → RPC d'agrégation. **3 h**
+  **Fait (4c2e3a8)** : RPC `compteurs_paie_periodes(text[])`,
+  `count(distinct collab_id)` en base. Une ligne par identifiant demandé, même
+  sans donnée. Chiffres vérifiés identiques à l'ancien calcul.
 
-- [ ] **`historique_contrats` non paginée** dans
-  `calculerPaieDepuisPaieDetail`. **1 h**
+- [x] **`historique_contrats` bornée** dans `calculerPaieDepuisPaieDetail`.
+  **Fait (256123e)** — correction du libellé : ce n'était PAS un problème de
+  volume. La table fait une soixantaine de lignes et grossit d'une par
+  événement de contrat (quelques dizaines/an), pas 20 000 comme les lectures
+  de `jours` : l'item avait été mal rangé avec elles. Le correctif est une
+  question de **justesse** : `.in('collab_id', …)` sur les seuls collaborateurs
+  de la période (`resoudreContrat` n'est appelée que sur eux). La lecture scale
+  avec la période, plus avec l'ancienneté de la structure.
 
 - [ ] **`ajuster-paie` non transactionnelle** — `UPDATE` ligne par ligne,
   pas de rollback. Se répare au second essai (lot renvoyé à l'identique),
@@ -101,13 +112,18 @@
 
 ### 1.5 UX
 
-- [ ] Emoji ⏹️ non rendu sur macOS Chrome (carré vide)
-- [ ] Titre « Paie — périodes clôturées » inexact depuis le 09/08
-- [ ] « Aucune période clôturée. » → « Aucun relevé clôturé. »
-- [ ] Rustine redondante dans `toggleHeuresEdit`
-- [ ] `ouvrirDetailArchive` exécute `renderPaie` inutilement sur période ouverte
-- [ ] 17 « No label associated with a form field » (accessibilité)
-- [ ] Largeur du tableau Détail avec les 2 colonnes ajoutées ⚠️ *à vérifier*
+Tous → **Fait (45bac86)** sauf mention contraire :
+- [x] Emoji ⏹️ → ⏱️ (non rendu sur macOS Chrome)
+- [x] Titre « Paie — relevés clôturés » (l'ancien « périodes clôturées » était
+  inexact depuis le 09/08) et message vide « Aucun relevé clôturé. »
+- [x] Rustine de `toggleHeuresEdit` retirée (`poserBadgePaie()` conservé, geste
+  distinct)
+- [x] `ouvrirDetailArchive` : chargeur léger — `renderPaie` n'est plus exécuté
+  pour être masqué aussitôt (`_paie_recap_current` posé explicitement)
+- [x] Accessibilité : 21 `for=` + 8 `aria-label` → les 17 « No label associated
+  with a form field » sont fermés
+- [x] Largeur du tableau Détail : **sans objet** — `.table-wrap` porte
+  `overflow-x: auto`, le pire cas est un défilement contenu, pas un débordement
 - [x] `verifierAlertePeriodes` → **d6424a4** : le bandeau invitait à saisir des
   périodes à la main (geste retiré le 15/08) ; il signale désormais un défaut
   possible de la génération automatique.
