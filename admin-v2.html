@@ -298,6 +298,11 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <button class="filter-btn active" onclick="setFiltreContrats('type','TESA',this)">TESA</button>
             <button class="filter-btn" onclick="setFiltreContrats('type','CDD',this)">CDD</button>
           </div>
+          <div class="filter-group">
+            <button class="filter-btn active" onclick="setFiltreContrats('statut','actifs',this)">Actifs</button>
+            <button class="filter-btn" onclick="setFiltreContrats('statut','inactifs',this)">Inactifs</button>
+            <button class="filter-btn" onclick="setFiltreContrats('statut','',this)">Tous</button>
+          </div>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--texte2)"><input type="checkbox" id="contrats-historique" onchange="chargerContrats()"> Historique complet</label>
           <span class="filter-count" id="contrats-filter-count"></span>
         </div>
@@ -474,7 +479,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <select id="f-structure"><option value="">— Choisir —</option><option>SCEA</option><option>SAS</option><option>SARL</option></select>
           </div>
           <div class="form-group contrat-field"><label for="f-contrat">Type contrat *</label>
-            <select id="f-contrat"><option value="">— Choisir —</option><option>CDI</option><option>TESA</option><option>CDD</option></select>
+            <select id="f-contrat" onchange="preselectPeriode(this.value, 'f-type-periode')"><option value="">— Choisir —</option><option>CDI</option><option>TESA</option><option>CDD</option></select>
           </div>
           <div class="form-group contrat-field"><label for="f-type-periode">Type période *</label>
             <select id="f-type-periode"><option value="">— Choisir —</option><option value="decalee">Décalée</option><option value="civil">Civile</option></select>
@@ -1070,6 +1075,29 @@ async function confirmerFinContrat() {
 // Mode : ncEditId = null -> création ; ncEditId = <id> -> correction de cette ligne.
 let ncEditId = null;
 
+// ── Règle métier (AIDE, pas contrainte) : type_periode attendu selon type_contrat ──
+//    TESA → civile ; tout autre (CDI, CDD, APP) → décalée. Source UNIQUE, appelée depuis
+//    chaque point de saisie (fiche création + renderFormContrat création). On aide, on
+//    n'interdit jamais : la pré-sélection reste modifiable, l'alerte laisse passer si confirmé.
+function periodeAttendue(typeContrat) {
+  return typeContrat === 'TESA' ? 'civil' : 'decalee';
+}
+const PERIODE_LBL = { civil: 'civile', decalee: 'décalée' };
+// Pré-sélection (CRÉATION uniquement) : positionne le select période sur l'attendu, modifiable ensuite.
+function preselectPeriode(typeContrat, periodeSelectId) {
+  if (!typeContrat) return;
+  const el = document.getElementById(periodeSelectId);
+  if (el) el.value = periodeAttendue(typeContrat);
+}
+// Alerte de validation : si la période choisie s'écarte de l'attendu, confirme. true = poursuivre.
+function confirmerPeriodeInhabituelle(typeContrat, typePeriode) {
+  if (!typeContrat || !typePeriode) return true;
+  const attendue = periodeAttendue(typeContrat);
+  if (typePeriode === attendue) return true;
+  return confirm('Un ' + typeContrat + ' est habituellement en période ' + PERIODE_LBL[attendue]
+    + '. Vous avez choisi « ' + PERIODE_LBL[typePeriode] + ' ». C\'est possible, mais rare — vérifiez que c\'est bien voulu.');
+}
+
 // Construit le formulaire selon le mode. opts : { mode:'create'|'edit', values?, commence? }.
 function renderFormContrat(opts) {
   const mode = opts.mode;
@@ -1080,13 +1108,15 @@ function renderFormContrat(opts) {
   const lbl = 'font-size:12px;color:var(--texte2)';
   const cell = 'display:flex;flex-direction:column;gap:3px';
   const grid = 'display:grid;grid-template-columns:1fr 1fr;gap:8px 12px';
+  // Pré-sélection de la période UNIQUEMENT en création (jamais à l'ouverture d'une correction).
+  const onNcContrat = mode === 'create' ? ' onchange="preselectPeriode(this.value, \'nc-periode\')"' : '';
   document.getElementById('contrat-fin-zone').innerHTML =
     '<div style="display:flex;flex-direction:column;gap:8px;background:#f7fafd;border:1px solid #e8f0f8;border-radius:10px;padding:12px">'
     + '<div style="font-weight:600;font-size:13px;color:var(--texte2)">' + titre + '</div>'
     + '<div style="'+grid+'">'
     +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-date-debut">Date de début *</label><input type="date" id="nc-date-debut" style="'+inp+'"></div>'
     +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-structure">Structure *</label><select id="nc-structure" style="'+inp+'"><option value="">— Choisir —</option><option>SARL</option><option>SAS</option><option>SCEA</option></select></div>'
-    +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-contrat">Type contrat *</label><select id="nc-contrat" style="'+inp+'"><option value="">— Choisir —</option><option value="CDI">CDI</option><option value="TESA">TESA</option><option value="CDD">CDD</option><option value="APP">Apprentissage</option></select></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-contrat">Type contrat *</label><select id="nc-contrat"'+onNcContrat+' style="'+inp+'"><option value="">— Choisir —</option><option value="CDI">CDI</option><option value="TESA">TESA</option><option value="CDD">CDD</option><option value="APP">Apprentissage</option></select></div>'
     +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-periode">Type période *</label><select id="nc-periode" style="'+inp+'"><option value="">— Choisir —</option><option value="civil">Civile</option><option value="decalee">Décalée</option></select></div>'
     +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-heures">Heures / semaine *</label><input type="number" id="nc-heures" step="0.5" min="0" style="'+inp+'"></div>'
     +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-matricule">Matricule Silae</label><input type="text" id="nc-matricule" style="'+inp+'"></div>'
@@ -1193,6 +1223,8 @@ async function confirmerContrat() {
   if (type_contrat === 'TESA' && !date_fin) {
     if (!confirm('Contrat TESA sans date de fin. Êtes-vous sûr ?')) return;
   }
+  // Alerte période inhabituelle — CRÉATION uniquement (modifier_contrat interdit déjà de changer la période sur un contrat commencé).
+  if (ncEditId == null && !confirmerPeriodeInhabituelle(type_contrat, type_periode)) return;
   const enEdition = ncEditId != null;
   const fn = enEdition ? 'modifier-contrat' : 'ajouter-contrat';
   const body = enEdition
@@ -1311,6 +1343,8 @@ async function sauverCollab() {
   if (!enEdition) {
     if (!typePeriode) { showErr('Aucune période de paie définie pour ce collaborateur — veuillez sélectionner un type de période.'); return; }
     if (!dateActivation) { showErr('Date d\'activation requise.'); return; }
+    // Alerte période inhabituelle (annuler = retour au formulaire, rien n'est envoyé ; le bouton est ré-armé).
+    if (!confirmerPeriodeInhabituelle(typeContrat, typePeriode)) { btn.disabled = false; btn.textContent = 'Enregistrer'; return; }
   }
 
   // Champs IDENTITÉ (communs création + édition). nom_affiche recalculé. Vides → null.
@@ -2959,6 +2993,7 @@ let contratsData = [];
 let filtreContratsEtat = '';        // '' | anomalies | fin_proche | sans_fin | en_cours
 let filtreContratsStructure = '';   // '' | SCEA | SAS | SARL
 let filtreContratsType = 'TESA';    // défaut TESA (99 % des cas d'usage) — sinon '' | CDI | CDD
+let filtreContratsStatut = 'actifs'; // STATUT DU COLLAB (pas du contrat). 'actifs' (défaut) | 'inactifs' | '' (tous)
 
 async function chargerContrats() {
   const tbody = document.getElementById('contrats-tbody');
@@ -3019,8 +3054,9 @@ function setFiltreContratsQuick(val, btn) {
 
 // Groupes structure / type (patron Collaborateurs) : chaque groupe togglise SON propre bouton actif.
 function setFiltreContrats(type, val, btn) {
-  if (type === 'structure') filtreContratsStructure = val;
-  else                      filtreContratsType = val;
+  if (type === 'structure')   filtreContratsStructure = val;
+  else if (type === 'statut') filtreContratsStatut = val;
+  else                        filtreContratsType = val;
   btn.closest('.filter-group').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   filtrerContrats();
@@ -3039,6 +3075,12 @@ function filtrerContrats() {
     if (filtreContratsEtat === 'fin_proche' && c.etat !== 'fin_proche') return false;
     if (filtreContratsEtat === 'sans_fin' && c.date_fin != null) return false;
     if (filtreContratsEtat === 'en_cours' && !(c.etat === 'en_cours' || c.etat === 'sans_fin')) return false;
+    // Statut du COLLABORATEUR (pas du contrat). EXCEPTION : sous « anomalies », on ne filtre PAS —
+    // une anomalie doit rester visible même sur un collab inactif (rôle du bouton : tout montrer).
+    if (filtreContratsEtat !== 'anomalies') {
+      if (filtreContratsStatut === 'actifs' && !c.collab_actif) return false;
+      if (filtreContratsStatut === 'inactifs' && c.collab_actif) return false;
+    }
     return true;
   });
   // Tri d'affichage (vit dans le front — change plus souvent que le ORDER BY serveur) :
