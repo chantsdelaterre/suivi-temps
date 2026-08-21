@@ -47,8 +47,9 @@ Deno.serve(async (req) => {
   if (aErr) return json({ ok: false, error: "Erreur base (auth admin)" }, 500);
   if (!adminNom) return json({ ok: false, error: "Admin non autorisé" }, 401);
 
-  // 2. Appel de la RPC métier (8 args, date_fin peut etre null)
-  const { data: rData, error: rErr } = await supabase.rpc("ajouter_contrat", {
+  // 2. Appel de la RPC métier. p_taux_horaire transmis SEULEMENT s'il est présent dans le body
+  //    (absent → non envoyé → default null appliqué en base).
+  const rpcArgs: Record<string, unknown> = {
     p_collab_id: collab_id,
     p_date_debut: date_debut,
     p_structure: structure,
@@ -57,7 +58,18 @@ Deno.serve(async (req) => {
     p_heures_hebdo: heures_hebdo,
     p_matricule_silae: matricule_silae,
     p_date_fin: date_fin,
-  });
+  };
+  if (p?.taux_horaire !== undefined) {
+    const raw = p.taux_horaire;
+    if (raw === "" || raw == null) {
+      rpcArgs.p_taux_horaire = null;
+    } else {
+      const th = Number(String(raw).replace(",", "."));   // accepte la virgule décimale française
+      if (!Number.isFinite(th)) return json({ ok: false, error: "taux_horaire invalide" }, 400);
+      rpcArgs.p_taux_horaire = th;
+    }
+  }
+  const { data: rData, error: rErr } = await supabase.rpc("ajouter_contrat", rpcArgs);
   if (rErr) return json({ ok: false, error: rErr.message || "Échec de l'ajout de contrat" }, 500);
 
   return json({ ok: true, admin: adminNom, collab_id: rData });

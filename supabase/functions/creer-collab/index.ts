@@ -62,8 +62,9 @@ Deno.serve(async (req) => {
   }
   if (!token) return json({ ok: false, error: "Impossible de générer un token unique" }, 500);
 
-  // 4. Création transactionnelle via la RPC existante
-  const { error: rErr } = await supabase.rpc("creer_collaborateur_avec_contrat", {
+  // 4. Création transactionnelle via la RPC existante.
+  //    p_taux_horaire / p_date_fin transmis SEULEMENT s'ils sont présents dans champs (absent → default null).
+  const rpcArgs: Record<string, unknown> = {
     p_collab_id: collab_id,
     p_token: token,
     p_prenom: champs.prenom ?? null,
@@ -79,7 +80,21 @@ Deno.serve(async (req) => {
     p_date_activation: champs.date_activation ?? null,
     p_actif: champs.actif ?? false,
     p_matricule_silae: champs.matricule_silae ?? null,
-  });
+  };
+  if (champs.taux_horaire !== undefined) {
+    const raw = champs.taux_horaire;
+    if (raw === "" || raw == null) {
+      rpcArgs.p_taux_horaire = null;
+    } else {
+      const th = Number(String(raw).replace(",", "."));   // accepte la virgule décimale française
+      if (!Number.isFinite(th)) return json({ ok: false, error: "taux_horaire invalide" }, 400);
+      rpcArgs.p_taux_horaire = th;
+    }
+  }
+  if (champs.date_fin !== undefined) {
+    rpcArgs.p_date_fin = champs.date_fin ? String(champs.date_fin).trim() : null;
+  }
+  const { error: rErr } = await supabase.rpc("creer_collaborateur_avec_contrat", rpcArgs);
   if (rErr) return json({ ok: false, error: rErr.message || "Échec de la création" }, 500);
 
   // 5. Téléphone (non géré par la RPC)
