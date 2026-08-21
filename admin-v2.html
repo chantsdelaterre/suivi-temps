@@ -175,10 +175,11 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
   </div>
   <div class="tabs">
     <div class="tab active" onclick="showTab('collabs', this)">👥 Collaborateurs</div>
+    <div class="tab" onclick="showTab('equipes', this)">🌿 Équipes</div>
+    <div class="tab" onclick="showTab('contrats', this)">📄 Contrats</div>
     <div class="tab" onclick="showTab('periodes', this)">📅 Périodes</div>
     <div class="tab" onclick="showTab('recap', this)">📊 Récap</div>
     <div class="tab" onclick="showTab('paie', this)">💶 Paie</div>
-    <div class="tab" onclick="showTab('equipes', this)">🌿 Équipes</div>
   </div>
   <div class="main">
     <div class="vue active" id="vue-collabs">
@@ -188,7 +189,8 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
           <button class="btn btn-primary btn-sm" onclick="ouvrirModalCollab()">+ Nouveau</button>
         </div>
         <div class="filter-bar">
-          <input type="search" class="filter-search" id="search-collab" aria-label="Rechercher un collaborateur" placeholder="🔍 Rechercher…" oninput="filtrerCollabs()">
+          <input type="search" class="filter-search" id="search-collab" list="collab-noms" aria-label="Rechercher un collaborateur" placeholder="🔍 Rechercher…" oninput="filtrerCollabs()">
+          <datalist id="collab-noms"></datalist>
           <div class="filter-group">
             <button class="filter-btn active" onclick="setFilter('statut','',this)">Tous</button>
             <button class="filter-btn" onclick="setFilter('statut','actif',this)">Actifs</button>
@@ -232,6 +234,94 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
         </div>
       </div>
     </div>
+    <div class="vue" id="vue-equipes">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Équipes</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Équipe</th>
+                <th>Responsable</th>
+                <th>Collabs</th>
+                <th>Lien responsable</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="equipes-tbody">
+              <tr><td colspan="5"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="equipe-detail" style="display:none;margin-top:20px">
+        <div class="card">
+          <div class="card-header">
+            <button class="btn btn-secondary btn-sm" onclick="fermerEquipeDetail()">← Retour</button>
+            <span class="card-title" id="equipe-detail-titre">Collaborateurs</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Nom</th><th>Contrat</th><th>H/sem</th><th>Statut</th></tr></thead>
+              <tbody id="equipe-collabs-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div><!-- /vue-equipes -->
+    <div class="vue" id="vue-contrats">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Contrats</span>
+        </div>
+        <div class="filter-bar">
+          <input type="search" class="filter-search" id="search-contrats" list="contrats-noms" aria-label="Rechercher un collaborateur" placeholder="🔍 Rechercher…" oninput="filtrerContrats()" style="width:220px">
+          <datalist id="contrats-noms"></datalist>
+          <div class="filter-group filter-quick">
+            <button class="filter-btn active" onclick="setFiltreContratsQuick('',this)">Tous</button>
+            <button class="filter-btn" onclick="setFiltreContratsQuick('anomalies',this)">Anomalies</button>
+            <button class="filter-btn" onclick="setFiltreContratsQuick('fin_proche',this)">Fin &lt; 30 j</button>
+            <button class="filter-btn" onclick="setFiltreContratsQuick('sans_fin',this)">Sans fin</button>
+            <button class="filter-btn" onclick="setFiltreContratsQuick('en_cours',this)">En cours</button>
+          </div>
+          <div class="filter-group">
+            <button class="filter-btn active" onclick="setFiltreContrats('structure','',this)">Toutes</button>
+            <button class="filter-btn" onclick="setFiltreContrats('structure','SCEA',this)">SCEA</button>
+            <button class="filter-btn" onclick="setFiltreContrats('structure','SAS',this)">SAS</button>
+            <button class="filter-btn" onclick="setFiltreContrats('structure','SARL',this)">SARL</button>
+          </div>
+          <div class="filter-group">
+            <button class="filter-btn" onclick="setFiltreContrats('type','',this)">Tous</button>
+            <button class="filter-btn" onclick="setFiltreContrats('type','CDI',this)">CDI</button>
+            <button class="filter-btn active" onclick="setFiltreContrats('type','TESA',this)">TESA</button>
+            <button class="filter-btn" onclick="setFiltreContrats('type','CDD',this)">CDD</button>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--texte2)"><input type="checkbox" id="contrats-historique" onchange="chargerContrats()"> Historique complet</label>
+          <span class="filter-count" id="contrats-filter-count"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nom</th>
+                <th style="text-align:center">Structure</th>
+                <th style="text-align:center">Type</th>
+                <th style="text-align:center">Début</th>
+                <th style="text-align:center">Fin</th>
+                <th style="text-align:center">H/sem</th>
+                <th style="text-align:center">Taux</th>
+                <th style="text-align:center">État</th>
+              </tr>
+            </thead>
+            <tbody id="contrats-tbody">
+              <tr><td colspan="8"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- /vue-contrats -->
     <div class="vue" id="vue-periodes">
       <div class="card">
         <div class="card-header">
@@ -449,43 +539,6 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
   </div>
 </div>
 
-    <div class="vue" id="vue-equipes">
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">Équipes</span>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Équipe</th>
-                <th>Responsable</th>
-                <th>Collabs</th>
-                <th>Lien responsable</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="equipes-tbody">
-              <tr><td colspan="5"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div id="equipe-detail" style="display:none;margin-top:20px">
-        <div class="card">
-          <div class="card-header">
-            <button class="btn btn-secondary btn-sm" onclick="fermerEquipeDetail()">← Retour</button>
-            <span class="card-title" id="equipe-detail-titre">Collaborateurs</span>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Nom</th><th>Contrat</th><th>H/sem</th><th>Statut</th></tr></thead>
-              <tbody id="equipe-collabs-tbody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div><!-- /vue-equipes -->
 
 <div class="copy-toast" id="toast">✓ Lien copié !</div>
 <script>
@@ -624,6 +677,7 @@ function showTab(nom, el) {
   if (nom === 'recap') chargerRecap();
   if (nom === 'paie') chargerPeriodes().then(() => setPaieSousOnglet(paieSousOnglet));
   if (nom === 'equipes') chargerVueEquipes();
+  if (nom === 'contrats') chargerContrats();
 }
 
 async function chargerEquipes() {
@@ -722,6 +776,16 @@ function filtrerCollabs() {
 
 function renderCollabs(collabs) {
   collabsData = collabs || [];
+  // Datalist : noms affichés (aide à la saisie ; le filtre lui-même reste une sous-chaîne sur le nom).
+  // Une ligne par personne (select collaborateurs) → PAS de déduplication, contrairement à Contrats.
+  const dl = document.getElementById('collab-noms');
+  if (dl) {
+    const noms = (collabsData || [])
+      .map(c => c.nomAffiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    dl.innerHTML = noms.map(n => '<option value="' + String(n).replace(/"/g, '&quot;') + '"></option>').join('');
+  }
   filtrerCollabs();
 }
 
@@ -2886,6 +2950,136 @@ function renderRecapFiltered(list) {
         <td><button class="btn btn-warning btn-sm" onclick="ouvrirSaisies('${c.collabId}', this)">📋 Voir</button></td>
       </tr>
     `).join('');
+}
+
+// ── Onglet "Contrats" (LECTURE SEULE) ────────────────────────────────────────
+// Lit l'Edge contrats-liste (auth admin, expose le taux horaire). Vue par défaut
+// (historique=false) = contrats courants + échus dont le collab est encore actif.
+let contratsData = [];
+let filtreContratsEtat = '';        // '' | anomalies | fin_proche | sans_fin | en_cours
+let filtreContratsStructure = '';   // '' | SCEA | SAS | SARL
+let filtreContratsType = 'TESA';    // défaut TESA (99 % des cas d'usage) — sinon '' | CDI | CDD
+
+async function chargerContrats() {
+  const tbody = document.getElementById('contrats-tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="8"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
+  const historique = document.getElementById('contrats-historique')?.checked === true;
+  try {
+    const { data, error } = await sb.functions.invoke('contrats-liste', {
+      body: { admin_token: ADMIN_TOKEN, historique }
+    });
+    if (error || !data || data.ok !== true || !Array.isArray(data.contrats)) {
+      contratsData = [];
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
+      return;
+    }
+    contratsData = data.contrats;
+  } catch (e) {
+    contratsData = [];
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
+    return;
+  }
+  // Datalist : noms DISTINCTS triés (aide à la saisie ; le filtre reste une sous-chaîne sur nom_complet).
+  const dl = document.getElementById('contrats-noms');
+  if (dl) {
+    const noms = [...new Set((contratsData || []).map(c => c.nom_complet).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    dl.innerHTML = noms.map(n => '<option value="' + String(n).replace(/"/g, '&quot;') + '"></option>').join('');
+  }
+  filtrerContrats();
+}
+
+// Anomalie = rupture / echu_actif, PLUS les sans_fin de type TESA ou CDD (jamais un CDI).
+function contratEstAnomalie(c) {
+  return c.etat === 'rupture' || c.etat === 'echu_actif'
+    || (c.etat === 'sans_fin' && (c.type_contrat === 'TESA' || c.type_contrat === 'CDD'));
+}
+
+// Badge d'état. Seul echu_actif est ROUGE (l'anomalie qui justifie l'écran) ; le rouge reste rare.
+function contratEtatBadge(c) {
+  switch (c.etat) {
+    case 'echu_actif': return '<span class="badge" style="background:var(--rouge);color:#fff">échu, encore actif</span>';
+    case 'rupture':    return '<span class="badge badge-inactif">rupture anticipée</span>';
+    case 'sans_fin':   return (c.type_contrat === 'TESA' || c.type_contrat === 'CDD')
+                              ? '<span class="badge badge-attente">sans date de fin</span>'
+                              : '<span class="badge badge-actif">en cours</span>';   // CDI sans fin = normal
+    case 'fin_proche': return '<span class="badge badge-attente">fin dans ' + (c.jours_avant_fin != null ? c.jours_avant_fin : '?') + ' j</span>';
+    case 'a_venir':    return '<span class="badge badge-gelee">à venir</span>';
+    case 'termine':    return '<span class="badge badge-inactif">terminé</span>';
+    case 'en_cours':   return '<span class="badge badge-actif">en cours</span>';
+    default:           return '<span class="badge badge-inactif">' + (c.etat || '—') + '</span>';
+  }
+}
+
+function setFiltreContratsQuick(val, btn) {
+  filtreContratsEtat = val;
+  document.querySelectorAll('#vue-contrats .filter-quick .filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  filtrerContrats();
+}
+
+// Groupes structure / type (patron Collaborateurs) : chaque groupe togglise SON propre bouton actif.
+function setFiltreContrats(type, val, btn) {
+  if (type === 'structure') filtreContratsStructure = val;
+  else                      filtreContratsType = val;
+  btn.closest('.filter-group').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  filtrerContrats();
+}
+
+// Filtrage EN MÉMOIRE (jamais de masquage CSS), puis re-render complet du tbody.
+function filtrerContrats() {
+  const recherche = (document.getElementById('search-contrats')?.value || '').toLowerCase();
+  const fStruct = filtreContratsStructure;
+  const fType = filtreContratsType;
+  const result = (contratsData || []).filter(c => {
+    if (recherche && !((c.nom_complet || '').toLowerCase().includes(recherche))) return false;
+    if (fStruct && c.structure !== fStruct) return false;
+    if (fType && c.type_contrat !== fType) return false;
+    if (filtreContratsEtat === 'anomalies' && !contratEstAnomalie(c)) return false;
+    if (filtreContratsEtat === 'fin_proche' && c.etat !== 'fin_proche') return false;
+    if (filtreContratsEtat === 'sans_fin' && c.date_fin != null) return false;
+    if (filtreContratsEtat === 'en_cours' && !(c.etat === 'en_cours' || c.etat === 'sans_fin')) return false;
+    return true;
+  });
+  // Tri d'affichage (vit dans le front — change plus souvent que le ORDER BY serveur) :
+  // 1) anomalies d'abord, 2) structure en ordre MÉTIER (SCEA, SAS, SARL), 3) nom.
+  const STRUCT_ORDRE = { SCEA: 0, SAS: 1, SARL: 2 };
+  result.sort((a, b) => {
+    const anoA = contratEstAnomalie(a), anoB = contratEstAnomalie(b);
+    if (anoA !== anoB) return anoA ? -1 : 1;
+    const sA = (STRUCT_ORDRE[a.structure] ?? 99), sB = (STRUCT_ORDRE[b.structure] ?? 99);
+    if (sA !== sB) return sA - sB;
+    return (a.nom_complet || '').localeCompare(b.nom_complet || '');
+  });
+  const count = document.getElementById('contrats-filter-count');
+  if (count) {
+    const m = (contratsData || []).length;
+    const s = result.length > 1 ? 's' : '';
+    count.textContent = result.length + ' contrat' + s + ' affiché' + s + (result.length < m ? ' sur ' + m : '');
+  }
+  renderContratsFiltered(result);
+}
+
+function renderContratsFiltered(list) {
+  const result = list || contratsData;
+  const tbody = document.getElementById('contrats-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = !result.length
+    ? '<tr><td colspan="8" style="text-align:center;color:var(--texte3);padding:32px">Aucun contrat</td></tr>'
+    : result.map(c => {
+      const taux = (c.taux_horaire != null && c.taux_horaire !== '') ? Number(c.taux_horaire).toFixed(2).replace('.', ',') + ' €' : '—';
+      return `
+      <tr>
+        <td><strong>${c.nom_complet || '—'}</strong></td>
+        <td style="text-align:center">${c.structure || '—'}</td>
+        <td style="text-align:center">${c.type_contrat || '—'}</td>
+        <td style="text-align:center;white-space:nowrap">${fmtDate(c.date_debut)}</td>
+        <td style="text-align:center;white-space:nowrap">${c.date_fin ? fmtDate(c.date_fin) : '—'}</td>
+        <td style="text-align:center">${c.heures_hebdo != null ? c.heures_hebdo + 'h' : '—'}</td>
+        <td style="text-align:center;white-space:nowrap">${taux}</td>
+        <td style="text-align:center">${contratEtatBadge(c)}</td>
+      </tr>`;
+    }).join('');
 }
 
 async function chargerRecap() {
