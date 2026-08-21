@@ -712,6 +712,7 @@
         </div>
         <div class="vue" id="vue-mesjours">
             <div style="margin-top:-8px;padding:2px 4px 8px"><button class="btn btn-secondary" onclick="genererPdfMesSaisies()" style="width:100%;padding:9px 12px;font-size:14px">📄 Mes saisies — dernière période complète</button></div>
+            <div id="mesjours-confirm" style="display:none;margin:0 4px 10px;padding:9px 12px;border-radius:10px;background:var(--vert-pale);color:var(--vert);font-size:14px;font-weight:600;text-align:center;transition:opacity .5s;opacity:1"></div>
             <div id="mesjours-content">
                 <div class="loader">
                     <div class="spinner"></div>
@@ -876,7 +877,14 @@
               const btnEquipe = document.getElementById('btn-mon-equipe');
               if (btnEquipe) { btnEquipe.style.display = 'flex'; btnEquipe.dataset.href = 'manager.html?token=' + COLLAB_EQUIPE_ID; }
             }
-            document.getElementById('hdr-periode').textContent = periode ? periode.nom_periode : 'Période en cours';
+            // Bandeau = dates de la période (même format que prefetchMesJours / renderMesJours),
+            // pour qu'il ne change plus en cours de session. date_debut/date_fin déjà en main (select('*')).
+            const fmtPer = iso => { if (!iso) return ''; const q = String(iso).slice(0,10).split('-'); return q.length===3 ? q[2]+'/'+q[1]+'/'+q[0] : ''; };
+            const perDeb = periode ? fmtPer(periode.date_debut) : '';
+            const perFin = periode ? fmtPer(periode.date_fin) : '';
+            document.getElementById('hdr-periode').textContent =
+                (perDeb && perFin) ? ('Du ' + perDeb + ' au ' + perFin)
+                : (periode && periode.nom_periode ? periode.nom_periode : 'Période en cours');
             renderJournee();
         } catch (e) {
             document.getElementById('journee-content').innerHTML = '<div class="error-box">Impossible de charger la journée.<br>' + e.message + '</div>';
@@ -1097,11 +1105,11 @@
                 c3Debut: isAbsence ? '' : (payload.c3Debut || ''),
                 c3Fin:   isAbsence ? '' : (payload.c3Fin   || ''),
             };
-            showVue('journee');
-            renderJournee();
-            showToast('✓ Enregistré');
+            renderJournee();                     // rafraîchit la carte "Ma journée" (cachée) pour le retour
             mesJoursCache = null;
-            prefetchMesJours();
+            await prefetchMesJours();            // LE fetch déjà prévu : remplit le cache + le bandeau (dates)
+            showVue('mesjours');                 // rend depuis le cache chaud → aucune requête supplémentaire
+            showConfirmSaisie(jourData.dateJour); // confirmation discrète, auto-effacée
         } catch (e) {
             clearTimeout(timeoutId);
             showToast('⚠️ Erreur réseau — réessayez', true);
@@ -1115,6 +1123,23 @@
         t.className = warn ? 'warn show' : 'show';
         if (_toastTimer) clearTimeout(_toastTimer);
         _toastTimer = setTimeout(() => { t.className = t.className.replace('show','').trim(); }, 3000);
+    }
+    let _confirmTimer = null;
+    // Confirmation discrète en haut de "Mes jours" après un enregistrement. S'efface seule (fondu).
+    function showConfirmSaisie(dateISO) {
+        const el = document.getElementById('mesjours-confirm');
+        if (!el || !dateISO) return;
+        const d = new Date(String(dateISO).slice(0, 10) + 'T00:00:00');
+        if (isNaN(d)) return;
+        const label = JOURS[d.getDay()] + ' ' + String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+        el.textContent = label + ' enregistré ✓';
+        el.style.display = 'block';
+        el.style.opacity = '1';
+        if (_confirmTimer) clearTimeout(_confirmTimer);
+        _confirmTimer = setTimeout(() => {
+            el.style.opacity = '0';
+            setTimeout(() => { el.style.display = 'none'; }, 500);
+        }, 4000);
     }
     async function prefetchMesJours() {
         try {
