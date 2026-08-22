@@ -3237,15 +3237,60 @@ function ouvrirModaleContrat(mode, id) {
       + '<input type="date" id="mca-date-fin" value="' + (c.date_fin ? String(c.date_fin).slice(0, 10) : '') + '"></div>';
     btn.style.display = ''; btn.disabled = false; btn.textContent = cfg.valider;
     btn.onclick = soumettreModaleContrat;
+  } else if (mode === 'rupture') {
+    // Un seul champ (nouvelle date de fin), VIDE : l'admin saisit consciemment la date raccourcie.
+    // Le rappel lecture seule ci-dessus montre déjà la date de fin ACTUELLE (ce qu'il raccourcit).
+    champs.innerHTML = '<div class="form-group"><label for="mca-date-fin">Nouvelle date de fin</label>'
+      + '<input type="date" id="mca-date-fin"></div>'
+      + '<div style="font-size:12px;color:var(--orange);margin-top:6px">⚠️ La date initialement prévue ne sera pas conservée.</div>';
+    btn.style.display = ''; btn.disabled = false; btn.textContent = cfg.valider;
+    btn.onclick = soumettreModaleContrat;   // même patron : renvoi à l'identique + rupture_anticipee (ajouté selon _mcaMode)
+  } else if (mode === 'modifier') {
+    // Correction d'une saisie : les 8 champs, tous pré-remplis depuis la ligne.
+    const now = new Date();
+    const todayISO = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    const commence = !!c.date_debut && String(c.date_debut).slice(0, 10) <= todayISO;
+    champs.innerHTML =
+      '<div class="form-grid" style="grid-template-columns:1fr 1fr">'
+      + '<div class="form-group"><label for="mca-date-debut">Date de début</label><input type="date" id="mca-date-debut"></div>'
+      + '<div class="form-group"><label for="mca-date-fin">Date de fin</label><input type="date" id="mca-date-fin"></div>'
+      + '<div class="form-group"><label for="mca-structure">Structure</label><select id="mca-structure"><option value="">— Choisir —</option><option>SARL</option><option>SAS</option><option>SCEA</option></select></div>'
+      + '<div class="form-group"><label for="mca-type-contrat">Type de contrat</label><select id="mca-type-contrat"><option value="">— Choisir —</option><option value="CDI">CDI</option><option value="TESA">TESA</option><option value="CDD">CDD</option><option value="APP">Apprentissage</option></select></div>'
+      + '<div class="form-group"><label for="mca-type-periode">Type de période</label><select id="mca-type-periode"><option value="">— Choisir —</option><option value="civil">Civile</option><option value="decalee">Décalée</option></select></div>'
+      + '<div class="form-group"><label for="mca-heures">Heures / semaine</label><input type="number" step="0.5" min="0" id="mca-heures"></div>'
+      + '<div class="form-group"><label for="mca-matricule">Matricule Silae</label><input type="text" id="mca-matricule"></div>'
+      + '<div class="form-group"><label for="mca-taux">Taux horaire</label><input type="text" id="mca-taux"></div>'
+      + '</div>'
+      + (commence ? '<div style="font-size:11px;color:var(--texte3);margin-top:8px">🔒 Structure et type de période non modifiables — contrat déjà commencé.</div>' : '');
+    // Pré-remplissage. La valeur d'un champ disabled reste lisible par id → renvoyée à l'identique au submit.
+    const setv = (id, val) => { const el = document.getElementById(id); if (el) el.value = (val == null ? '' : val); };
+    setv('mca-date-debut', c.date_debut ? String(c.date_debut).slice(0, 10) : '');
+    setv('mca-date-fin', c.date_fin ? String(c.date_fin).slice(0, 10) : '');
+    setv('mca-structure', c.structure);
+    setv('mca-type-contrat', c.type_contrat);
+    setv('mca-type-periode', c.type_periode);
+    setv('mca-heures', c.heures_hebdo);
+    setv('mca-matricule', c.matricule_silae);
+    setv('mca-taux', c.taux_horaire == null ? '' : String(c.taux_horaire));
+    // VERROU : structure + type_periode grisés si contrat commencé (garde is distinct from côté RPC).
+    if (commence) {
+      ['mca-structure', 'mca-type-periode'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.disabled = true; el.style.background = '#eef1f5'; el.style.color = 'var(--texte3)'; }
+      });
+    }
+    btn.style.display = ''; btn.disabled = false; btn.textContent = cfg.valider;
+    btn.onclick = soumettreModificationContrat;
   } else {
-    // Modes modifier / nouveau / rupture : lot suivant.
+    // Mode "nouveau" : lot suivant.
     champs.innerHTML = '<div style="font-size:13px;color:var(--texte3)">Ce mode sera disponible prochainement.</div>';
     btn.style.display = 'none'; btn.onclick = null;
   }
   document.getElementById('modal-contrat-action').classList.add('open');
 }
 
-// Mode "fin" : renvoie modifier-contrat avec TOUS les champs À L'IDENTIQUE (is distinct from → passe).
+// Modes "fin" ET "rupture" : renvoie modifier-contrat avec TOUS les champs À L'IDENTIQUE
+// (is distinct from → passe), seule la date de fin change. Rupture ajoute rupture_anticipee:true.
 async function soumettreModaleContrat() {
   const c = _mcaContrat; if (!c) return;
   const msg = document.getElementById('mca-msg');
@@ -3256,9 +3301,9 @@ async function soumettreModaleContrat() {
   // Garde anti-effacement : la ligne DOIT porter toutes les clés (matricule/taux réécrits par l'Edge).
   const clefs = ['id','date_debut','structure','type_contrat','type_periode','heures_hebdo','matricule_silae','taux_horaire'];
   if (!clefs.every(k => k in c)) { showMsg('Échec : la ligne ne contient pas tous les champs du contrat (RPC contrats_liste à compléter).', false); return; }
-  if (!c.date_debut || !c.structure || !c.type_contrat || !c.type_periode || c.heures_hebdo == null) {
-    showMsg('Échec : champs contractuels incomplets sur la ligne.', false); return;
-  }
+  // structure / type_contrat / type_periode / heures_hebdo PEUVENT être null (contrats sans heures, etc.)
+  // → renvoyés tels quels. On n'exige QUE date_debut, dont la RPC a besoin.
+  if (!c.date_debut) { showMsg('Échec : date de début absente sur la ligne.', false); return; }
   btn.disabled = true;
   const body = {
     admin_token: ADMIN_TOKEN, id: c.id,
@@ -3266,6 +3311,7 @@ async function soumettreModaleContrat() {
     structure: c.structure, type_contrat: c.type_contrat, type_periode: c.type_periode,
     heures_hebdo: c.heures_hebdo, matricule_silae: c.matricule_silae, taux_horaire: c.taux_horaire,
   };
+  if (_mcaMode === 'rupture') body.rupture_anticipee = true;   // raccourcit date_fin + pose le drapeau (jours au-delà NON purgés)
   const { data, error } = await sb.functions.invoke('modifier-contrat', { body });
   btn.disabled = false;
   if (error) {
@@ -3274,6 +3320,43 @@ async function soumettreModaleContrat() {
   }
   if (!data || data.ok !== true) { showMsg(messageErreurContrat((data && data.error) || ''), false); return; }
   // Succès : on ferme et on recharge — la ligne mise à jour EST la confirmation (pas de message éphémère).
+  fermerModal('modal-contrat-action');
+  chargerContrats();
+}
+
+// Mode "modifier" : CORRECTION de saisie. Renvoie les 8 champs (dont les grisés, lus par id même disabled).
+async function soumettreModificationContrat() {
+  const c = _mcaContrat; if (!c) return;
+  const msg = document.getElementById('mca-msg');
+  const showMsg = (t, ok) => { msg.textContent = t; msg.style.color = ok ? 'var(--vert)' : 'var(--rouge)'; msg.style.display = 'block'; };
+  const btn = document.getElementById('mca-valider');
+  if (!('id' in c) || c.id == null) { showMsg('Échec : identifiant de contrat manquant sur la ligne.', false); return; }
+  const v = id => ((document.getElementById(id) || {}).value || '').trim();
+  const date_debut = v('mca-date-debut');
+  const date_fin = v('mca-date-fin') || null;
+  const structure = v('mca-structure');           // lu même si disabled
+  const type_contrat = v('mca-type-contrat');
+  const type_periode = v('mca-type-periode');      // lu même si disabled
+  const heuresRaw = v('mca-heures');
+  const matricule_silae = v('mca-matricule') || null;
+  const tauxRaw = v('mca-taux');
+  if (!date_debut || !structure || !type_contrat || !type_periode || !heuresRaw) {
+    showMsg('Date de début, structure, type de contrat, type de période et heures sont obligatoires.', false); return;
+  }
+  const heures_hebdo = Number(heuresRaw.replace(',', '.'));
+  if (Number.isNaN(heures_hebdo)) { showMsg('Heures / semaine : valeur numérique attendue.', false); return; }
+  // Taux : virgule décimale acceptée, convertie par l'Edge. Aucune validation qui la refuserait.
+  const taux_horaire = tauxRaw === '' ? null : tauxRaw;
+  btn.disabled = true;
+  const body = { admin_token: ADMIN_TOKEN, id: c.id, date_debut, date_fin, structure, type_contrat, type_periode, heures_hebdo, matricule_silae, taux_horaire };
+  const { data, error } = await sb.functions.invoke('modifier-contrat', { body });
+  btn.disabled = false;
+  if (error) {
+    let raw = ''; try { const b = await error.context.json(); raw = b?.error || ''; } catch (_) {}
+    showMsg(messageErreurContrat(raw), false); return;
+  }
+  if (!data || data.ok !== true) { showMsg(messageErreurContrat((data && data.error) || ''), false); return; }
+  // Succès : fermeture + rechargement (la ligne corrigée est la confirmation).
   fermerModal('modal-contrat-action');
   chargerContrats();
 }
