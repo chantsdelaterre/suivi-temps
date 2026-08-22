@@ -318,10 +318,11 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
                 <th style="text-align:center">H/sem</th>
                 <th style="text-align:center">Taux</th>
                 <th style="text-align:center">État</th>
+                <th style="text-align:center">Actions</th>
               </tr>
             </thead>
             <tbody id="contrats-tbody">
-              <tr><td colspan="8"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>
+              <tr><td colspan="9"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -544,6 +545,25 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
   </div>
 </div>
 
+
+<!-- MODALE ACTIONS CONTRAT (4 modes ; lot 1 = "Poser une date de fin") -->
+<div class="modal-overlay" id="modal-contrat-action">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="mca-titre">Action sur le contrat</span>
+      <button class="modal-close" onclick="fermerModal('modal-contrat-action')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="mca-rappel" style="font-size:13px;color:var(--texte2);background:#f7fafd;border:1px solid #e8f0f8;border-radius:10px;padding:10px 12px;margin-bottom:14px"></div>
+      <div id="mca-champs"></div>
+      <div id="mca-msg" style="display:none;font-size:13px;margin-top:10px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fermerModal('modal-contrat-action')">Annuler</button>
+      <button class="btn btn-primary" id="mca-valider">Valider</button>
+    </div>
+  </div>
+</div>
 
 <div class="copy-toast" id="toast">✓ Lien copié !</div>
 <script>
@@ -3107,9 +3127,19 @@ function renderContratsFiltered(list) {
   const tbody = document.getElementById('contrats-tbody');
   if (!tbody) return;
   tbody.innerHTML = !result.length
-    ? '<tr><td colspan="8" style="text-align:center;color:var(--texte3);padding:32px">Aucun contrat</td></tr>'
+    ? '<tr><td colspan="9" style="text-align:center;color:var(--texte3);padding:32px">Aucun contrat</td></tr>'
     : result.map(c => {
       const taux = (c.taux_horaire != null && c.taux_horaire !== '') ? Number(c.taux_horaire).toFixed(2).replace('.', ',') + ' €' : '—';
+      // Actionnable si date_fin nulle, future, ou passée de MOINS de 40 j. Au-delà = reprise → fiche.
+      let actionnable = true;
+      if (c.date_fin) {
+        const fin = new Date(String(c.date_fin).slice(0, 10) + 'T00:00:00');
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        actionnable = Math.floor((today - fin) / 86400000) < 40;   // futur (négatif) ou passé < 40 j
+      }
+      const cellActions = actionnable
+        ? '<button type="button" class="btn btn-secondary btn-sm" onclick="ouvrirMenuActionsContrat(event, ' + c.id + ')">Agir ▾</button>'
+        : '<button type="button" class="btn btn-secondary btn-sm" style="background:none;border:none;color:var(--bleu);text-decoration:underline;padding:4px" onclick="ouvrirFicheDepuisContrat(\'' + (c.collab_id || '') + '\')">Voir la fiche</button>';
       return `
       <tr>
         <td><strong>${c.nom_complet || '—'}</strong></td>
@@ -3120,8 +3150,132 @@ function renderContratsFiltered(list) {
         <td style="text-align:center">${c.heures_hebdo != null ? c.heures_hebdo + 'h' : '—'}</td>
         <td style="text-align:center;white-space:nowrap">${taux}</td>
         <td style="text-align:center">${contratEtatBadge(c)}</td>
+        <td style="text-align:center">${cellActions}</td>
       </tr>`;
     }).join('');
+}
+
+// ─── Onglet Contrats : menu d'actions + modale d'écriture DÉDIÉE (aucun lien avec la fiche) ───
+const CONTRAT_MODES = {
+  fin:      { titre: 'Poser une date de fin', valider: 'Poser la date de fin' },
+  modifier: { titre: 'Modifier le contrat',   valider: 'Enregistrer' },
+  nouveau:  { titre: 'Nouveau contrat',        valider: 'Créer le contrat' },
+  rupture:  { titre: 'Rupture anticipée',      valider: 'Enregistrer la rupture' },
+};
+let _mcaContrat = null;   // ligne de contratsData en cours d'action
+let _mcaMode = null;
+
+// Menu déroulant "Agir" : le handler document IGNORE les clics DANS le menu (contains) → l'onclick
+// de l'item s'exécute toujours ; seul un clic dehors ferme. + Échap. setTimeout(0) : le clic d'ouverture
+// ne referme pas aussitôt.
+function _fermeMenuActionsSurClic(e) {
+  const m = document.getElementById('menu-actions-contrat');
+  if (m && m.contains(e.target)) return;   // clic DANS le menu : laisser l'item agir
+  fermerMenuActionsContrat();
+}
+function _fermeMenuActionsSurEchap(e) { if (e.key === 'Escape') fermerMenuActionsContrat(); }
+function fermerMenuActionsContrat() {
+  const m = document.getElementById('menu-actions-contrat');
+  if (m) m.remove();
+  document.removeEventListener('keydown', _fermeMenuActionsSurEchap);
+  document.removeEventListener('click', _fermeMenuActionsSurClic);
+}
+function ouvrirMenuActionsContrat(ev, id) {
+  ev.stopPropagation();
+  fermerMenuActionsContrat();
+  const items = [['Modifier','modifier'],['Poser une date de fin','fin'],['Nouveau contrat','nouveau'],['Rupture anticipée','rupture']];
+  const menu = document.createElement('div');
+  menu.id = 'menu-actions-contrat';
+  menu.style.cssText = 'position:absolute;z-index:600;background:#fff;border:1px solid #e8f0f8;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.12);padding:6px;min-width:190px';
+  menu.innerHTML = items.map(([label, mode]) =>
+    '<button type="button" style="display:block;width:100%;text-align:left;border:none;background:none;padding:8px 10px;font:inherit;font-size:13px;color:var(--texte);cursor:pointer;border-radius:6px" '
+    + 'onmouseover="this.style.background=\'#f2f6fb\'" onmouseout="this.style.background=\'none\'" '
+    + 'onclick="ouvrirModaleContrat(\'' + mode + '\',\'' + id + '\')">' + label + '</button>'
+  ).join('');
+  document.body.appendChild(menu);
+  const r = ev.currentTarget.getBoundingClientRect();
+  menu.style.top = (window.scrollY + r.bottom + 4) + 'px';
+  menu.style.left = (window.scrollX + r.left) + 'px';
+  setTimeout(() => {
+    document.addEventListener('click', _fermeMenuActionsSurClic);
+    document.addEventListener('keydown', _fermeMenuActionsSurEchap);
+  }, 0);
+}
+
+// "Voir la fiche" : réutilise l'ouverture existante (ouvrirModalCollabData attend un collab de collabsData).
+function ouvrirFicheDepuisContrat(collabId) {
+  const c = (collabsData || []).find(x => x.collabId === collabId);
+  if (!c) { alert('Fiche indisponible — ouvre d\'abord l\'onglet Collaborateurs.'); return; }
+  ouvrirModalCollabData(encodeURIComponent(JSON.stringify(c)));
+}
+
+// Reformulation FR des exceptions PostgreSQL — LOCAL à cette modale (ne touche pas la gestion d'erreur de la fiche).
+function messageErreurContrat(raw) {
+  const s = String(raw || '').toLowerCase();
+  if (s.includes('chevauche')) return 'Ces dates se chevauchent avec un autre contrat de ce collaborateur.';
+  if (s.includes('contrat ouvert')) return 'Ce collaborateur a déjà un contrat en cours. Posez d\'abord sa date de fin.';
+  if (s.includes('anterieure au debut') || s.includes('antérieure au début')) return 'La date de fin ne peut pas précéder la date de début.';
+  return 'Échec : ' + (raw || 'erreur inconnue');
+}
+
+function ouvrirModaleContrat(mode, id) {
+  fermerMenuActionsContrat();
+  const c = (contratsData || []).find(x => String(x.id) === String(id));
+  if (!c) return;
+  _mcaContrat = c; _mcaMode = mode;
+  const cfg = CONTRAT_MODES[mode] || { titre: 'Action', valider: 'Valider' };
+  document.getElementById('mca-titre').textContent = cfg.titre;
+  document.getElementById('mca-rappel').innerHTML =
+    '<strong>' + (c.nom_complet || '—') + '</strong><br>'
+    + (c.structure || '—') + ' · ' + (c.type_contrat || '—')
+    + ' · du ' + fmtDate(c.date_debut) + ' au ' + (c.date_fin ? fmtDate(c.date_fin) : '—');
+  const champs = document.getElementById('mca-champs');
+  const msg = document.getElementById('mca-msg'); msg.style.display = 'none'; msg.textContent = '';
+  const btn = document.getElementById('mca-valider');
+  if (mode === 'fin') {
+    champs.innerHTML = '<div class="form-group"><label for="mca-date-fin">Date de fin</label>'
+      + '<input type="date" id="mca-date-fin" value="' + (c.date_fin ? String(c.date_fin).slice(0, 10) : '') + '"></div>';
+    btn.style.display = ''; btn.disabled = false; btn.textContent = cfg.valider;
+    btn.onclick = soumettreModaleContrat;
+  } else {
+    // Modes modifier / nouveau / rupture : lot suivant.
+    champs.innerHTML = '<div style="font-size:13px;color:var(--texte3)">Ce mode sera disponible prochainement.</div>';
+    btn.style.display = 'none'; btn.onclick = null;
+  }
+  document.getElementById('modal-contrat-action').classList.add('open');
+}
+
+// Mode "fin" : renvoie modifier-contrat avec TOUS les champs À L'IDENTIQUE (is distinct from → passe).
+async function soumettreModaleContrat() {
+  const c = _mcaContrat; if (!c) return;
+  const msg = document.getElementById('mca-msg');
+  const showMsg = (t, ok) => { msg.textContent = t; msg.style.color = ok ? 'var(--vert)' : 'var(--rouge)'; msg.style.display = 'block'; };
+  const btn = document.getElementById('mca-valider');
+  const dateFin = (document.getElementById('mca-date-fin') || {}).value || '';
+  if (!dateFin) { showMsg('Date de fin requise.', false); return; }
+  // Garde anti-effacement : la ligne DOIT porter toutes les clés (matricule/taux réécrits par l'Edge).
+  const clefs = ['id','date_debut','structure','type_contrat','type_periode','heures_hebdo','matricule_silae','taux_horaire'];
+  if (!clefs.every(k => k in c)) { showMsg('Échec : la ligne ne contient pas tous les champs du contrat (RPC contrats_liste à compléter).', false); return; }
+  if (!c.date_debut || !c.structure || !c.type_contrat || !c.type_periode || c.heures_hebdo == null) {
+    showMsg('Échec : champs contractuels incomplets sur la ligne.', false); return;
+  }
+  btn.disabled = true;
+  const body = {
+    admin_token: ADMIN_TOKEN, id: c.id,
+    date_debut: c.date_debut, date_fin: dateFin,
+    structure: c.structure, type_contrat: c.type_contrat, type_periode: c.type_periode,
+    heures_hebdo: c.heures_hebdo, matricule_silae: c.matricule_silae, taux_horaire: c.taux_horaire,
+  };
+  const { data, error } = await sb.functions.invoke('modifier-contrat', { body });
+  btn.disabled = false;
+  if (error) {
+    let raw = ''; try { const b = await error.context.json(); raw = b?.error || ''; } catch (_) {}
+    showMsg(messageErreurContrat(raw), false); return;
+  }
+  if (!data || data.ok !== true) { showMsg(messageErreurContrat((data && data.error) || ''), false); return; }
+  // Succès : on ferme et on recharge — la ligne mise à jour EST la confirmation (pas de message éphémère).
+  fermerModal('modal-contrat-action');
+  chargerContrats();
 }
 
 async function chargerRecap() {
