@@ -277,33 +277,28 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
           <span class="card-title">Contrats</span>
         </div>
         <div class="filter-bar">
-          <input type="search" class="filter-search" id="search-contrats" list="contrats-noms" aria-label="Rechercher un collaborateur" placeholder="🔍 Rechercher…" oninput="filtrerContrats()" style="width:220px">
+          <input type="search" class="filter-search" id="search-contrats" list="contrats-noms" aria-label="Rechercher un collaborateur" placeholder="🔍 Rechercher…" oninput="rechercheContrats()" style="width:220px">
           <datalist id="contrats-noms"></datalist>
-          <div class="filter-group filter-quick">
-            <button class="filter-btn active" onclick="setFiltreContratsQuick('',this)">Tous</button>
-            <button class="filter-btn" onclick="setFiltreContratsQuick('anomalies',this)">Anomalies</button>
-            <button class="filter-btn" onclick="setFiltreContratsQuick('fin_proche',this)">Fin &lt; 30 j</button>
-            <button class="filter-btn" onclick="setFiltreContratsQuick('sans_fin',this)">Sans fin</button>
-            <button class="filter-btn" onclick="setFiltreContratsQuick('en_cours',this)">En cours</button>
-          </div>
           <div class="filter-group">
-            <button class="filter-btn active" onclick="setFiltreContrats('structure','',this)">Toutes</button>
-            <button class="filter-btn" onclick="setFiltreContrats('structure','SCEA',this)">SCEA</button>
-            <button class="filter-btn" onclick="setFiltreContrats('structure','SAS',this)">SAS</button>
-            <button class="filter-btn" onclick="setFiltreContrats('structure','SARL',this)">SARL</button>
+            <button class="filter-btn" id="btn-fin-proche" onclick="toggleFinProche(this)">Fin &lt; 30 j</button>
           </div>
-          <div class="filter-group">
-            <button class="filter-btn" onclick="setFiltreContrats('type','',this)">Tous</button>
-            <button class="filter-btn" onclick="setFiltreContrats('type','CDI',this)">CDI</button>
-            <button class="filter-btn active" onclick="setFiltreContrats('type','TESA',this)">TESA</button>
-            <button class="filter-btn" onclick="setFiltreContrats('type','CDD',this)">CDD</button>
+          <div class="filter-group" data-grp="structure">
+            <button class="filter-btn active" data-val="" onclick="setFiltreContrats('structure','',this)">Toutes</button>
+            <button class="filter-btn" data-val="SCEA" onclick="setFiltreContrats('structure','SCEA',this)">SCEA</button>
+            <button class="filter-btn" data-val="SAS" onclick="setFiltreContrats('structure','SAS',this)">SAS</button>
+            <button class="filter-btn" data-val="SARL" onclick="setFiltreContrats('structure','SARL',this)">SARL</button>
           </div>
-          <div class="filter-group">
-            <button class="filter-btn active" onclick="setFiltreContrats('statut','actifs',this)">Actifs</button>
-            <button class="filter-btn" onclick="setFiltreContrats('statut','inactifs',this)">Inactifs</button>
-            <button class="filter-btn" onclick="setFiltreContrats('statut','',this)">Tous</button>
+          <div class="filter-group" data-grp="type">
+            <button class="filter-btn" data-val="" onclick="setFiltreContrats('type','',this)">Tous</button>
+            <button class="filter-btn" data-val="CDI" onclick="setFiltreContrats('type','CDI',this)">CDI</button>
+            <button class="filter-btn active" data-val="TESA" onclick="setFiltreContrats('type','TESA',this)">TESA</button>
+            <button class="filter-btn" data-val="CDD" onclick="setFiltreContrats('type','CDD',this)">CDD</button>
           </div>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--texte2)"><input type="checkbox" id="contrats-historique" onchange="chargerContrats()"> Historique complet</label>
+          <div class="filter-group" data-grp="historique">
+            <button class="filter-btn active" data-val="false" onclick="setFiltreContratsHistorique(false,this)">En cours</button>
+            <button class="filter-btn" data-val="true" onclick="setFiltreContratsHistorique(true,this)">Historique complet</button>
+          </div>
+          <span id="contrats-incoherences" style="display:none;align-items:center;gap:6px;font-size:13px;color:var(--rouge);font-weight:600"></span>
           <span class="filter-count" id="contrats-filter-count"></span>
         </div>
         <div class="table-wrap">
@@ -3010,28 +3005,31 @@ function renderRecapFiltered(list) {
 // Lit l'Edge contrats-liste (auth admin, expose le taux horaire). Vue par défaut
 // (historique=false) = contrats courants + échus dont le collab est encore actif.
 let contratsData = [];
-let filtreContratsEtat = '';        // '' | anomalies | fin_proche | sans_fin | en_cours
+let filtreContratsFinProche = false;    // bouton bascule : true = n'afficher que les etat 'fin_proche'
+let filtreContratsIncoherences = false; // drapeau DÉDIÉ à « Voir » (echu_actif) ; remis à zéro dès qu'un autre filtre bouge
 let filtreContratsStructure = '';   // '' | SCEA | SAS | SARL
 let filtreContratsType = 'TESA';    // défaut TESA (99 % des cas d'usage) — sinon '' | CDI | CDD
-let filtreContratsStatut = 'actifs'; // STATUT DU COLLAB (pas du contrat). 'actifs' (défaut) | 'inactifs' | '' (tous)
+let filtreContratsHistorique = false; // false = En cours (défaut) ; true = Historique complet (relance l'Edge)
+let contratsIncoherences = null;    // compteur GLOBAL renvoyé par l'Edge (échus dont le collab est actif) ; null = inconnu
 
 async function chargerContrats() {
   const tbody = document.getElementById('contrats-tbody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="8"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
-  const historique = document.getElementById('contrats-historique')?.checked === true;
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
+  const historique = filtreContratsHistorique;
   try {
     const { data, error } = await sb.functions.invoke('contrats-liste', {
       body: { admin_token: ADMIN_TOKEN, historique }
     });
     if (error || !data || data.ok !== true || !Array.isArray(data.contrats)) {
       contratsData = [];
-      if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
       return;
     }
     contratsData = data.contrats;
+    contratsIncoherences = (typeof data.incoherences === 'number') ? data.incoherences : null;   // état global, indépendant du filtre
   } catch (e) {
     contratsData = [];
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
     return;
   }
   // Datalist : noms DISTINCTS triés (aide à la saisie ; le filtre reste une sous-chaîne sur nom_complet).
@@ -3065,21 +3063,75 @@ function contratEtatBadge(c) {
   }
 }
 
-function setFiltreContratsQuick(val, btn) {
-  filtreContratsEtat = val;
-  document.querySelectorAll('#vue-contrats .filter-quick .filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+// Bouton bascule « Fin < 30 j » (prend/perd .active). Toucher un filtre sort de la vue « Voir ».
+function toggleFinProche(btn) {
+  filtreContratsFinProche = !filtreContratsFinProche;
+  filtreContratsIncoherences = false;
+  btn.classList.toggle('active', filtreContratsFinProche);
+  filtrerContrats();
+}
+
+// Recherche : sort aussi de la vue « Voir » (drapeau à zéro).
+function rechercheContrats() {
+  filtreContratsIncoherences = false;
   filtrerContrats();
 }
 
 // Groupes structure / type (patron Collaborateurs) : chaque groupe togglise SON propre bouton actif.
 function setFiltreContrats(type, val, btn) {
-  if (type === 'structure')   filtreContratsStructure = val;
-  else if (type === 'statut') filtreContratsStatut = val;
-  else                        filtreContratsType = val;
+  if (type === 'structure') filtreContratsStructure = val;
+  else                      filtreContratsType = val;
+  filtreContratsIncoherences = false;
   btn.closest('.filter-group').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   filtrerContrats();
+}
+
+// En cours / Historique complet : RELANCE l'Edge (comme la case le faisait).
+function setFiltreContratsHistorique(val, btn) {
+  filtreContratsHistorique = val;
+  filtreContratsIncoherences = false;
+  btn.closest('.filter-group').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  chargerContrats();
+}
+
+// Compteur d'incohérences dans la filter-bar. > 0 → « ⚠️ N incohérence(s) » + « Voir » (rouge). 0/null → RIEN.
+function majIncoherences() {
+  const el = document.getElementById('contrats-incoherences');
+  if (!el) return;
+  const n = contratsIncoherences;
+  if (!n || n <= 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const s = n > 1 ? 's' : '';
+  el.innerHTML = '⚠️ ' + n + ' incohérence' + s
+    + ' <button type="button" onclick="voirIncoherences()" style="background:none;border:none;color:var(--rouge);text-decoration:underline;cursor:pointer;font:inherit;font-weight:600;padding:0">Voir</button>';
+  el.style.display = 'inline-flex';
+}
+
+// Reflète l'état des variables de filtre sur les boutons (.active), par data-grp / data-val.
+function _syncGroupeContrats(grp, val) {
+  document.querySelectorAll('#vue-contrats .filter-group[data-grp="' + grp + '"] .filter-btn').forEach(b => {
+    b.classList.toggle('active', (b.dataset.val || '') === val);
+  });
+}
+function majBoutonsFiltresContrats() {
+  const bfp = document.getElementById('btn-fin-proche');
+  if (bfp) bfp.classList.toggle('active', filtreContratsFinProche);
+  _syncGroupeContrats('structure', filtreContratsStructure);
+  _syncGroupeContrats('type', filtreContratsType);
+  _syncGroupeContrats('historique', filtreContratsHistorique ? 'true' : 'false');
+}
+
+// « Voir » : bascule en Historique complet + RAZ des autres filtres + n'affiche que les echu_actif.
+async function voirIncoherences() {
+  filtreContratsStructure = '';
+  filtreContratsType = '';
+  filtreContratsFinProche = false;
+  const search = document.getElementById('search-contrats'); if (search) search.value = '';
+  filtreContratsIncoherences = true;   // drapeau dédié (pas via un handler → ne se remet pas à zéro tout seul)
+  filtreContratsHistorique = true;
+  majBoutonsFiltresContrats();
+  await chargerContrats();   // recharge en historique ; filtrerContrats (echu_actif) s'applique ensuite
 }
 
 // Filtrage EN MÉMOIRE (jamais de masquage CSS), puis re-render complet du tbody.
@@ -3091,16 +3143,8 @@ function filtrerContrats() {
     if (recherche && !((c.nom_complet || '').toLowerCase().includes(recherche))) return false;
     if (fStruct && c.structure !== fStruct) return false;
     if (fType && c.type_contrat !== fType) return false;
-    if (filtreContratsEtat === 'anomalies' && !contratEstAnomalie(c)) return false;
-    if (filtreContratsEtat === 'fin_proche' && c.etat !== 'fin_proche') return false;
-    if (filtreContratsEtat === 'sans_fin' && c.date_fin != null) return false;
-    if (filtreContratsEtat === 'en_cours' && !(c.etat === 'en_cours' || c.etat === 'sans_fin')) return false;
-    // Statut du COLLABORATEUR (pas du contrat). EXCEPTION : sous « anomalies », on ne filtre PAS —
-    // une anomalie doit rester visible même sur un collab inactif (rôle du bouton : tout montrer).
-    if (filtreContratsEtat !== 'anomalies') {
-      if (filtreContratsStatut === 'actifs' && !c.collab_actif) return false;
-      if (filtreContratsStatut === 'inactifs' && c.collab_actif) return false;
-    }
+    if (filtreContratsIncoherences && c.etat !== 'echu_actif') return false;   // vue « Voir » (drapeau dédié)
+    if (filtreContratsFinProche && c.etat !== 'fin_proche') return false;      // bouton bascule Fin < 30 j
     return true;
   });
   // Tri d'affichage (vit dans le front — change plus souvent que le ORDER BY serveur) :
@@ -3119,6 +3163,7 @@ function filtrerContrats() {
     const s = result.length > 1 ? 's' : '';
     count.textContent = result.length + ' contrat' + s + ' affiché' + s + (result.length < m ? ' sur ' + m : '');
   }
+  majIncoherences();
   renderContratsFiltered(result);
 }
 
@@ -3159,7 +3204,6 @@ function renderContratsFiltered(list) {
 const CONTRAT_MODES = {
   fin:      { titre: 'Poser une date de fin', valider: 'Poser la date de fin' },
   modifier: { titre: 'Modifier le contrat',   valider: 'Enregistrer' },
-  nouveau:  { titre: 'Nouveau contrat',        valider: 'Créer le contrat' },
   rupture:  { titre: 'Rupture anticipée',      valider: 'Enregistrer la rupture' },
 };
 let _mcaContrat = null;   // ligne de contratsData en cours d'action
@@ -3183,7 +3227,7 @@ function fermerMenuActionsContrat() {
 function ouvrirMenuActionsContrat(ev, id) {
   ev.stopPropagation();
   fermerMenuActionsContrat();
-  const items = [['Modifier','modifier'],['Poser une date de fin','fin'],['Nouveau contrat','nouveau'],['Rupture anticipée','rupture']];
+  const items = [['Modifier','modifier'],['Poser une date de fin','fin'],['Rupture anticipée','rupture']];
   const menu = document.createElement('div');
   menu.id = 'menu-actions-contrat';
   menu.style.cssText = 'position:absolute;z-index:600;background:#fff;border:1px solid #e8f0f8;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.12);padding:6px;min-width:190px';
@@ -3282,8 +3326,8 @@ function ouvrirModaleContrat(mode, id) {
     btn.style.display = ''; btn.disabled = false; btn.textContent = cfg.valider;
     btn.onclick = soumettreModificationContrat;
   } else {
-    // Mode "nouveau" : lot suivant.
-    champs.innerHTML = '<div style="font-size:13px;color:var(--texte3)">Ce mode sera disponible prochainement.</div>';
+    // Mode inconnu : bouton masqué (filet).
+    champs.innerHTML = '';
     btn.style.display = 'none'; btn.onclick = null;
   }
   document.getElementById('modal-contrat-action').classList.add('open');

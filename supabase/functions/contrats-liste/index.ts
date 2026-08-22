@@ -37,5 +37,11 @@ Deno.serve(async (req) => {
   const { data: rData, error: rErr } = await supabase.rpc("contrats_liste", { p_historique });
   if (rErr) return json({ ok: false, error: rErr.message || "Echec de la lecture des contrats" }, 500);
 
-  return json({ ok: true, admin: adminNom, contrats: rData ?? [] });
+  // 3. Compteur GLOBAL d'incohérences (échus dont le collab est actif, hors ruptures). Indépendant du filtre.
+  //    NON bloquant : si la RPC échoue, on renvoie la liste avec incoherences=null (la liste est l'essentiel).
+  let incoherences: number | null = null;
+  const { data: incData, error: incErr } = await supabase.rpc("contrats_incoherences");
+  if (!incErr && incData != null) incoherences = Number(incData);
+
+  return json({ ok: true, admin: adminNom, contrats: rData ?? [], incoherences });
 });
