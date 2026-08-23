@@ -175,6 +175,8 @@ let MANAGER_TOKEN = new URLSearchParams(location.search).get('token') || '';
 let recapData = [];
 let equipeCollabs = [];
 let managerEquipe = null;
+let _managerMembres = [];   // membres + jours reçus par login() (Edge manager-equipe) — pas de nouvelle lecture
+let _managerJours = [];
 
 function fmtHeure(v) {
   if (!v) return '';
@@ -197,14 +199,23 @@ async function login() {
   const token = document.getElementById('login-token').value.trim();
   if (!token) return;
   MANAGER_TOKEN = token;
-  const { data: equipe, error } = await sb
-    .from('equipes').select('*').eq('manager_token', token).maybeSingle();
-  if (error || !equipe) {
-    document.getElementById('login-error').textContent = error ? 'Erreur de connexion.' : 'Accès refusé.';
+  const { data: resp, error } = await sb.functions.invoke('manager-equipe', { body: { manager_token: token } });
+  if (error) {
+    // 401 = token refusé → « Accès refusé. » ; tout le reste (réseau, 500) → « Erreur de connexion. ».
+    let refus = false;
+    try { refus = error.context && error.context.status === 401; } catch (_) {}
+    document.getElementById('login-error').textContent = refus ? 'Accès refusé.' : 'Erreur de connexion.';
     document.getElementById('login-error').style.display = 'block';
     return;
   }
-  managerEquipe = equipe;
+  if (!resp || resp.ok !== true) {
+    document.getElementById('login-error').textContent = 'Accès refusé.';
+    document.getElementById('login-error').style.display = 'block';
+    return;
+  }
+  managerEquipe = resp.equipe;
+  _managerMembres = Array.isArray(resp.membres) ? resp.membres : [];   // mémorisé : membres et jours arrivent ensemble
+  _managerJours = Array.isArray(resp.jours) ? resp.jours : [];
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   charger30j();
@@ -218,22 +229,11 @@ async function charger30j() {
   if (!eq) return;
   document.getElementById('header-equipe').textContent = eq.nom_equipe || 'Mon équipe';
 
-  // Collabs actifs de l'équipe
-  const { data: collabs, error: ec } = await sb
-    .from('collaborateurs').select('*').eq('equipe_id', eq.equipe_id);
-  if (ec) { document.getElementById('recap-tbody').innerHTML = '<tr><td colspan="5" style="color:var(--rouge);padding:24px">Erreur de chargement.</td></tr>'; return; }
+  // Données déjà reçues par login() (un seul appel Edge manager-equipe) — aucune nouvelle lecture.
+  const collabs = _managerMembres || [];
+  // Filtre actifs conservé côté front (la RPC filtre déjà actif=true ; garde-fou anti-divergence, sans coût).
   const actifs = (collabs || []).filter(c => c.actif === true || c.actif === 'TRUE' || c.actif === 1);
-  const ids = actifs.map(c => c.collab_id);
-
-  // Jours des 30 derniers jours pour ces collabs (un seul fetch)
-  const d30 = new Date(); d30.setDate(d30.getDate() - 30);
-  const d30ISO = String(d30.getFullYear()) + '-' + String(d30.getMonth()+1).padStart(2,'0') + '-' + String(d30.getDate()).padStart(2,'0');
-  let jours = [];
-  if (ids.length) {
-    const { data: dj } = await sb.from('jours').select('*')
-      .in('collab_id', ids).gte('date_jour', d30ISO).order('date_jour', {ascending:false});
-    jours = dj || [];
-  }
+  const jours = _managerJours || [];
 
   // Mapping snake→camel + groupage par collab (jours embarqués pour la modale "Voir")
   const fmtISO = iso => { if (!iso) return ''; const p = String(iso).slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : String(iso); };
