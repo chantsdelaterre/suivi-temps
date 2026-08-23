@@ -788,6 +788,15 @@
         const now = new Date();
         document.getElementById('hdr-date').textContent = JOURS[now.getDay()] + ' ' + now.getDate() + ' ' + MOIS[now.getMonth()] + ' ' + now.getFullYear();
     }
+    // Session collaborateur résolue UNE fois via l'Edge collab-session, mémorisée pour les 3 fonctions.
+    let _collabSession = null;
+    async function getCollabSession() {
+        if (_collabSession) return _collabSession;   // déjà résolue (normal : loadJourDuJour l'a posée)
+        const { data: resp, error } = await sb.functions.invoke('collab-session', { body: { token: COLLAB_ID } });
+        if (error || !resp || resp.ok !== true || !resp.collab) return null;
+        _collabSession = resp.collab;
+        return _collabSession;
+    }
     async function loadJourDuJour() {
         if (!COLLAB_ID) {
             // Afficher écran de saisie du token
@@ -810,16 +819,23 @@
         }
         try {
             // Supabase — récupérer le collab
-            const { data: collab, error: collabErr } = await sb
-                .from('collaborateurs')
-                .select('*')
-                .eq('token', COLLAB_ID)
-                .eq('actif', true)
-                .single();
-            if (collabErr || !collab) {
+            // Identité via l'Edge collab-session (filtre actif=true dans la RPC). 401 = lien invalide ;
+            // réseau/500 → throw → catch existant (« Impossible de charger la journée. »).
+            const { data: sessResp, error: sessErr } = await sb.functions.invoke('collab-session', { body: { token: COLLAB_ID } });
+            if (sessErr) {
+                let st = null; try { st = sessErr.context && sessErr.context.status; } catch (_) {}
+                if (st === 401) {
+                    document.getElementById('journee-content').innerHTML = '<div class="error-box">Lien invalide — contacte ton responsable.</div>';
+                    return;
+                }
+                throw sessErr;   // réseau / 500 : ne PAS dire "lien invalide" à un bon lien
+            }
+            if (!sessResp || sessResp.ok !== true || !sessResp.collab) {
                 document.getElementById('journee-content').innerHTML = '<div class="error-box">Lien invalide — contacte ton responsable.</div>';
                 return;
             }
+            const collab = sessResp.collab;
+            _collabSession = collab;   // mémorisé pour fetchMesJoursSupabase / genererPdfMesSaisies
             // En-tête : rempli dès que le collab est connu (indépendant de la présence d'un jour)
             document.getElementById('hdr-name').textContent = collab.nom_affiche || (collab.prenom + ' ' + collab.nom);
             const SOC = { SCEA: 'Chants de la Terre', SAS: 'Chants de la Terre', SARL: 'Les 6 Saveurs' };
@@ -1152,7 +1168,7 @@
         } catch (e) {}
     }
     async function fetchMesJoursSupabase() {
-        const { data: collab } = await sb.from('collaborateurs').select('collab_id, equipe_id, type_periode').eq('token', COLLAB_ID).single();
+        const collab = await getCollabSession();   // mémorisée (Edge appelée une seule fois si vide)
         if (!collab) return null;
         const { data: periode } = await sb.from('periodes').select('*').eq('statut', 'ouverte').eq('type_periode', collab.type_periode).maybeSingle();
         let qJours = sb.from('jours').select('*').eq('collab_id', collab.collab_id).order('date_jour', { ascending: false });
@@ -1188,9 +1204,8 @@
     // But : confronter le brut au RIH validé. Réutilise le pattern window.open + window.print().
     async function genererPdfMesSaisies() {
         // 1) Collab (COLLAB_ID = le TOKEN, pas le collab_id)
-        const { data: collab, error: ec } = await sb.from('collaborateurs')
-            .select('collab_id, prenom, nom, structure, type_periode').eq('token', COLLAB_ID).single();
-        if (ec || !collab) { showToast('⚠️ Impossible de charger ta fiche', true); return; }
+        const collab = await getCollabSession();   // mémorisée (Edge appelée une seule fois si vide)
+        if (!collab) { showToast('⚠️ Impossible de charger ta fiche', true); return; }
         // 2) Dernière période CLÔTURÉE de son type
         const { data: periode } = await sb.from('periodes').select('*')
             .eq('type_periode', collab.type_periode).eq('statut', 'cloturee')
