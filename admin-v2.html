@@ -149,6 +149,12 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
 .toggle-pill { display: inline-flex; background: #f0f4f8; border: 1.5px solid #dce6f0; border-radius: 999px; padding: 3px; gap: 2px; }
 .toggle-pill button { border: none; background: none; padding: 5px 14px; border-radius: 999px; font-size: 13px; cursor: pointer; color: #6b7c93; transition: all 0.15s; font-weight: 500; }
 .toggle-pill button.pill-active { background: #fff; color: #1a6eb5; border: 1px solid #b0c4d8; font-weight: 600; }
+
+/* Éditions passées du journal : ligne cliquable, survol, date mise en avant. */
+.journal-archive-item { display: block; width: 100%; text-align: left; padding: 9px 12px; border: 1px solid #e8f0f8; border-radius: 8px; background: #fff; margin-bottom: 6px; cursor: pointer; font-size: 13px; color: var(--texte); transition: background .12s, border-color .12s; }
+.journal-archive-item:hover { background: #f2f6fb; border-color: var(--bleu-clair); }
+.journal-archive-item .ja-date { font-weight: 700; }
+.journal-archive-item .ja-par { color: var(--texte3); }
 </style>
 </head>
 <body>
@@ -304,6 +310,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
         <div style="display:flex;gap:12px;align-items:center;padding:0 24px 14px">
           <button class="btn btn-primary btn-sm" id="contrats-btn-renouveler" onclick="ouvrirRenouvellementLot()" disabled>Renouveler la sélection</button>
           <span id="contrats-sel-count" style="font-size:13px;color:var(--texte2)">0 contrat sélectionné</span>
+          <button class="btn btn-secondary btn-sm" onclick="ouvrirJournal()">Journal</button>
         </div>
         <div class="table-wrap">
           <table>
@@ -568,6 +575,40 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="fermerModal('modal-renouveler-lot')">Annuler</button>
       <button class="btn btn-primary" id="renouv-lot-confirmer" onclick="confirmerRenouvellementLot()">Renouveler</button>
+    </div>
+  </div>
+</div>
+<!-- MODALE JOURNAL DES DÉCLARATIONS (onglet Contrats) -->
+<div class="modal-overlay" id="modal-journal">
+  <div class="modal modal-lg" style="max-width:900px;width:95vw">
+    <div class="modal-header">
+      <span class="modal-title">Journal des déclarations</span>
+      <button class="modal-close" onclick="fermerModal('modal-journal')">×</button>
+    </div>
+    <div class="modal-body" style="max-height:72vh;overflow:auto">
+      <!-- Vue principale : journal en cours (haut) + éditions passées (bas) -->
+      <div id="journal-vue-principale">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+          <button class="btn btn-secondary btn-sm" onclick="imprimerJournal()">🖨️ Imprimer</button>
+          <button class="btn btn-primary btn-sm" id="journal-btn-cloturer" onclick="cloturerJournal()" disabled>Clôturer le journal</button>
+          <span id="journal-msg" style="display:none;font-size:13px"></span>
+        </div>
+        <div id="journal-contenu" class="journal-print" style="white-space:pre-wrap;font-size:13px;line-height:1.6;font-family:monospace;background:#fff;border:1px solid #e8f0f8;border-radius:8px;padding:14px">Chargement…</div>
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);margin:18px 0 8px">Éditions passées</div>
+        <div id="journal-archives"></div>
+      </div>
+      <!-- Vue archive : contenu figé d'une édition passée -->
+      <div id="journal-vue-archive" style="display:none">
+        <div style="display:flex;gap:10px;margin-bottom:12px">
+          <button class="btn btn-secondary btn-sm" onclick="retourJournal()">← Retour au journal en cours</button>
+          <button class="btn btn-secondary btn-sm" onclick="imprimerJournal()">🖨️ Imprimer</button>
+        </div>
+        <div id="journal-archive-titre" style="font-weight:600;margin-bottom:8px"></div>
+        <div id="journal-archive-contenu" class="journal-print" style="white-space:pre-wrap;font-size:13px;line-height:1.6;font-family:monospace;background:#fff;border:1px solid #e8f0f8;border-radius:8px;padding:14px"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fermerModal('modal-journal')">Fermer</button>
     </div>
   </div>
 </div>
@@ -3461,6 +3502,222 @@ async function confirmerRenouvellementLot() {
   // Succès : fermer + recharger (la sélection disparaît au re-render).
   fermerModal('modal-renouveler-lot');
   chargerContrats();
+}
+
+// ─── Journal des déclarations (Edge `journal`, routée par action) ───
+let _journalTexteCourant = '';   // texte du journal en cours = ce qui sera figé à la clôture
+let _journalArchivesTri = [];    // éditions passées triées/tronquées (accès par index depuis le DOM)
+
+const _jjmm = s => { if (!s) return ''; const p = String(s).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : String(s); };
+
+// Compose le TEXTE du journal (= contenu envoyé à la clôture), groupé structure → destination → collaborateur.
+function composerTexteJournal(mvts) {
+  const tauxTxt = t => (t != null && t !== '') ? Number(t).toFixed(2).replace('.', ',') + ' €' : '—';
+  const heuresTxt = h => (h != null && h !== '') ? h + ' h/sem' : '—';
+  const lignes = ['JOURNAL DES DÉCLARATIONS — depuis le ' + (_jjmm(mvts[0] && mvts[0].borne) || '—'), ''];
+  // Groupement en préservant l'ordre d'arrivée (le serveur ordonne déjà).
+  const groupes = {};
+  for (const m of mvts) {
+    const s = m.structure || '—', d = m.destination || '—';
+    const key = (m.collab_id != null ? String(m.collab_id) : (m.nom_complet || '—'));
+    if (!groupes[s]) groupes[s] = {};
+    if (!groupes[s][d]) groupes[s][d] = {};
+    if (!groupes[s][d][key]) groupes[s][d][key] = { nom: m.nom_complet || '—', matricule: m.matricule_silae || null, items: [] };
+    groupes[s][d][key].items.push(m);
+  }
+  for (const s of Object.keys(groupes)) {
+    lignes.push(s);
+    for (const d of Object.keys(groupes[s])) {
+      lignes.push('  ' + d);
+      for (const key of Object.keys(groupes[s][d])) {
+        const col = groupes[s][d][key];
+        lignes.push('    ' + col.nom + (col.matricule ? ' — ' + col.matricule : ''));   // matricule SEULEMENT s'il existe
+        for (const m of col.items) {
+          if (m.mouvement === 'creation') {
+            let l = m.date_fin
+              ? 'Nouveau ' + (m.type_contrat || '—') + ' du ' + _jjmm(m.date_debut) + ' au ' + _jjmm(m.date_fin) + ' — ' + heuresTxt(m.heures_hebdo) + ' · ' + tauxTxt(m.taux_horaire)
+              : 'Nouveau ' + (m.type_contrat || '—') + ' à partir du ' + _jjmm(m.date_debut);
+            if (m.rupture_anticipee) l += ' (rupture anticipée)';
+            lignes.push('      ☐ ' + l);
+          } else {
+            // Une FIN de contrat = une modification qui a posé une date de fin, indiscernable → toujours "vérifier".
+            let tete = 'Contrat modifié — vérifier';
+            if (m.rupture_anticipee) tete += ' (rupture anticipée)';
+            lignes.push('      ☐ ' + tete);
+            lignes.push('          du ' + _jjmm(m.date_debut) + (m.date_fin ? ' au ' + _jjmm(m.date_fin) : '') + ' · ' + heuresTxt(m.heures_hebdo) + ' · ' + tauxTxt(m.taux_horaire));
+          }
+        }
+      }
+    }
+  }
+  return lignes.join('\n');
+}
+
+// Rendu HTML STYLÉ du journal en cours (affichage + impression). Mêmes données/groupement que le texte,
+// mais mise en page (respiration, hiérarchie, carrés dessinés). Le TEXTE BRUT reste l'archive.
+function rendreHtmlJournal(mvts) {
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const tauxTxt = t => (t != null && t !== '') ? Number(t).toFixed(2).replace('.', ',') + ' €' : '—';
+  const heuresTxt = h => (h != null && h !== '') ? h + ' h/sem' : '—';
+  const carre = '<span style="display:inline-block;width:14px;height:14px;border:1.5px solid var(--texte2);border-radius:2px;margin-right:8px;margin-top:1px;flex:0 0 auto"></span>';
+  const groupes = {};
+  for (const m of mvts) {
+    const s = m.structure || '—', d = m.destination || '—';
+    const key = (m.collab_id != null ? String(m.collab_id) : (m.nom_complet || '—'));
+    if (!groupes[s]) groupes[s] = {};
+    if (!groupes[s][d]) groupes[s][d] = {};
+    if (!groupes[s][d][key]) groupes[s][d][key] = { nom: m.nom_complet || '—', matricule: m.matricule_silae || null, items: [] };
+    groupes[s][d][key].items.push(m);
+  }
+  let html = '<div style="font-size:16px;font-weight:700;padding-bottom:8px;border-bottom:2px solid var(--texte2);margin-bottom:2px">JOURNAL DES DÉCLARATIONS — depuis le ' + (esc(_jjmm(mvts[0] && mvts[0].borne)) || '—') + '</div>';
+  for (const s of Object.keys(groupes)) {
+    html += '<div style="font-weight:700;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #e0e8f0;padding-bottom:3px;margin-top:22px">' + esc(s) + '</div>';
+    for (const d of Object.keys(groupes[s])) {
+      html += '<div style="font-weight:700;font-size:12px;color:var(--texte2);padding-left:16px;margin-top:9px">' + esc(d) + '</div>';
+      for (const key of Object.keys(groupes[s][d])) {
+        const col = groupes[s][d][key];
+        html += '<div style="font-weight:600;padding-left:30px;margin-top:13px">' + esc(col.nom)
+              + (col.matricule ? ' <span style="color:var(--texte3);font-weight:400">— ' + esc(col.matricule) + '</span>' : '') + '</div>';
+        for (const m of col.items) {
+          if (m.mouvement === 'creation') {
+            let l = m.date_fin
+              ? 'Nouveau ' + esc(m.type_contrat || '—') + ' du ' + _jjmm(m.date_debut) + ' au ' + _jjmm(m.date_fin) + ' — ' + heuresTxt(m.heures_hebdo) + ' · ' + tauxTxt(m.taux_horaire)
+              : 'Nouveau ' + esc(m.type_contrat || '—') + ' à partir du ' + _jjmm(m.date_debut);
+            if (m.rupture_anticipee) l += ' (rupture anticipée)';
+            html += '<div style="display:flex;align-items:flex-start;padding-left:42px;margin-top:5px"><span>' + carre + '</span><span>' + l + '</span></div>';
+          } else {
+            let tete = 'Contrat modifié — vérifier';
+            if (m.rupture_anticipee) tete += ' (rupture anticipée)';
+            html += '<div style="display:flex;align-items:flex-start;padding-left:42px;margin-top:5px"><span>' + carre + '</span><span>' + esc(tete) + '</span></div>';
+            html += '<div style="padding-left:64px;color:var(--texte3);font-size:12px;margin-top:1px">du ' + _jjmm(m.date_debut) + (m.date_fin ? ' au ' + _jjmm(m.date_fin) : '') + ' · ' + heuresTxt(m.heures_hebdo) + ' · ' + tauxTxt(m.taux_horaire) + '</div>';
+          }
+        }
+      }
+    }
+  }
+  return html;
+}
+
+async function ouvrirJournal() {
+  document.getElementById('journal-vue-principale').style.display = '';
+  document.getElementById('journal-vue-archive').style.display = 'none';
+  document.getElementById('modal-journal').classList.add('open');
+  await chargerJournal();
+}
+
+async function chargerJournal() {
+  const contenuEl = document.getElementById('journal-contenu');
+  const btnClot = document.getElementById('journal-btn-cloturer');
+  const archEl = document.getElementById('journal-archives');
+  const msg = document.getElementById('journal-msg'); if (msg) msg.style.display = 'none';
+  contenuEl.textContent = 'Chargement…';
+  if (btnClot) btnClot.disabled = true;
+  // 1) Mouvements en cours.
+  const { data: dM, error: eM } = await sb.functions.invoke('journal', { body: { admin_token: ADMIN_TOKEN, action: 'mouvements' } });
+  if (eM || !dM || dM.ok !== true) {
+    _journalTexteCourant = '';
+    contenuEl.textContent = 'Erreur de chargement du journal.';
+  } else {
+    const mvts = Array.isArray(dM.mouvements) ? dM.mouvements : [];
+    if (!mvts.length) {
+      _journalTexteCourant = '';
+      contenuEl.textContent = 'Rien à déclarer depuis la dernière édition.';
+    } else {
+      _journalTexteCourant = composerTexteJournal(mvts);   // TEXTE BRUT → archive (inchangé)
+      contenuEl.innerHTML = rendreHtmlJournal(mvts);        // HTML stylé → affichage / impression
+      if (btnClot) btnClot.disabled = false;   // clôture possible seulement s'il y a des mouvements
+    }
+  }
+  // 2) Éditions passées (10 plus récentes).
+  archEl.innerHTML = '';
+  const { data: dA, error: eA } = await sb.functions.invoke('journal', { body: { admin_token: ADMIN_TOKEN, action: 'archives' } });
+  if (eA || !dA || dA.ok !== true || !Array.isArray(dA.archives)) {
+    archEl.innerHTML = '<div style="font-size:13px;color:var(--rouge)">Erreur de lecture des éditions passées.</div>';
+    return;
+  }
+  _journalArchivesTri = [...dA.archives]
+    .sort((x, y) => String(y.edite_le || '').localeCompare(String(x.edite_le || '')))
+    .slice(0, 10);
+  if (!_journalArchivesTri.length) {
+    archEl.innerHTML = '<div style="font-size:13px;color:var(--texte3)">Aucune édition passée.</div>';
+    return;
+  }
+  archEl.innerHTML = _journalArchivesTri.map((a, i) => {
+    return '<button type="button" class="journal-archive-item" onclick="ouvrirArchiveJournal(' + i + ')">'
+      + '<span class="ja-date">Édition du ' + _jjmm(a.edite_le) + '</span> '
+      + '<span class="ja-par">par ' + String(a.edite_par || '—').replace(/</g, '&lt;') + '</span></button>';
+  }).join('');
+}
+
+function ouvrirArchiveJournal(i) {
+  const a = _journalArchivesTri[i];
+  if (!a) return;
+  document.getElementById('journal-archive-titre').textContent = 'Édition du ' + _jjmm(a.edite_le) + ' par ' + (a.edite_par || '—');
+  document.getElementById('journal-archive-contenu').textContent = a.contenu || '';   // TEL QUEL
+  document.getElementById('journal-vue-principale').style.display = 'none';
+  document.getElementById('journal-vue-archive').style.display = '';
+}
+
+function retourJournal() {
+  document.getElementById('journal-vue-archive').style.display = 'none';
+  document.getElementById('journal-vue-principale').style.display = '';
+}
+
+// Enveloppe HTML de la fenêtre d'impression du journal (patron enveloppePdf). Sur about:blank → le pied
+// de page du navigateur n'affiche ni URL ni token. @page { margin:12mm } vit DANS cette fenêtre.
+function enveloppeJournalImpression(contenu) {
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>Journal des déclarations</title>
+<style>
+:root{--texte:#0f1f33;--texte2:#4a5e75;--texte3:#8a9db5;}
+*{box-sizing:border-box}
+body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--texte);margin:0;padding:14mm;font-size:13px;line-height:1.6;}
+@media print{body{padding:0;}@page{margin:12mm;}}
+</style></head>
+<body>${contenu}
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`;
+}
+
+// Impression du journal via une fenêtre dédiée (patron du PDF relevés). Vue courante → HTML stylé ;
+// vue archive → texte brut échappé. Fenêtre about:blank → aucun token au pied de page.
+function imprimerJournal() {
+  const enArchive = document.getElementById('journal-vue-archive').style.display !== 'none';
+  let contenu;
+  if (enArchive) {
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const titre = document.getElementById('journal-archive-titre').textContent || '';
+    const texte = document.getElementById('journal-archive-contenu').textContent || '';
+    contenu = '<div style="font-weight:700;margin-bottom:10px">' + esc(titre) + '</div>'
+            + '<div style="white-space:pre-wrap">' + esc(texte) + '</div>';
+  } else {
+    contenu = document.getElementById('journal-contenu').innerHTML;   // HTML déjà stylé (styles inline)
+  }
+  const w = window.open('', '_blank');
+  if (!w) { alert('Autorise les fenêtres pop-up pour imprimer le journal.'); return; }
+  w.document.open();
+  w.document.write(enveloppeJournalImpression(contenu));
+  w.document.close();
+}
+
+async function cloturerJournal() {
+  if (!_journalTexteCourant) return;
+  const btn = document.getElementById('journal-btn-cloturer');
+  const msg = document.getElementById('journal-msg');
+  const showMsg = (t, ok) => { if (msg) { msg.textContent = t; msg.style.color = ok ? 'var(--vert)' : 'var(--rouge)'; msg.style.display = 'inline'; } };
+  if (btn) btn.disabled = true;
+  const { data, error } = await sb.functions.invoke('journal', {
+    body: { admin_token: ADMIN_TOKEN, action: 'cloturer', contenu: _journalTexteCourant }
+  });
+  if (error || !data || data.ok !== true) {
+    if (btn) btn.disabled = false;
+    let detail = 'erreur';
+    if (error) { try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {} } else { detail = (data && data.error) || 'inconnu'; }
+    showMsg('Échec de la clôture : ' + detail, false);
+    return;
+  }
+  // Succès : recharger (le journal en cours devient vide, +1 édition dans la liste).
+  await chargerJournal();
 }
 
 async function chargerRecap() {
