@@ -280,7 +280,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
           <input type="search" class="filter-search" id="search-contrats" list="contrats-noms" aria-label="Rechercher un collaborateur" placeholder="🔍 Rechercher…" oninput="rechercheContrats()" style="width:220px">
           <datalist id="contrats-noms"></datalist>
           <div class="filter-group">
-            <button class="filter-btn" id="btn-fin-proche" onclick="toggleFinProche(this)">Fin &lt; 10 j</button>
+            <button class="filter-btn" id="btn-fin-proche" onclick="toggleFinProche(this)">Sans renouvellement</button>
           </div>
           <div class="filter-group" data-grp="structure">
             <button class="filter-btn active" data-val="" onclick="setFiltreContrats('structure','',this)">Toutes</button>
@@ -301,10 +301,15 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
           <span id="contrats-incoherences" style="display:none;align-items:center;gap:6px;font-size:13px;color:var(--rouge);font-weight:600"></span>
           <span class="filter-count" id="contrats-filter-count"></span>
         </div>
+        <div style="display:flex;gap:12px;align-items:center;padding:0 24px 14px">
+          <button class="btn btn-primary btn-sm" id="contrats-btn-renouveler" onclick="ouvrirRenouvellementLot()" disabled>Renouveler la sélection</button>
+          <span id="contrats-sel-count" style="font-size:13px;color:var(--texte2)">0 contrat sélectionné</span>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
+                <th style="width:32px;text-align:center"><input type="checkbox" id="contrats-check-all" aria-label="Tout sélectionner" onchange="basculerToutesContrats(this.checked)"></th>
                 <th>Nom</th>
                 <th style="text-align:center">Structure</th>
                 <th style="text-align:center">Type</th>
@@ -317,7 +322,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
               </tr>
             </thead>
             <tbody id="contrats-tbody">
-              <tr><td colspan="9"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>
+              <tr><td colspan="10"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -543,6 +548,26 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="fermerModal('modal-cloture-anticipee')">Annuler</button>
       <button class="btn btn-primary" id="btn-cloture-confirmer">Confirmer</button>
+    </div>
+  </div>
+</div>
+<!-- MODALE RENOUVELLEMENT EN LOT (onglet Contrats) -->
+<div class="modal-overlay" id="modal-renouveler-lot">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="renouv-lot-titre">Renouveler des contrats</span>
+      <button class="modal-close" onclick="fermerModal('modal-renouveler-lot')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);margin-bottom:6px">Collaborateurs concernés</div>
+      <div id="renouv-lot-noms" style="font-size:13px;color:var(--texte2);max-height:180px;overflow:auto;background:#f7fafd;border:1px solid #e8f0f8;border-radius:8px;padding:8px 10px;margin-bottom:14px"></div>
+      <div class="form-group"><label for="renouv-lot-debut">Date de début du nouveau contrat</label><input type="date" id="renouv-lot-debut"></div>
+      <div class="form-group"><label for="renouv-lot-fin">Date de fin du nouveau contrat</label><input type="date" id="renouv-lot-fin"></div>
+      <div id="renouv-lot-msg" style="display:none;font-size:13px;margin-top:12px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fermerModal('modal-renouveler-lot')">Annuler</button>
+      <button class="btn btn-primary" id="renouv-lot-confirmer" onclick="confirmerRenouvellementLot()">Renouveler</button>
     </div>
   </div>
 </div>
@@ -3181,7 +3206,7 @@ let contratsIncoherences = null;    // compteur GLOBAL renvoyé par l'Edge (éch
 
 async function chargerContrats() {
   const tbody = document.getElementById('contrats-tbody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="9"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
   const historique = filtreContratsHistorique;
   try {
     const { data, error } = await sb.functions.invoke('contrats-liste', {
@@ -3189,14 +3214,14 @@ async function chargerContrats() {
     });
     if (error || !data || data.ok !== true || !Array.isArray(data.contrats)) {
       contratsData = [];
-      if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
       return;
     }
     contratsData = data.contrats;
     contratsIncoherences = (typeof data.incoherences === 'number') ? data.incoherences : null;   // état global, indépendant du filtre
   } catch (e) {
     contratsData = [];
-    if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
     return;
   }
   // Datalist : noms DISTINCTS triés (aide à la saisie ; le filtre reste une sous-chaîne sur nom_complet).
@@ -3339,13 +3364,20 @@ function renderContratsFiltered(list) {
   const tbody = document.getElementById('contrats-tbody');
   if (!tbody) return;
   tbody.innerHTML = !result.length
-    ? '<tr><td colspan="9" style="text-align:center;color:var(--texte3);padding:32px">Aucun contrat</td></tr>'
+    ? '<tr><td colspan="10" style="text-align:center;color:var(--texte3);padding:32px">Aucun contrat</td></tr>'
     : result.map(c => {
       const taux = (c.taux_horaire != null && c.taux_horaire !== '') ? Number(c.taux_horaire).toFixed(2).replace('.', ',') + ' €' : '—';
       // Colonne Actions = un simple lien vers la fiche, sur TOUTES les lignes (l'écriture unitaire vit dans la fiche).
       const cellActions = '<button type="button" class="btn btn-secondary btn-sm" style="background:none;border:none;color:var(--bleu);text-decoration:underline;padding:4px" onclick="ouvrirFicheDepuisContrat(\'' + (c.collab_id || '') + '\')">Voir la fiche</button>';
+      // Cochable : TESA courant, avec date de fin, sans successeur (un CDI se poursuit, ne se renouvelle pas).
+      // Garde sur la LIGNE (type_contrat), pas sur le filtre : tient même avec le filtre type sur « Tous ».
+      const cochable = (c.type_contrat === 'TESA' && c.est_courant === true && c.date_fin != null && c.a_une_suite === false);
+      const cellCheck = cochable
+        ? '<input type="checkbox" class="contrat-check" data-id="' + c.id + '" data-nom="' + String(c.nom_complet || '').replace(/"/g, '&quot;') + '" onchange="majSelectionContrats()">'
+        : '';
       return `
       <tr>
+        <td style="text-align:center">${cellCheck}</td>
         <td><strong>${c.nom_complet || '—'}</strong></td>
         <td style="text-align:center">${c.structure || '—'}</td>
         <td style="text-align:center">${c.type_contrat || '—'}</td>
@@ -3357,6 +3389,7 @@ function renderContratsFiltered(list) {
         <td style="text-align:center">${cellActions}</td>
       </tr>`;
     }).join('');
+  majSelectionContrats();   // #contrats-tbody réécrit → cases réinitialisées : compteur à 0, bouton grisé, check-all décoché
 }
 
 // "Voir la fiche" (colonne Actions de l'onglet Contrats) : réutilise l'ouverture existante (collab de collabsData).
@@ -3364,6 +3397,70 @@ function ouvrirFicheDepuisContrat(collabId) {
   const c = (collabsData || []).find(x => x.collabId === collabId);
   if (!c) { alert('Fiche indisponible — ouvre d\'abord l\'onglet Collaborateurs.'); return; }
   ouvrirModalCollabData(encodeURIComponent(JSON.stringify(c)));
+}
+
+// ─── Renouvellement en LOT (patron des cases RIH : état DANS le DOM via .checked + data-*, relu au clic) ───
+// Coche/décoche toutes les cases ACTUELLEMENT rendues (= lignes cochables visibles après filtrage).
+function basculerToutesContrats(coche) {
+  document.querySelectorAll('#contrats-tbody .contrat-check').forEach(cb => { cb.checked = coche; });
+  majSelectionContrats();
+}
+// Compteur + état du bouton + case "tout cocher".
+function majSelectionContrats() {
+  const cases = [...document.querySelectorAll('#contrats-tbody .contrat-check')];
+  const n = cases.filter(cb => cb.checked).length;
+  const cnt = document.getElementById('contrats-sel-count');
+  if (cnt) cnt.textContent = (n === 0) ? '0 contrat sélectionné'
+    : n + ' contrat' + (n > 1 ? 's' : '') + ' sélectionné' + (n > 1 ? 's' : '');
+  const btn = document.getElementById('contrats-btn-renouveler');
+  if (btn) btn.disabled = (n === 0);
+  const all = document.getElementById('contrats-check-all');
+  if (all) all.checked = (cases.length > 0 && n === cases.length);
+}
+
+let _renouvLotSel = [];   // sélection figée à l'ouverture de la modale (ids + noms), relue du DOM
+function ouvrirRenouvellementLot() {
+  const sel = [...document.querySelectorAll('#contrats-tbody .contrat-check')]
+    .filter(cb => cb.checked)
+    .map(cb => ({ id: Number(cb.dataset.id), nom: cb.dataset.nom }));
+  if (!sel.length) return;
+  _renouvLotSel = sel;
+  document.getElementById('renouv-lot-titre').textContent = 'Renouveler ' + sel.length + ' contrat' + (sel.length > 1 ? 's' : '');
+  document.getElementById('renouv-lot-noms').innerHTML = sel.map(s => '<div>' + String(s.nom || '—').replace(/</g, '&lt;') + '</div>').join('');
+  document.getElementById('renouv-lot-debut').value = '';   // pas de proposition : dates de fin hétérogènes
+  document.getElementById('renouv-lot-fin').value = '';
+  const msg = document.getElementById('renouv-lot-msg'); if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
+  const btn = document.getElementById('renouv-lot-confirmer'); if (btn) btn.disabled = false;
+  document.getElementById('modal-renouveler-lot').classList.add('open');
+}
+
+async function confirmerRenouvellementLot() {
+  const sel = _renouvLotSel || [];
+  const msg = document.getElementById('renouv-lot-msg');
+  const showMsg = (t, ok) => { if (msg) { msg.textContent = t; msg.style.color = ok ? 'var(--vert)' : 'var(--rouge)'; msg.style.display = 'block'; } };
+  const btn = document.getElementById('renouv-lot-confirmer');
+  const date_debut = (document.getElementById('renouv-lot-debut') || {}).value || '';
+  const date_fin = (document.getElementById('renouv-lot-fin') || {}).value || '';
+  if (!date_debut || !date_fin) { showMsg('Date de début et date de fin requises.', false); return; }
+  if (date_fin < date_debut) { showMsg('La date de fin ne peut pas précéder la date de début.', false); return; }
+  if (!sel.length) { showMsg('Aucun contrat sélectionné.', false); return; }
+  if (btn) btn.disabled = true;
+  const { data, error } = await sb.functions.invoke('renouveler-lot', {
+    body: { admin_token: ADMIN_TOKEN, ids: sel.map(s => s.id), date_debut, date_fin }
+  });
+  if (btn) btn.disabled = false;
+  if (error) {
+    // ⚠️ Message de la RPC (nomme le collaborateur en cause) → affiché TEL QUEL, modale gardée ouverte, pas de reload.
+    let detail = 'erreur';
+    try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+    showMsg(detail, false); return;
+  }
+  if (!data || data.ok !== true) {
+    showMsg((data && data.error) || 'Échec du renouvellement.', false); return;
+  }
+  // Succès : fermer + recharger (la sélection disparaît au re-render).
+  fermerModal('modal-renouveler-lot');
+  chargerContrats();
 }
 
 async function chargerRecap() {
