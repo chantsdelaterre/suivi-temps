@@ -783,11 +783,12 @@ function nomEquipe(equipeId) {
 
 async function chargerCollabs() {
   document.getElementById('collabs-tbody').innerHTML = '<tr><td colspan="10"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
-  const { data, error } = await sb.from('collaborateurs').select('*').order('nom_affiche');
-  if (error) {
+  const { data: resp, error: eEdge } = await sb.functions.invoke('collaborateurs-liste', { body: { admin_token: ADMIN_TOKEN } });
+  if (eEdge || !resp || resp.ok !== true) {
     document.getElementById('collabs-tbody').innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
     return;
   }
+  const data = Array.isArray(resp.collaborateurs) ? resp.collaborateurs : [];
   // Mapping snake_case (Supabase) → camelCase (attendu par renderCollabs/filtrerCollabs)
   const collabs = (data || []).map(c => ({
     collabId: c.collab_id,
@@ -927,7 +928,7 @@ async function chargerVueEquipes() {
   document.getElementById('equipes-tbody').innerHTML = '<tr><td colspan="5"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
   const [re, rc] = await Promise.all([
     sb.from('equipes').select('*').order('nom_equipe'),
-    sb.from('collaborateurs').select('*')
+    sb.functions.invoke('collaborateurs-liste', { body: { admin_token: ADMIN_TOKEN } })
   ]);
   if (re.error) {
     document.getElementById('equipes-tbody').innerHTML = '<tr><td colspan="5" style="color:var(--rouge);padding:24px">Erreur de chargement.</td></tr>';
@@ -939,7 +940,9 @@ async function chargerVueEquipes() {
     nomManager: e.nom_manager,
     managerToken: e.manager_token
   }));
-  const collabs = (rc.error ? [] : (rc.data || [])).map(c => ({
+  const rcOk = rc.data && rc.data.ok === true && Array.isArray(rc.data.collaborateurs);
+  if (!rcOk) console.error('chargerVueEquipes : lecture collaborateurs (Edge) en échec', rc.error || (rc.data && rc.data.error));
+  const collabs = (rcOk ? rc.data.collaborateurs : []).map(c => ({
     equipeId: c.equipe_id,
     nomAffiche: c.nom_affiche,
     typeContrat: c.type_contrat,
@@ -1735,7 +1738,9 @@ async function calculerPaieDepuisPaieDetail(periodeId) {
   // 2) Contexte : collaborateurs (réutilise collabsData) + historique_contrats
   let collabs = (collabsData && collabsData.length) ? collabsData : null;
   if (!collabs) {
-    const { data } = await sb.from('collaborateurs').select('collab_id, nom_affiche, prenom, nom');
+    const { data: resp, error: eEdge } = await sb.functions.invoke('collaborateurs-liste', { body: { admin_token: ADMIN_TOKEN } });
+    if (eEdge || !resp || resp.ok !== true) console.error('calculerPaieDepuisPaieDetail : lecture collaborateurs (fallback) en échec', eEdge || (resp && resp.error));
+    const data = (resp && Array.isArray(resp.collaborateurs)) ? resp.collaborateurs : [];
     collabs = (data || []).map(c => ({ collabId: c.collab_id, nomAffiche: c.nom_affiche, prenom: c.prenom, nom: c.nom }));
   }
   const collabById = {};
@@ -2822,7 +2827,9 @@ async function chargerArchivesCloturees() {
   if (collabsData && collabsData.length) {
     collabsData.forEach(c => { collabMap[c.collabId] = c; });
   } else {
-    const { data } = await sb.from('collaborateurs').select('collab_id, nom_affiche, structure');
+    const { data: resp, error: eEdge } = await sb.functions.invoke('collaborateurs-liste', { body: { admin_token: ADMIN_TOKEN } });
+    if (eEdge || !resp || resp.ok !== true) console.error('chargerArchivesCloturees : lecture collaborateurs (fallback) en échec', eEdge || (resp && resp.error));
+    const data = (resp && Array.isArray(resp.collaborateurs)) ? resp.collaborateurs : [];
     (data||[]).forEach(c => { collabMap[c.collab_id] = { collabId:c.collab_id, nomAffiche:c.nom_affiche, structure:c.structure }; });
   }
   const periodeMap = {};
@@ -3127,7 +3134,9 @@ async function genererPdfReleve(collabIdEnc, periodeId) {
   const collab = (collabsData || []).find(c => c.collabId === collabId) || {};
   let structure = collab.structure, nomAffiche = collab.nomAffiche;
   if (!structure || !nomAffiche) {
-    const { data } = await sb.from('collaborateurs').select('nom_affiche, structure').eq('collab_id', collabId).maybeSingle();
+    const { data: resp, error: eEdge } = await sb.functions.invoke('collaborateurs-liste', { body: { admin_token: ADMIN_TOKEN } });
+    if (eEdge || !resp || resp.ok !== true) console.error('genererPdfReleve : lecture collaborateurs (fallback) en échec', eEdge || (resp && resp.error));
+    const data = (resp && Array.isArray(resp.collaborateurs)) ? resp.collaborateurs.find(c => c.collab_id === collabId) : null;
     if (data) { structure = structure || data.structure; nomAffiche = nomAffiche || data.nom_affiche; }
   }
   nomAffiche = nomAffiche || collabId;
