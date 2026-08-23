@@ -33,15 +33,37 @@ Deno.serve(async (req) => {
   if (aErr) return json({ ok: false, error: "Erreur base (auth admin)" }, 500);
   if (!adminNom) return json({ ok: false, error: "Admin non autorisé" }, 401);
 
-  // 2. Liste des contrats (p_historique = false → contrats courants ; true → tout l'historique).
-  const { data: rData, error: rErr } = await supabase.rpc("contrats_liste", { p_historique });
-  if (rErr) return json({ ok: false, error: rErr.message || "Echec de la lecture des contrats" }, 500);
+  // 2. Routage par action (modèle de l'Edge journal). L'auth admin ci-dessus reste commune à toutes.
+  const action = (p?.action ?? "").toString().trim();
 
-  // 3. Compteur GLOBAL d'incohérences (échus dont le collab est actif, hors ruptures). Indépendant du filtre.
-  //    NON bloquant : si la RPC échoue, on renvoie la liste avec incoherences=null (la liste est l'essentiel).
-  let incoherences: number | null = null;
-  const { data: incData, error: incErr } = await supabase.rpc("contrats_incoherences");
-  if (!incErr && incData != null) incoherences = Number(incData);
+  // action absente OU 'liste' → comportement ACTUEL INCHANGÉ (compat ascendante : le front actuel n'envoie
+  // pas d'action). contrats_liste (selon p_historique) + compteur d'incohérences NON bloquant.
+  if (action === "" || action === "liste") {
+    const { data: rData, error: rErr } = await supabase.rpc("contrats_liste", { p_historique });
+    if (rErr) return json({ ok: false, error: rErr.message || "Echec de la lecture des contrats" }, 500);
+    let incoherences: number | null = null;
+    const { data: incData, error: incErr } = await supabase.rpc("contrats_incoherences");
+    if (!incErr && incData != null) incoherences = Number(incData);
+    return json({ ok: true, admin: adminNom, contrats: rData ?? [], incoherences });
+  }
 
-  return json({ ok: true, admin: adminNom, contrats: rData ?? [], incoherences });
+  // action 'collab' → toutes les lignes d'UN collaborateur (remplace la lecture de chargerContratActuel).
+  if (action === "collab") {
+    const collab_id = (p?.collab_id ?? "").toString().trim();
+    if (!collab_id) return json({ ok: false, error: "collab_id requis" }, 400);
+    const { data, error } = await supabase.rpc("contrats_du_collab", { p_collab_id: collab_id });
+    if (error) return json({ ok: false, error: error.message || "Echec de la lecture des contrats du collaborateur" }, 500);
+    return json({ ok: true, admin: adminNom, contrats: data ?? [] });
+  }
+
+  // action 'paie' → contrats des collabs de la période (remplace la lecture de calculerPaieDepuisPaieDetail).
+  if (action === "paie") {
+    const collab_ids = Array.isArray(p?.collab_ids) ? p.collab_ids.map((x: unknown) => String(x)) : [];
+    if (!collab_ids.length) return json({ ok: false, error: "collab_ids requis" }, 400);
+    const { data, error } = await supabase.rpc("contrats_pour_paie", { p_collab_ids: collab_ids });
+    if (error) return json({ ok: false, error: error.message || "Echec de la lecture des contrats pour la paie" }, 500);
+    return json({ ok: true, admin: adminNom, contrats: data ?? [] });
+  }
+
+  return json({ ok: false, error: "Action inconnue" }, 400);
 });

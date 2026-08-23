@@ -1070,9 +1070,17 @@ async function chargerContratActuel(collabId) {
   if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
   box.innerHTML = '<div style="color:var(--texte3);font-size:13px">Chargement…</div>';
   finZone.innerHTML = '';
-  const { data, error } = await sb.from('historique_contrats').select('*')
-    .eq('collab_id', collabId).order('date_debut');
-  if (error) { box.innerHTML = '<div style="color:var(--rouge);font-size:13px">Erreur de lecture des contrats : ' + error.message + '</div>'; return; }
+  // Lecture via Edge (SELECT anon révoqué sur historique_contrats — table portant les taux). La RPC
+  // contrats_du_collab est en `setof historique_contrats` → mêmes colonnes que select('*'), triées date_debut.
+  const { data: resp, error: eEdge } = await sb.functions.invoke('contrats-liste', {
+    body: { admin_token: ADMIN_TOKEN, action: 'collab', collab_id: collabId }
+  });
+  if (eEdge || !resp || resp.ok !== true) {
+    let detail = 'erreur';
+    if (eEdge) { try { const b = await eEdge.context.json(); if (b?.error) detail = b.error; } catch (_) {} } else { detail = (resp && resp.error) || 'inconnu'; }
+    box.innerHTML = '<div style="color:var(--rouge);font-size:13px">Erreur de lecture des contrats : ' + detail + '</div>'; return;
+  }
+  const data = Array.isArray(resp.contrats) ? resp.contrats : [];
   if (!data || !data.length) {
     box.innerHTML = '<div style="color:var(--texte3);font-size:13px">Aucun contrat enregistré.</div>';
     return;
@@ -1736,11 +1744,16 @@ async function calculerPaieDepuisPaieDetail(periodeId) {
   // Contrats des SEULS collabs de la période (resoudreContrat n'est appelée que sur eux) → la lecture
   // scale avec la période, pas avec l'historique de toute la structure. detail vide → .in([]) = 0 ligne.
   const collabIds = [...new Set((detail || []).map(d => d.collab_id))];
-  const { data: contrats, error: ec } = await sb
-    .from('historique_contrats')
-    .select('collab_id, date_debut, date_fin, structure, type_contrat, heures_hebdo, type_periode, matricule_silae')
-    .in('collab_id', collabIds);
-  if (ec) { console.error('Erreur lecture historique_contrats :', ec); return []; }
+  // Lecture via Edge (action 'paie' = 8 colonnes). Garde le cas vide comme avant (.in([]) = 0 ligne) :
+  // collab_ids vide → pas d'appel (l'Edge renverrait 400), contrats = [].
+  let contrats = [];
+  if (collabIds.length) {
+    const { data: respC, error: ecEdge } = await sb.functions.invoke('contrats-liste', {
+      body: { admin_token: ADMIN_TOKEN, action: 'paie', collab_ids: collabIds }
+    });
+    if (ecEdge || !respC || respC.ok !== true) { console.error('Erreur lecture contrats (paie) :', ecEdge || (respC && respC.error)); return []; }
+    contrats = Array.isArray(respC.contrats) ? respC.contrats : [];
+  }
   const contratsByCollab = {};
   (contrats || []).forEach(k => { (contratsByCollab[k.collab_id] ||= []).push(k); });
 
