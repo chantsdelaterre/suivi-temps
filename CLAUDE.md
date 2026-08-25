@@ -1044,3 +1044,587 @@ appartient au dossier, pas au journal.
   recalcul d'`enregistrerEtValider`, et le fait que `nomPeriode` se **résolvait depuis
   les seules périodes clôturées**.
 - À faire **chaque fois qu'un diff touche une fonction partagée**.
+
+## Contrats — décisions du 21/08/2026
+
+**Quatre gestes distincts sur une ligne de contrat**, à ne jamais confondre :
+- *Modifier* — corrige une erreur de saisie. Le contrat a toujours été
+  celui-là, on a mal tapé. Seul cas où écraser ne détruit rien.
+- *Poser une date de fin* — enregistre une fin connue ou décidée.
+  Techniquement `modifier_contrat`, métier différent.
+- *Renouveler* — clôt (si la fin n'est pas déjà posée) puis ouvre une
+  nouvelle ligne. N'écrase JAMAIS `date_fin`. Date de début proposée :
+  le lundi suivant la fin, jamais le lendemain.
+- *Rupture anticipée* — raccourcit `date_fin` et pose
+  `rupture_anticipee = true`. La date initialement prévue est perdue :
+  accepté, le drapeau porte l'information.
+
+**Les jours au-delà d'une fin raccourcie ne sont pas supprimés.** Le Récap
+filtre sur ce qui compte. Décision prise contre la purge, qui aurait pu
+détruire des saisies réelles.
+
+**Le taux horaire est en base** (`historique_contrats.taux_horaire`), sur
+tous les types de contrat. Donnée à recopier vers la MSA, **jamais une
+entrée de calcul** — l'appli ne calcule aucune rémunération.
+⚠️ Conséquence : toute lecture exposant le taux passe par une Edge avec
+vérification du token admin. `contrats_liste()` est `SECURITY DEFINER`,
+`EXECUTE` à `service_role` seul.
+
+**`contrats_liste(p_historique)`** — vue par défaut = contrats courants
+**plus** les échus dont le collaborateur est encore actif. Sans cette
+seconde condition, l'anomalie qui justifie l'onglet serait invisible.
+
+**Un seul formulaire, quatre modes.** `modifier_contrat` porte trois des
+quatre gestes : sa garde structure/`type_periode` utilise `is distinct
+from`, donc renvoyer les valeurs actuelles à l'identique passe sans erreur.
+
+## Contrats — décisions des 21-22/08/2026
+
+### Le principe qui décide de tout
+
+> **Ce qui était enregistré était-il vrai à l'époque ?**
+> Non → on corrige la ligne. Oui → on ajoute une ligne.
+
+`historique_contrats` est un journal en ajout seul. Écraser une valeur
+qui était vraie détruit une information irrécupérable — pour le droit
+(un renouvellement est un acte daté), pour la paie (`resoudreContrat`
+résout le contrat *couvrant la période*), pour l'ancienneté TESA, et
+surtout pour **l'annualisation à venir** : un CDI passé de 35 h à 28 h
+en cours d'année rend le compteur incalculable si on écrase.
+
+### Où vit l'écriture
+
+**La fiche collaborateur, et elle seule.** L'onglet Contrats est en
+lecture seule, sauf le renouvellement en masse.
+
+Décision prise après avoir construit puis supprimé une modale
+d'écriture dans l'onglet : deux formulaires pour le même geste
+divergent toujours. La fiche présente mieux l'historique d'une
+personne ; l'onglet sert au transversal.
+
+⚠️ Corollaire : ne pas réintroduire de geste d'écriture unitaire dans
+l'onglet Contrats.
+
+### Deux familles de contrats
+
+- **COURT** : TESA — contrats mensuels, toutes les heures payées
+  chaque mois, période civile
+- **LONG** : CDI, CDD, APP — annualisés, période décalée
+
+Le comportement du crayon diffère selon la famille **et** la situation
+de la ligne :
+
+| Situation | TESA | CDI / CDD / APP |
+|---|---|---|
+| À venir | tout modifiable | tout modifiable |
+| En cours | début, heures, taux, fin | début, taux seulement |
+| Terminée | pas de crayon | pas de crayon |
+
+⚠️ **Les heures d'un contrat long commencé sont verrouillées.** Un
+changement de temps de travail coupe l'annualisation en deux : il faut
+une nouvelle ligne, pas une correction. Message sous le champ grisé
+renvoyant vers « + Nouvel événement ».
+
+⚠️ **La date de fin d'un contrat long a son propre bouton**
+(« Fin de contrat » / « Modifier la date de fin »), pas le crayon.
+Sur un TESA, elle est au crayon.
+Le bouton « Modifier la date de fin » passe par `modifier-contrat`,
+pas par `cloturer_contrat` — celle-ci ne cible que la ligne ouverte
+(`date_fin is null`).
+
+### Le taux horaire
+
+**Il ne crée pas de nouvelle ligne.** Son but est d'approcher un coût,
+pas de reconstituer une paie. Une revalorisation est donc une
+correction.
+
+⚠️ Conséquence assumée : un coût calculé rétroactivement utilisera le
+taux d'aujourd'hui, pas celui de l'époque. **Pour un vrai calcul de
+coût, il faudra une table `couts` figée** — même patron que
+`paie_detail` pour les jours : on écrit ce qu'on a utilisé, au moment
+du calcul.
+
+⚠️ Le taux est exposé par `contrats_liste`, donc toute lecture passe
+par une Edge avec vérification du token admin.
+
+### Le matricule Silae
+
+**Il n'a rien à faire dans `historique_contrats`** — il identifie la
+personne, pas le contrat. La colonne existe pourtant, et chaque
+écriture doit la transporter à l'identique sous peine de l'effacer.
+
+⚠️ `rafraichir_fiche_collab` recopie le matricule du journal vers la
+fiche. Un matricule saisi dans la fiche identité sera donc écrasé à la
+première écriture de contrat. **Ce n'est pas un bug, c'est le
+comportement — mais le champ de la fiche est trompeur.**
+
+À corriger un jour : sortir la colonne du journal. Indolore
+aujourd'hui, aucun contrat n'en porte.
+
+### La rupture anticipée
+
+Seul cas où la réalité change sans créer de ligne. On raccourcit
+`date_fin` et on pose `rupture_anticipee = true`.
+
+⚠️ **La date initialement prévue est perdue.** Décision assumée : le
+drapeau porte l'information.
+⚠️ **Les jours au-delà ne sont pas supprimés.** Décision prise contre
+la purge, qui aurait pu détruire des saisies réelles ou créer des
+orphelins dans `paie_detail` (append-only).
+
+> À rouvrir quand l'annualisation arrivera : l'écart entre prévu et
+> réalisé est précisément ce qu'un compteur veut mesurer.
+
+### Les états et les seuils
+
+`contrats_liste(p_historique)` calcule l'état en SQL. Vue par défaut =
+contrats **en cours uniquement**.
+
+`fin_proche` = fin dans **10 jours ou moins ET aucune ligne ne suit**
+(`a_une_suite` faux). C'est le filtre « **Sans renouvellement** » :
+vide en début de mois, plein à l'approche des fins.
+
+⚠️ **Seuil unique à 10 jours**, en base et dans la timeline. 30 jours
+rendait tout orange avec des contrats mensuels.
+⚠️ Le seuil est en dur. Le rendre réglable suppose une table de
+paramètres — chantier « Paramètres » à ouvrir un jour, pas pour un
+seul chiffre.
+
+**Timeline de la fiche** : gris = terminé, bleu = à venir, orange =
+fin dans 10 jours sans suite, vert = tout le reste. Un contrat borné
+n'est pas une anomalie.
+
+### Le compteur d'incohérences
+
+`contrats_incoherences()` compte les contrats échus dont le
+collaborateur est encore actif, hors ruptures anticipées.
+
+Affiché seulement s'il est > 0 ; « Voir » bascule en historique
+complet, remet les autres filtres à zéro et n'affiche que ces lignes.
+
+⚠️ Un compteur qui ne bouge pas cesse d'être lu. C'est pourquoi les
+29 TESA sans date de fin n'y sont **pas** comptés : c'est un retard de
+saisie, pas une alerte.
+
+### Le renouvellement en masse
+
+**Le geste le plus répété de l'appli** — trente TESA, douze fois par
+an (contrats mensuels).
+
+`renouveler_contrats_lot(ids, date_debut, date_fin, par)`,
+transactionnelle : tout ou tien.
+
+⚠️ **TESA uniquement.** Un CDI se poursuit, il ne se renouvelle pas.
+La garde porte sur la ligne, pas sur le filtre.
+⚠️ **Une seule écriture par ligne** : les contrats sans date de fin ne
+sont pas cochables. Poser la date se fait au crayon, un par un.
+⚠️ **En cas d'incompatibilité, tout le lot échoue** et le message
+NOMME le collaborateur en cause. Sans le nom, l'admin cherche parmi
+huit lignes.
+⚠️ La RPC ne réutilise pas `ajouter_contrat` : elle refait ses gardes
+pour pouvoir nommer le coupable.
+
+### Vocabulaire
+
+- **« Nouvel événement »** plutôt qu'« avenant » : le second est
+  juridique et engage.
+- **« Sans renouvellement »** plutôt qu'« à renouveler » : le filtre
+  décrit une situation, il ne présume pas de la décision.
+- **« Récap »** désigne historiquement l'écran des saisies.
+- ⚠️ **« Actif / inactif »** est ambigu : dans l'appli il qualifie un
+  compte qui fonctionne, pas quelqu'un en poste. Filtre retiré de
+  l'onglet Contrats pour cette raison.
+
+### La règle d'activité (pas encore automatisée)
+
+**Un collaborateur est actif s'il existe un contrat couvrant
+aujourd'hui ou demain.** Une condition, deux effets : activation la
+veille du premier jour, désactivation le lendemain du dernier.
+
+⚠️ « Demain » et non « aujourd'hui » : le cron de génération des jours
+tourne vers 00 h 10 ; activer la veille supprime la course entre les
+deux tâches.
+⚠️ **Les administrateurs sont exclus** de la désactivation. Confirmé
+par les données : deux des trois admins n'ont aucun contrat en vigueur.
+⚠️ À brancher **en dernier**, quand les contrats sont justes.
+
+### Ce que l'appli ne fait pas
+
+**Elle ne calcule aucune rémunération.** Le taux est une information à
+recopier vers la MSA, comme les heures.
+
+⚠️ Ce principe va être mis à l'épreuve par l'annualisation (1593 h sur
+12 mois du 1/3 au 28/2, mensuel théorique de 132,75 h pour un 35 h).
+`heures_hebdo` deviendra alors le **diviseur d'un calcul**, plus une
+donnée cosmétique — et un contrat sans heures renseignées rendra le
+compteur incalculable.
+
+
+## Contrats — décisions des 21-22/08/2026
+
+### Le principe qui décide de tout
+
+> **Ce qui était enregistré était-il vrai à l'époque ?**
+> Non → on corrige la ligne. Oui → on ajoute une ligne.
+
+`historique_contrats` est un journal en ajout seul. Écraser une valeur
+qui était vraie détruit une information irrécupérable — pour le droit
+(un renouvellement est un acte daté), pour la paie (`resoudreContrat`
+résout le contrat *couvrant la période*), pour l'ancienneté TESA, et
+surtout pour **l'annualisation à venir** : un CDI passé de 35 h à 28 h
+en cours d'année rend le compteur incalculable si on écrase.
+
+### Où vit l'écriture
+
+**La fiche collaborateur, et elle seule.** L'onglet Contrats est en
+lecture seule, sauf le renouvellement en masse.
+
+Décision prise après avoir construit puis supprimé une modale
+d'écriture dans l'onglet : deux formulaires pour le même geste
+divergent toujours. La fiche présente mieux l'historique d'une
+personne ; l'onglet sert au transversal.
+
+⚠️ Corollaire : ne pas réintroduire de geste d'écriture unitaire dans
+l'onglet Contrats.
+
+### Deux familles de contrats
+
+- **COURT** : TESA — contrats mensuels, toutes les heures payées
+  chaque mois, période civile
+- **LONG** : CDI, CDD, APP — annualisés, période décalée
+
+Le comportement du crayon diffère selon la famille **et** la situation
+de la ligne :
+
+| Situation | TESA | CDI / CDD / APP |
+|---|---|---|
+| À venir | tout modifiable | tout modifiable |
+| En cours | début, heures, taux, fin | début, taux seulement |
+| Terminée | pas de crayon | pas de crayon |
+
+⚠️ **Les heures d'un contrat long commencé sont verrouillées.** Un
+changement de temps de travail coupe l'annualisation en deux : il faut
+une nouvelle ligne, pas une correction. Message sous le champ grisé
+renvoyant vers « + Nouvel événement ».
+
+⚠️ **La date de fin d'un contrat long a son propre bouton**
+(« Fin de contrat » / « Modifier la date de fin »), pas le crayon.
+Sur un TESA, elle est au crayon.
+Le bouton « Modifier la date de fin » passe par `modifier-contrat`,
+pas par `cloturer_contrat` — celle-ci ne cible que la ligne ouverte
+(`date_fin is null`).
+
+### Le taux horaire
+
+**Il ne crée pas de nouvelle ligne.** Son but est d'approcher un coût,
+pas de reconstituer une paie. Une revalorisation est donc une
+correction.
+
+⚠️ Conséquence assumée : un coût calculé rétroactivement utilisera le
+taux d'aujourd'hui, pas celui de l'époque. **Pour un vrai calcul de
+coût, il faudra une table `couts` figée** — même patron que
+`paie_detail` pour les jours : on écrit ce qu'on a utilisé, au moment
+du calcul.
+
+⚠️ Le taux est exposé par `contrats_liste`, donc toute lecture passe
+par une Edge avec vérification du token admin.
+
+### Le matricule Silae
+
+**Il n'a rien à faire dans `historique_contrats`** — il identifie la
+personne, pas le contrat. La colonne existe pourtant, et chaque
+écriture doit la transporter à l'identique sous peine de l'effacer.
+
+⚠️ `rafraichir_fiche_collab` recopie le matricule du journal vers la
+fiche. Un matricule saisi dans la fiche identité sera donc écrasé à la
+première écriture de contrat. **Ce n'est pas un bug, c'est le
+comportement — mais le champ de la fiche est trompeur.**
+
+À corriger un jour : sortir la colonne du journal. Indolore
+aujourd'hui, aucun contrat n'en porte.
+
+### La rupture anticipée
+
+Seul cas où la réalité change sans créer de ligne. On raccourcit
+`date_fin` et on pose `rupture_anticipee = true`.
+
+⚠️ **La date initialement prévue est perdue.** Décision assumée : le
+drapeau porte l'information.
+⚠️ **Les jours au-delà ne sont pas supprimés.** Décision prise contre
+la purge, qui aurait pu détruire des saisies réelles ou créer des
+orphelins dans `paie_detail` (append-only).
+
+> À rouvrir quand l'annualisation arrivera : l'écart entre prévu et
+> réalisé est précisément ce qu'un compteur veut mesurer.
+
+### Les états et les seuils
+
+`contrats_liste(p_historique)` calcule l'état en SQL. Vue par défaut =
+contrats **en cours uniquement**.
+
+`fin_proche` = fin dans **10 jours ou moins ET aucune ligne ne suit**
+(`a_une_suite` faux). C'est le filtre « **Sans renouvellement** » :
+vide en début de mois, plein à l'approche des fins.
+
+⚠️ **Seuil unique à 10 jours**, en base et dans la timeline. 30 jours
+rendait tout orange avec des contrats mensuels.
+⚠️ Le seuil est en dur. Le rendre réglable suppose une table de
+paramètres — chantier « Paramètres » à ouvrir un jour, pas pour un
+seul chiffre.
+
+**Timeline de la fiche** : gris = terminé, bleu = à venir, orange =
+fin dans 10 jours sans suite, vert = tout le reste. Un contrat borné
+n'est pas une anomalie.
+
+### Le compteur d'incohérences
+
+`contrats_incoherences()` compte les contrats échus dont le
+collaborateur est encore actif, hors ruptures anticipées.
+
+Affiché seulement s'il est > 0 ; « Voir » bascule en historique
+complet, remet les autres filtres à zéro et n'affiche que ces lignes.
+
+⚠️ Un compteur qui ne bouge pas cesse d'être lu. C'est pourquoi les
+29 TESA sans date de fin n'y sont **pas** comptés : c'est un retard de
+saisie, pas une alerte.
+
+### Le renouvellement en masse
+
+**Le geste le plus répété de l'appli** — trente TESA, douze fois par
+an (contrats mensuels).
+
+`renouveler_contrats_lot(ids, date_debut, date_fin, par)`,
+transactionnelle : tout ou tien.
+
+⚠️ **TESA uniquement.** Un CDI se poursuit, il ne se renouvelle pas.
+La garde porte sur la ligne, pas sur le filtre.
+⚠️ **Une seule écriture par ligne** : les contrats sans date de fin ne
+sont pas cochables. Poser la date se fait au crayon, un par un.
+⚠️ **En cas d'incompatibilité, tout le lot échoue** et le message
+NOMME le collaborateur en cause. Sans le nom, l'admin cherche parmi
+huit lignes.
+⚠️ La RPC ne réutilise pas `ajouter_contrat` : elle refait ses gardes
+pour pouvoir nommer le coupable.
+
+### Vocabulaire
+
+- **« Nouvel événement »** plutôt qu'« avenant » : le second est
+  juridique et engage.
+- **« Sans renouvellement »** plutôt qu'« à renouveler » : le filtre
+  décrit une situation, il ne présume pas de la décision.
+- **« Récap »** désigne historiquement l'écran des saisies.
+- ⚠️ **« Actif / inactif »** est ambigu : dans l'appli il qualifie un
+  compte qui fonctionne, pas quelqu'un en poste. Filtre retiré de
+  l'onglet Contrats pour cette raison.
+
+### La règle d'activité (pas encore automatisée)
+
+**Un collaborateur est actif s'il existe un contrat couvrant
+aujourd'hui ou demain.** Une condition, deux effets : activation la
+veille du premier jour, désactivation le lendemain du dernier.
+
+⚠️ « Demain » et non « aujourd'hui » : le cron de génération des jours
+tourne vers 00 h 10 ; activer la veille supprime la course entre les
+deux tâches.
+⚠️ **Les administrateurs sont exclus** de la désactivation. Confirmé
+par les données : deux des trois admins n'ont aucun contrat en vigueur.
+⚠️ À brancher **en dernier**, quand les contrats sont justes.
+
+### Ce que l'appli ne fait pas
+
+**Elle ne calcule aucune rémunération.** Le taux est une information à
+recopier vers la MSA, comme les heures.
+
+⚠️ Ce principe va être mis à l'épreuve par l'annualisation (1593 h sur
+12 mois du 1/3 au 28/2, mensuel théorique de 132,75 h pour un 35 h).
+`heures_hebdo` deviendra alors le **diviseur d'un calcul**, plus une
+donnée cosmétique — et un contrat sans heures renseignées rendra le
+compteur incalculable.
+
+
+## Sécurité des accès — état au 23/08/2026
+
+### ⚠️ Le piège à connaître avant d'écrire du code
+
+**`historique_contrats` n'est plus lisible par `anon`.** Le `SELECT` a
+été révoqué le 23/08 parce que la table porte les taux horaires.
+
+Toute lecture de cette table **doit** passer par une Edge Function.
+Un `.from('historique_contrats')` dans le front renverra un
+**401 Unauthorized** — erreur qui ne dit pas pourquoi.
+
+Les trois lectures existantes passent par l'Edge `contrats-liste`,
+routée par `action` :
+- `'liste'` (ou absente) → la liste transversale de l'onglet Contrats
+- `'collab'` → toutes les lignes d'un collaborateur (timeline de la
+  fiche)
+- `'paie'` → les colonnes brutes pour le calcul de paie
+
+### Ce qui est fermé
+
+- **Écriture `anon` : révoquée sur toutes les tables.** Aucun
+  `INSERT`, `UPDATE`, `DELETE`. Toutes les écritures passent par des
+  Edge en `service_role`. Les fronts ne contiennent aucun `.insert`,
+  `.update` ou `.delete`.
+- **`admins`** : aucune lecture possible. Les tokens admin ne fuient
+  pas.
+- **`journal_editions`** : aucune lecture possible.
+- **`historique_contrats`** : lecture révoquée le 23/08.
+
+⚠️ Des policies RLS traînent encore sur plusieurs tables avec
+`qual = true`. **Elles n'ont aucun effet** : le `GRANT` manque, la
+porte est fermée en amont. Ne pas s'y fier ni s'en alarmer — ce sont
+des vestiges.
+
+### Ce qui reste ouvert en lecture (et pourquoi c'est un problème)
+
+Avec la clé publique — qui est dans le code source de chaque page,
+par conception :
+
+| Table | Ce qui fuit |
+|---|---|
+| `collaborateurs` | **tous les tokens collab**, noms, emails, téléphones, matricules |
+| `equipes` | **tous les tokens manager** |
+| `jours`, `paie_detail`, `recap_paie` | toutes les heures de tout le monde |
+| `periodes` | peu sensible |
+
+⚠️ **Le point qui compte : `collaborateurs` donne tous les tokens.**
+C'est lui qui transforme une fuite de lecture en capacité d'écriture —
+avec un token volé, on écrit *légitimement* via `sauver-saisie`.
+
+⚠️ **Fermer `collaborateurs` est lourd** : neuf lectures dans les trois
+fronts, dont trois qui font le login collaborateur (`index.html` lit
+la table filtrée sur le token, il n'y a pas de RPC de vérification).
+Il faudrait une Edge de login sur le modèle de `verifier_admin`, donc
+toucher l'écran de soixante personnes. **Chantier à part entière.**
+
+⚠️ **`equipes` est le prochain candidat rentable** : quelques lignes,
+trois lectures seulement, et il porte les tokens manager.
+
+### Ce qui protège déjà côté serveur
+
+- `sauver-saisie` résout le token → `collab_id` et **vérifie
+  l'appartenance du jour** (403 si le jour n'est pas le sien).
+- `sauver-remarque` vérifie le `manager_token`.
+- Toutes les Edge admin passent par `verifier_admin`.
+- Les RPC sensibles sont en `service_role` uniquement.
+
+### Ce qui n'est pas protégé
+
+⚠️ **Aucune trace.** Rien ne permettrait de détecter qu'un accès
+anormal a eu lieu. Une table `acces_log` alimentée par les Edge
+coûterait peu — **prochain chantier prévu**.
+
+⚠️ **CORS ouvert à `*`** sur toutes les Edge. Le restreindre élimine
+les appels depuis un navigateur tiers, mais **ne protège pas** d'un
+appel direct en ligne de commande, ni de la lecture de la base qui ne
+passe pas par les Edge. Utile, pas décisif.
+
+⚠️ **Le token circule dans l'URL** (`?id=xxx`), donc dans les
+historiques, les captures d'écran, les messages WhatsApp. Il est aussi
+stocké en **cookie et localStorage** — donc `history.replaceState()`
+serait techniquement possible.
+**Non fait**, parce que l'appli est installable en PWA : si l'icône
+d'accueil pointe vers une URL nettoyée, l'ouverture suivante dépend
+entièrement du cookie, que le système peut purger. Risque de
+déconnecter des collaborateurs. **À vérifier avant de tenter.**
+
+⚠️ **Tokens de huit caractères, sans expiration ni rotation.** Environ
+2 800 milliards de combinaisons — pas brute-forçable en pratique, mais
+un token volé l'est pour toujours.
+
+### Méthode pour fermer une table
+
+Ordre **non commutatif**, appris le 23/08 :
+
+1. créer les RPC de remplacement (aucun risque, rien ne les appelle)
+2. étendre l'Edge, **en gardant la compatibilité ascendante**
+3. déployer l'Edge, vérifier que l'ancien front marche encore
+4. adapter le front, tester
+5. pousser, **vérifier en prod**
+6. **révoquer le `SELECT` en dernier**
+
+⚠️ La marche arrière est immédiate : `grant select on <table> to anon`.
+
+---
+
+## Le journal des déclarations
+
+### Le besoin
+
+Mettre les contrats à jour dans l'appli ne suffit pas : il faut les
+reporter dans la **MSA** (TESA) ou dans **Silae** (le reste). C'est
+cette étape qui n'avait aucun support, et où les oublis se produisent.
+
+**Le process, dans cet ordre :** appli → journal → MSA/Silae.
+⚠️ **Aucun geste dans MSA ou Silae qui ne passe pas d'abord par
+l'appli.** Sans cette rigueur, le journal dérive.
+
+### Pourquoi pas une liste de tâches
+
+Une table de tâches remplie automatiquement à chaque écriture aurait
+été plus lourde et risquait de se désynchroniser. **L'admin déclare
+par lots, une fois par mois** — une vue calculée à la demande suffit.
+
+### Le fonctionnement
+
+- `journal_editions (id, edite_le, edite_par, borne_debut, contenu)` —
+  une ligne par édition.
+- `journal_mouvements()` — tout ce qui a été **créé ou modifié**
+  depuis la dernière clôture (`created_at` ou `modifie_le` postérieur
+  à la borne).
+- `journal_cloturer(par, contenu)` — fige et archive.
+- `journal_archives()` — les éditions passées.
+
+**Ventilation : structure → destination (MSA/Silae) → collaborateur.**
+⚠️ C'est **la structure du mouvement** qui décide, pas celle de la
+personne. Un changement de structure fait donc apparaître le
+collaborateur dans deux blocs — c'est voulu : quand on est dans la MSA
+pour la SAS, on ne veut pas voir ce qui concerne la SCEA.
+
+⚠️ Le **matricule** ne s'affiche que pour Silae. Un TESA n'en a pas
+besoin.
+
+### Ce que le journal ne sait pas faire
+
+⚠️ **Il ne peut pas distinguer une fin de contrat d'une autre
+modification.** `historique_contrats` ne garde que `modifie_le`, pas le
+détail de ce qui a changé. Toute modification s'affiche donc
+« Contrat modifié — vérifier », avec les valeurs actuelles.
+
+Un journal des changements (trigger + table) aurait donné le détail,
+mais : maintenance à chaque colonne ajoutée, et pollution par les
+corrections de frappe faites trente secondes après la saisie.
+**Écarté volontairement.**
+
+### L'archive est une photo, pas un recalcul
+
+Le **texte affiché** est stocké dans `contenu` au moment de la
+clôture. Rouvrir une édition passée montre exactement ce que l'admin
+avait sous les yeux ce jour-là.
+
+⚠️ Un recalcul aurait dérivé : un contrat corrigé après coup voit son
+`modifie_le` avancer et **sortirait** de la fenêtre d'une archive
+passée.
+
+⚠️ Conséquence : le journal en cours est en **HTML stylé**, l'archive
+en **texte brut**. Les deux ne se ressemblent pas — assumé.
+
+### La clôture est explicite
+
+Un bouton, jamais automatique. Ouvrir le journal pour regarder ne doit
+pas remettre le compteur à zéro.
+
+⚠️ Deux admins qui éditent à deux jours d'intervalle : le second ne
+verra que ce qui a bougé entre les deux. C'est le comportement voulu.
+
+### L'impression
+
+⚠️ **Fenêtre `about:blank` dédiée**, sur le patron du PDF des relevés.
+Raison : le pied de page automatique du navigateur affiche l'URL —
+**donc le token admin**. Une feuille imprimée oubliée sur un bureau
+donnait l'accès complet à l'administration.
+
+`@page { margin }` ne supprime pas ce pied de façon fiable dans
+Chrome ; seule la fenêtre dédiée le règle vraiment.
+
