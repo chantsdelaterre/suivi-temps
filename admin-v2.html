@@ -756,8 +756,9 @@ function showTab(nom, el) {
 }
 
 async function chargerEquipes() {
-  const { data, error } = await sb.from('equipes').select('*').order('nom_equipe');
-  if (error) return;
+  const { data: resp, error: eEdge } = await sb.functions.invoke('equipes-liste', { body: { admin_token: ADMIN_TOKEN } });
+  if (eEdge || !resp || resp.ok !== true) { console.error('chargerEquipes : lecture equipes (Edge) en échec', eEdge || (resp && resp.error)); return; }
+  const data = Array.isArray(resp.equipes) ? resp.equipes : [];
   // Mapping snake_case → camelCase (cache lu par nomEquipe + le select modale)
   equipesData = (data || []).map(e => ({
     equipeId: e.equipe_id,
@@ -927,14 +928,15 @@ Chants de la Terre`;
 async function chargerVueEquipes() {
   document.getElementById('equipes-tbody').innerHTML = '<tr><td colspan="5"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
   const [re, rc] = await Promise.all([
-    sb.from('equipes').select('*').order('nom_equipe'),
+    sb.functions.invoke('equipes-liste', { body: { admin_token: ADMIN_TOKEN } }),
     sb.functions.invoke('collaborateurs-liste', { body: { admin_token: ADMIN_TOKEN } })
   ]);
-  if (re.error) {
+  const reOk = re.data && re.data.ok === true && Array.isArray(re.data.equipes);
+  if (!reOk) {
     document.getElementById('equipes-tbody').innerHTML = '<tr><td colspan="5" style="color:var(--rouge);padding:24px">Erreur de chargement.</td></tr>';
     return;
   }
-  const equipes = (re.data || []).map(e => ({
+  const equipes = (re.data.equipes || []).map(e => ({
     equipeId: e.equipe_id,
     nomEquipe: e.nom_equipe,
     nomManager: e.nom_manager,
