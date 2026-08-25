@@ -1441,110 +1441,188 @@ recopier vers la MSA, comme les heures.
 donnée cosmétique — et un contrat sans heures renseignées rendra le
 compteur incalculable.
 
+## Sécurité des accès — état au 25/08/2026
 
-## Sécurité des accès — état au 23/08/2026
+> **Remplace les sections « Sécurité des accès » du 23/08.** Trois
+> tables ont été fermées depuis.
 
 ### ⚠️ Le piège à connaître avant d'écrire du code
 
-**`historique_contrats` n'est plus lisible par `anon`.** Le `SELECT` a
-été révoqué le 23/08 parce que la table porte les taux horaires.
+**Trois tables ne sont plus lisibles par `anon`.** Un `.from(...)` sur
+l'une d'elles dans le front renvoie un **401 Unauthorized** — erreur
+qui ne dit pas pourquoi.
 
-Toute lecture de cette table **doit** passer par une Edge Function.
-Un `.from('historique_contrats')` dans le front renverra un
-**401 Unauthorized** — erreur qui ne dit pas pourquoi.
+| Table | Fermée le | Pourquoi |
+|---|---|---|
+| `historique_contrats` | 23/08 | porte les taux horaires |
+| `collaborateurs` | 25/08 | **porte tous les tokens collab** |
+| `equipes` | 25/08 | **porte tous les tokens manager** |
 
-Les trois lectures existantes passent par l'Edge `contrats-liste`,
-routée par `action` :
-- `'liste'` (ou absente) → la liste transversale de l'onglet Contrats
-- `'collab'` → toutes les lignes d'un collaborateur (timeline de la
-  fiche)
-- `'paie'` → les colonnes brutes pour le calcul de paie
+Plus `admins` et `journal_editions`, qui n'ont jamais été ouvertes.
 
-### Ce qui est fermé
+**Toute lecture de ces tables passe par une Edge.**
 
-- **Écriture `anon` : révoquée sur toutes les tables.** Aucun
-  `INSERT`, `UPDATE`, `DELETE`. Toutes les écritures passent par des
-  Edge en `service_role`. Les fronts ne contiennent aucun `.insert`,
-  `.update` ou `.delete`.
-- **`admins`** : aucune lecture possible. Les tokens admin ne fuient
-  pas.
-- **`journal_editions`** : aucune lecture possible.
-- **`historique_contrats`** : lecture révoquée le 23/08.
+### Les Edge de lecture, et ce qu'elles servent
 
-⚠️ Des policies RLS traînent encore sur plusieurs tables avec
-`qual = true`. **Elles n'ont aucun effet** : le `GRANT` manque, la
-porte est fermée en amont. Ne pas s'y fier ni s'en alarmer — ce sont
-des vestiges.
+| Edge | Pour qui | Ce qu'elle renvoie |
+|---|---|---|
+| `contrats-liste` | admin | routée par `action` : `liste`, `collab`, `paie` |
+| `collaborateurs-liste` | admin | tous les collaborateurs, tokens compris |
+| `equipes-liste` | admin | les équipes + `manager_token` (bouton « Copier lien ») |
+| `manager-equipe` | manager | équipe + membres + jours, **un seul appel** |
+| `collab-session` | collaborateur | identité, **une seule résolution du token** |
 
-### Ce qui reste ouvert en lecture (et pourquoi c'est un problème)
+⚠️ **`collab-session` ne renvoie que neuf champs** : `collab_id`,
+`prenom`, `nom`, `nom_affiche`, `structure`, `type_periode`,
+`equipe_id`, `role`, et `manager_token` **uniquement si le
+collaborateur est responsable**. Pas son propre token, pas l'email,
+pas le téléphone, pas le matricule.
 
-Avec la clé publique — qui est dans le code source de chaque page,
-par conception :
+⚠️ **L'Edge `collab-session` relaie `data.collab` tel quel.** Ajouter
+un champ à la RPC suffit — aucun déploiement d'Edge nécessaire. C'est
+comme ça que `manager_token` a été ajouté le 25/08.
 
-| Table | Ce qui fuit |
-|---|---|
-| `collaborateurs` | **tous les tokens collab**, noms, emails, téléphones, matricules |
-| `equipes` | **tous les tokens manager** |
-| `jours`, `paie_detail`, `recap_paie` | toutes les heures de tout le monde |
-| `periodes` | peu sensible |
+⚠️ **`manager_equipe` ne renvoie pas les tokens des membres.**
 
-⚠️ **Le point qui compte : `collaborateurs` donne tous les tokens.**
-C'est lui qui transforme une fuite de lecture en capacité d'écriture —
-avec un token volé, on écrit *légitimement* via `sauver-saisie`.
+### Ce qui reste ouvert en lecture
 
-⚠️ **Fermer `collaborateurs` est lourd** : neuf lectures dans les trois
-fronts, dont trois qui font le login collaborateur (`index.html` lit
-la table filtrée sur le token, il n'y a pas de RPC de vérification).
-Il faudrait une Edge de login sur le modèle de `verifier_admin`, donc
-toucher l'écran de soixante personnes. **Chantier à part entière.**
+| Table | Lue par | Ce qui fuit |
+|---|---|---|
+| `jours` | `index.html` | les heures |
+| `periodes` | `index.html` | peu sensible |
+| `paie_detail` | `admin-v2.html` (5 lectures) | les heures |
+| `recap_paie` | `admin-v2.html` (3 lectures) | les heures |
 
-⚠️ **`equipes` est le prochain candidat rentable** : quelques lignes,
-trois lectures seulement, et il porte les tokens manager.
+⚠️ **C'est une fuite de données, mais sans moyen d'action** : plus
+aucun token n'est accessible, donc plus personne ne peut prendre une
+identité ni écrire. Le plus grave est traité.
 
-### Ce qui protège déjà côté serveur
+⚠️ **`paie_detail` et `recap_paie` ne sont PAS un gain facile**, malgré
+ce que j'avais annoncé : huit lectures subsistent dans l'admin, dont
+deux via `fetchAllPages` — donc **la pagination est à reproduire**.
+Compter une demi-journée.
 
-- `sauver-saisie` résout le token → `collab_id` et **vérifie
-  l'appartenance du jour** (403 si le jour n'est pas le sien).
-- `sauver-remarque` vérifie le `manager_token`.
-- Toutes les Edge admin passent par `verifier_admin`.
-- Les RPC sensibles sont en `service_role` uniquement.
+### La méthode, validée cinq fois
 
-### Ce qui n'est pas protégé
+Ordre **non commutatif** :
 
-⚠️ **Aucune trace.** Rien ne permettrait de détecter qu'un accès
-anormal a eu lieu. Une table `acces_log` alimentée par les Edge
-coûterait peu — **prochain chantier prévu**.
-
-⚠️ **CORS ouvert à `*`** sur toutes les Edge. Le restreindre élimine
-les appels depuis un navigateur tiers, mais **ne protège pas** d'un
-appel direct en ligne de commande, ni de la lecture de la base qui ne
-passe pas par les Edge. Utile, pas décisif.
-
-⚠️ **Le token circule dans l'URL** (`?id=xxx`), donc dans les
-historiques, les captures d'écran, les messages WhatsApp. Il est aussi
-stocké en **cookie et localStorage** — donc `history.replaceState()`
-serait techniquement possible.
-**Non fait**, parce que l'appli est installable en PWA : si l'icône
-d'accueil pointe vers une URL nettoyée, l'ouverture suivante dépend
-entièrement du cookie, que le système peut purger. Risque de
-déconnecter des collaborateurs. **À vérifier avant de tenter.**
-
-⚠️ **Tokens de huit caractères, sans expiration ni rotation.** Environ
-2 800 milliards de combinaisons — pas brute-forçable en pratique, mais
-un token volé l'est pour toujours.
-
-### Méthode pour fermer une table
-
-Ordre **non commutatif**, appris le 23/08 :
-
-1. créer les RPC de remplacement (aucun risque, rien ne les appelle)
-2. étendre l'Edge, **en gardant la compatibilité ascendante**
-3. déployer l'Edge, vérifier que l'ancien front marche encore
-4. adapter le front, tester
+1. créer la RPC de remplacement (aucun risque, rien ne l'appelle)
+2. créer l'Edge, **en gardant la compatibilité ascendante** si elle
+   existe déjà
+3. déployer l'Edge, **vérifier que l'ancien front marche encore**
+4. adapter le front, tester en local
 5. pousser, **vérifier en prod**
 6. **révoquer le `SELECT` en dernier**
 
-⚠️ La marche arrière est immédiate : `grant select on <table> to anon`.
+⚠️ Marche arrière immédiate : `grant select on <table> to anon;`
+
+⚠️ **Pour `index.html` (soixante personnes), ajouter une étape** :
+attendre deux ou trois jours d'usage réel avant de révoquer. Fait pour
+`collaborateurs` — révoqué le mardi 25/08 après vérification que
+**49 collaborateurs avaient saisi** depuis le déploiement du dimanche
+soir. C'est cette vérification qui prouve que le nouveau code est
+éprouvé, pas l'absence de plainte.
+
+```sql
+select count(distinct collab_id), max(date_derniere_modif)
+from jours where date_jour >= '<date du déploiement>';
+```
+
+### Ce qu'on a appris sur les fronts
+
+**`index.html`**
+- **Le Service Worker ne cache PAS `index.html`**, seulement les
+  polices Google. Aucun risque de servir une version périmée du code.
+- ⚠️ **Un onglet resté ouvert exécute l'ancien code** jusqu'au prochain
+  rechargement. Un rafraîchissement règle tout — mais autant éviter de
+  révoquer un jour de forte activité.
+- ⚠️ **La bibliothèque Supabase vient d'un CDN externe**
+  (`cdn.jsdelivr.net`). Sans réseau, `createClient` n'existe pas et le
+  script s'arrête **avant tout message d'erreur** — d'où un chargement
+  qui tourne en rond. **Point de défaillance unique : si le CDN tombe,
+  personne ne saisit.** À porter au backlog.
+- **Pas de mode hors ligne**, pas de file d'attente. Tout échoue
+  immédiatement sans réseau.
+- **Rien ne se rafraîchit automatiquement.** Un onglet ouvert toute la
+  journée garde les données du matin et ne bascule pas au jour suivant
+  après minuit. Le filet est côté serveur : `sauver-saisie` revérifie
+  tout contre la base vivante.
+- ⚠️ **« Aucun jour trouvé » s'affiche aussi quand le réseau est
+  coupé** — message trompeur, le collaborateur croit qu'il n'a rien
+  saisi. Backlog.
+
+**`manager.html`**
+- Le token manager **n'est pas stocké** (ni cookie, ni localStorage).
+  Il ne vit que dans l'URL.
+- ⚠️ Mais il **n'est jamais envoyé** : le manager passe par le bouton
+  « Mon équipe » de son espace collaborateur, qui construit le lien à
+  la volée depuis `collab-session`. Le token ne circule pas hors de
+  l'appli.
+- Le bouton « Copier lien » de l'onglet Équipes est donc peut-être un
+  vestige.
+
+### Mesures de latence (23/08, en prod)
+
+| | |
+|---|---|
+| Lecture directe | ~116 ms |
+| Edge à froid | ~660 ms |
+| Edge réchauffée | ~360 ms |
+
+⚠️ Soit **250 à 500 ms de plus** par appel. Négligeable devant la
+latence réseau d'un téléphone en 4G — mais c'est pourquoi on a réduit
+le nombre d'appels : `index.html` fait **une** résolution du token au
+lieu de trois, `manager.html` fait **un** appel au lieu de trois
+lectures.
+
+### Observabilité
+
+- **Logs Supabase : 7 jours de rétention** sur le plan Pro. Les Log
+  Drains coûtent 60 $/mois — hors de proportion.
+- ⚠️ **Les tokens apparaissent en clair dans les logs** (ils sont dans
+  l'URL des requêtes). Quiconque accède au tableau de bord les lit.
+- **Volume de référence : ~5 600 requêtes sur 7 jours** pour soixante
+  personnes. Une aspiration de base laisserait une signature évidente.
+- **Observability → Overview** (icône longue-vue) donne CPU, disque,
+  connexions. Au 23/08 : 3 % CPU, 14 % disque, 7 connexions sur 60.
+
+⚠️ **Aucune alerte automatique.** Il faut aller regarder.
+
+### Ce qui reste non traité
+
+⚠️ **Le token dans l'URL** (`?id=xxx`). Il est aussi en cookie et
+localStorage, donc `history.replaceState()` serait possible. **Non
+fait** : l'appli est installable en PWA, et si l'icône d'accueil pointe
+vers une URL nettoyée, l'ouverture suivante dépend entièrement du
+cookie — que le système peut purger. Risque de déconnecter des
+collaborateurs. À vérifier avant de tenter.
+
+⚠️ **CORS ouvert à `*`.** Le restreindre élimine les appels depuis un
+navigateur tiers, mais **ne protège pas** d'un appel en ligne de
+commande, ni des lectures directes qui restent. Utile, pas décisif.
+
+⚠️ **Tokens de huit caractères, sans expiration ni rotation.** Un token
+volé l'est pour toujours. Chantier Auth au sens large.
+
+⚠️ **Postgres 17.6.1.127**, la dernière est 17.6.1.155. Correctif
+mineur, redémarrage de la base. **À faire un dimanche soir.**
+
+⚠️ **`TRUNCATE` encore accordé à `anon`** sur toutes les tables.
+Probablement inexploitable via PostgREST, mais sans raison d'être :
+`revoke truncate on all tables in schema public from anon;`
+
+### Deux points de vocabulaire, pour éviter une fausse alerte
+
+**Une policy RLS autorise, un `GRANT` permet.** Des policies traînent
+avec `qual = true` sur plusieurs tables — **elles n'ont aucun effet**
+tant que le `GRANT` manque. Ne pas s'en alarmer : c'est ce qui m'a fait
+conclure à tort, le 23/08 au matin, que l'écriture était ouverte.
+
+⚠️ **La clé publique dans le code source n'est pas une faille** : elle
+est publique par conception. **La protection vient des `GRANT`, pas du
+secret de la clé.** Tout ce qui vit dans le navigateur est visible et
+contournable — la sécurité doit vivre en base.
+
 
 ---
 
