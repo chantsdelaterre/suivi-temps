@@ -40,6 +40,19 @@
         --vide: #e8c0d0;
     }
 
+    /* Bandeau d'information (deadline). 100% variables → lisible dans les deux thèmes.
+       --rouge et --blanc ne sont pas redéfinis par theme-pourpre : identiques partout. */
+    .bandeau-info {
+        margin: 8px 16px 16px;
+        padding: 12px 16px;
+        background: var(--blanc);
+        border: 1px solid var(--vide);
+        border-radius: 12px;
+        color: var(--texte);
+        font-size: 14px;
+        line-height: 1.45;
+    }
+
     * {
         box-sizing: border-box;
         margin: 0;
@@ -661,6 +674,7 @@
     </div>
     <div class="main">
         <div class="vue active" id="vue-journee">
+            <div id="bandeau-info" class="bandeau-info" style="display:none"></div>
             <div id="journee-content">
                 <div class="loader">
                     <div class="spinner"></div>
@@ -893,10 +907,37 @@
             document.getElementById('hdr-periode').textContent =
                 (perDeb && perFin) ? ('Du ' + perDeb + ' au ' + perFin)
                 : (periode && periode.nom_periode ? periode.nom_periode : 'Période en cours');
+            renderBandeaux(periode && periode.date_fin);   // bandeau fin de période (front pur, donnée déjà chargée)
             renderJournee();
         } catch (e) {
             document.getElementById('journee-content').innerHTML = '<div class="error-box">Impossible de charger la journée.<br>' + e.message + '</div>';
         }
+    }
+    // Bandeau d'information en haut de "Ma journée". PRIORITÉ : FIN DE PÉRIODE d'abord ; jamais deux bandeaux.
+    // (Le bandeau FIN DE CONTRAT viendra en repli — else — quand collab_session renverra la date de fin de contrat.)
+    function renderBandeaux(dateFinPeriodeISO) {
+        const el = document.getElementById('bandeau-info');
+        if (!el) return;
+        const html = bandeauFinPeriode(dateFinPeriodeISO);
+        if (html) { el.innerHTML = html; el.style.display = 'block'; }
+        else { el.innerHTML = ''; el.style.display = 'none'; }
+    }
+    // Visible les 4 DERNIERS jours de la période (J-3, J-2, J-1, jour même). Rien avant, rien après.
+    function bandeauFinPeriode(dateFinISO) {
+        if (!dateFinISO) return '';
+        const p = String(dateFinISO).slice(0, 10).split('-');
+        if (p.length !== 3) return '';
+        const fin = new Date(+p[0], +p[1] - 1, +p[2]);
+        if (isNaN(fin)) return '';
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const diff = Math.round((fin - today) / 86400000);   // jours entiers, en date locale
+        if (diff < 0 || diff > 3) return '';
+        if (diff === 0) {
+            return 'Dernier jour pour saisir vos heures. Passé ce soir, plus de modifications possibles.';
+        }
+        const jour = JOURS[fin.getDay()].toLowerCase();   // jour en toutes lettres, minuscule (« dimanche »)
+        return 'Fin de période de paie ' + jour + ' ' + fin.getDate() + '. Passé ce délai, plus de modifications possibles.';
     }
     function renderJournee() {
         if (!jourData)
