@@ -859,16 +859,8 @@
                 .select('*')
                 .eq('periode_id', jour.periode_id)
                 .single();
-            // Récupérer le manager_token si responsable
-            let equipeManagerToken = '';
-            if (collab.role === 'responsable' && collab.equipe_id) {
-                const { data: equipe } = await sb
-                    .from('equipes')
-                    .select('manager_token')
-                    .eq('equipe_id', collab.equipe_id)
-                    .single();
-                if (equipe) equipeManagerToken = equipe.manager_token || '';
-            }
+            // manager_token fourni par collab-session (renseigné si responsable, null sinon).
+            const equipeManagerToken = collab.manager_token || '';
             jourData = {
                 jourId: jour.jour_id,
                 dateJour: jour.date_jour,
