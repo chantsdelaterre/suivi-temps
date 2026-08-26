@@ -926,14 +926,22 @@
             document.getElementById('journee-content').innerHTML = '<div class="error-box">Impossible de charger la journée.<br>' + e.message + '</div>';
         }
     }
-    // Bandeau d'information en haut de "Ma journée". PRIORITÉ : FIN DE PÉRIODE d'abord ; jamais deux bandeaux.
-    // (Le bandeau FIN DE CONTRAT viendra en repli — else — quand collab_session renverra la date de fin de contrat.)
+    // Bandeau d'information en haut de "Ma journée". PRIORITÉ : FIN DE PÉRIODE d'abord, sinon FIN DE CONTRAT ; jamais les deux.
     function renderBandeaux(dateFinPeriodeISO) {
         const el = document.getElementById('bandeau-info');
         if (!el) return;
-        const html = bandeauFinPeriode(dateFinPeriodeISO);
+        let html = bandeauFinPeriode(dateFinPeriodeISO);
+        if (!html) html = bandeauFinContrat(_collabSession && _collabSession.contrat_termine_le);   // repli, depuis la session mémorisée (aucun appel réseau)
         if (html) { el.innerHTML = html; el.style.display = 'block'; }
         else { el.innerHTML = ''; el.style.display = 'none'; }
+    }
+    // Fin de contrat : affiché UNIQUEMENT si contrat_termine_le est renseigné (aucun contrat ne couvre aujourd'hui). null → rien.
+    function bandeauFinContrat(dateFinContratISO) {
+        if (!dateFinContratISO) return '';
+        const p = String(dateFinContratISO).slice(0, 10).split('-');
+        if (p.length !== 3) return '';
+        const dateTxt = p[2] + '/' + p[1] + '/' + p[0];   // JJ/MM/AAAA
+        return 'Votre contrat s\'est terminé le ' + dateTxt + '. Dernier jour pour saisir : aujourd\'hui.';
     }
     // Visible les 4 DERNIERS jours de la période (J-3, J-2, J-1, jour même). Rien avant, rien après.
     function bandeauFinPeriode(dateFinISO) {
