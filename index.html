@@ -549,12 +549,12 @@
         display: block;
     }
 
-    .picker-head {
+    .picker-foot {
         display: flex;
-        justify-content: space-between;
+        justify-content: center;
         align-items: center;
-        padding: 16px 24px 12px;
-        border-bottom: 1px solid var(--vide);
+        padding: 10px 24px 14px;
+        border-top: 1px solid var(--vide);
     }
 
     .picker-cancel {
@@ -601,6 +601,20 @@
         font-weight: 500;
         color: var(--texte);
         z-index: 3;
+        pointer-events: none;
+    }
+
+    /* Deux traits fins encadrant la ligne sélectionnée (centre = 80px sur 160px de haut, item de 40px). */
+    .picker-drums::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 60px;
+        height: 40px;
+        border-top: 1px solid var(--vert-clair);
+        border-bottom: 1px solid var(--vert-clair);
+        z-index: 2;
         pointer-events: none;
     }
 
@@ -750,13 +764,12 @@
     <div id="toast-msg"></div>
     <div id="picker-overlay" onclick="cancelPicker()"></div>
     <div id="picker-popup">
-        <div class="picker-head">
-            <span class="picker-preview" id="picker-preview">08:00</span>
-            <button class="picker-ok" onclick="confirmPicker()">OK</button>
-        </div>
         <div class="picker-drums">
-            <div class="drum" id="drum-h" onscroll="updatePreview()"></div>
-            <div class="drum" id="drum-m" onscroll="updatePreview()"></div>
+            <div class="drum" id="drum-h"></div>
+            <div class="drum" id="drum-m"></div>
+        </div>
+        <div class="picker-foot">
+            <button class="picker-ok" onclick="confirmPicker()">OK</button>
         </div>
     </div>
     <script>
@@ -1514,34 +1527,33 @@ tbody td.modif{font-size:9px;color:var(--txt2);white-space:nowrap;}
         setTimeout(() => {
             document.getElementById('drum-h').scrollTop = hi * 40;
             document.getElementById('drum-m').scrollTop = mi * 40;
-            updatePreview();
         }, 30);
         const popup = document.getElementById('picker-popup');
         document.getElementById('picker-overlay').classList.add('open');
         popup.classList.add('open');
-        // Ancrage SUR le bouton : centre des molettes aligné sur le centre du bouton
+        // Ancrage : la LIGNE SÉLECTIONNÉE (centre des molettes, entre les deux traits) alignée sur le centre du champ.
         const rect = document.getElementById(fieldId).getBoundingClientRect();
+        const drums = popup.querySelector('.picker-drums');
         const popupW = 120, marge = 6;
-        const popupH = popup.offsetHeight;                                 // hauteur totale du picker
-        const drumsH = popup.querySelector('.picker-drums').offsetHeight;  // hauteur de la zone des molettes
-        // décalage du centre des molettes par rapport au haut du picker (bandeau + demi-molettes)
-        const centreMolettes = popupH - drumsH / 2;
-        // Vertical : le centre des molettes tombe au centre du bouton cliqué
-        const top = (rect.top + rect.height / 2) - centreMolettes;
-        // Horizontal : centré sur le bouton, borné aux bords de l'écran
+        const popupH = popup.offsetHeight;                       // hauteur totale du picker
+        const centreLigne = drums.offsetTop + drums.offsetHeight / 2;  // molettes EN HAUT désormais
+        // Vertical : ligne sélectionnée au centre du champ, PUIS bornage à la fenêtre (bords haut/bas).
+        let top = (rect.top + rect.height / 2) - centreLigne;
+        top = Math.max(marge, Math.min(top, window.innerHeight - popupH - marge));
+        // Horizontal : centré sur le champ, borné aux bords.
         let left = rect.left + rect.width / 2 - popupW / 2;
         left = Math.max(marge, Math.min(left, window.innerWidth - popupW - marge));
-        // getBoundingClientRect = coordonnées écran ; on convertit en coordonnées page
+        // getBoundingClientRect = coordonnées écran ; on convertit en coordonnées page.
         popup.style.top = (top + window.scrollY) + 'px';
         popup.style.left = (left + window.scrollX) + 'px';
     }
-    function updatePreview() {
+    function _pickerVal() {
         const hi = Math.round(document.getElementById('drum-h').scrollTop / 40),
             mi = Math.round(document.getElementById('drum-m').scrollTop / 40);
-        document.getElementById('picker-preview').textContent = (HOURS[Math.min(hi, 23)] || '08') + ':' + (MINS[Math.min(mi, 3)] || '00');
+        return (HOURS[Math.min(hi, 23)] || '08') + ':' + (MINS[Math.min(mi, 3)] || '00');
     }
     function confirmPicker() {
-        const val = document.getElementById('picker-preview').textContent;
+        const val = _pickerVal();   // valeur lue directement dans les rouleaux (entre les deux traits)
         const btn = document.getElementById(pickerTarget);
         btn.textContent = val;
         btn.classList.remove('empty-val');
