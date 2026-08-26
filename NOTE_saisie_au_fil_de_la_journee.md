@@ -1,3 +1,13 @@
+> ⚠️ **PÉRIMÉ — 26/08/2026.** La conception décrite ici (brouillon en
+> base, mode `brouillon:true` dans l'Edge, auto-enregistrement
+> silencieux) n'a PAS été retenue. Le besoin réel s'est révélé plus
+> simple : de la mémoire, pas du pointage. Livré en localStorage,
+> front uniquement. Voir `CLAUDE.md`, section « Saisie collaborateur
+> — décisions du 26/08/2026 ».
+>
+> Le reste du document garde sa valeur : il porte le raisonnement
+> métier et les contraintes qui ont mené à cette décision.
+
 # NOTE — Saisie au fil de la journée (brouillon) — conception figée (16/07/2026)
 
 **Besoin métier :** certains collabs veulent saisir leurs heures au fur et à mesure (ex. 06:00, 12:15, 13:30, 15:30), en fermant/rouvrant l'appli entre-temps. Aujourd'hui impossible : un créneau n'est gardé que si début ET fin sont remplis, et chaque enregistrement consomme le quota de 3 modifications/jour.

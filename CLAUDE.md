@@ -141,134 +141,6 @@ une usine à gaz (**pas de table de répartition hebdomadaire**).
 - **Infos contractuelles exactes** à figer.
 - **Ajustements de `recap_paie`** (structure à faire évoluer).
 
-## Plan de bataille — bascule paie sur Supabase (échéance clôture 15/06/2026)
-
-### Avant le 15/06
-
-1. ✅ Sauvegarder l'architecture paie dans `CLAUDE.md` (fait).
-2. **Définir les règles de calcul de la paie** — cœur métier sensible, à tête
-   reposée.
-3. **Créer les tables** : paie-détail, ajuster `recap_paie`, créer
-   historique-contrats.
-4. **Écrire et tester (à blanc) le script d'import Sheets → Supabase** :
-   conversion des dates `jj/mm/aaaa` → ISO, virgules décimales → points.
-
-### Le 15/06 au soir (bascule)
-
-5. **Export Sheets + import réel** dans Supabase : période **`DEC_2026_06`**
-   complète (~**300 jours**, **15 collabs**).
-6. **Brancher la saisie collab (`index.html`) sur Supabase** pour la période
-   suivante (vérifier l'état de cette migration).
-
-### Après le 15 (marge de quelques jours pour traiter la paie)
-
-7. **Outil admin (`admin.html`)** : porter + adapter vers Supabase + ajouter
-   récap (totaux calculés), ajustements admin (`AT` / `CS`), validation
-   (gel → clôture).
-8. **Édition PDF** des relevés détaillés.
-9. **Plus tard** : export **Silae**, **annualisation**, **signature**, **front
-   manager (`manager.html`)** — souhaité avant le 15 si possible, sinon après.
-   - **Suivi annuel des CP** (règle métier à ne pas perdre) : dotation de
-     **5 semaines = 5 de CHAQUE jour de semaine** (5 lundis, 5 mardis… 5
-     vendredis). Empêche qu'un collab pose **tous** ses CP sur son jour le plus
-     lourd. **Contrôle ANNUEL** (lié à l'annualisation), à **plafonner par jour
-     de semaine**. Cas **temps partiel à préciser** (dotation =
-     5 × nombre de jours travaillés ?). **PAS sur le chemin du 15/06.**
-
-### Filet de sécurité
-
-Si Supabase n'est **pas prêt à temps**, la paie de juin se fait sur
-**Sheets / GAS** (porte de sortie, sans stress).
-
-### Contexte front (rappel)
-
-`index.html` gère **désormais** le verrou de période (branché dans
-`loadJourDuJour` **et** `ouvrirJourPasse`), avec **messages précis**, **P3**
-(sauvegarde pessimiste) et **P4** (`nbModifications` du jour courant). Reste
-**non géré** : la consultation de **toute** la période ; le chantier
-« **espace collab transparent** » est **reporté après la paie**.
-
-## Bascule collab du 15/06 — reste à faire
-
-**OBJECTIF** : le **15/06**, les saisies collaborateur se font sur **Supabase**
-(`index.html`).
-
-### FAIT
-
-- Saisie collab déjà sur Supabase.
-- Verrou de période (condition #4) dans `loadJourDuJour` **et** `ouvrirJourPasse`.
-- Messages de verrouillage précis (3 modifs / gelée-clôturée / délai 5 j / neutre).
-- **P4** : `nbModifications` chargé pour le jour courant (`loadJourDuJour`).
-- **P3** : sauvegarde **pessimiste** (« Enregistré » seulement après UPDATE confirmé).
-- Script d'import Sheets → Supabase **testé à blanc**.
-
-### RESTE AVANT LE 15
-
-- **#3 (IMPORTANT)** : `fetchMesJoursSupabase` fait `.single()` sur la période
-  `ouverte` (~l.1171) → **casse s'il y a 0 ou >1 période ouverte**. Or il y a
-  **2 périodes ouvertes en parallèle** (civile + décalée). À corriger
-  (`.maybeSingle()` ou filtrage par type/collab) et **tester avec un collègue
-  civil ET un décalé**.
-- **#4** : le calcul hebdo dans `sauvegarder` (~l.1095-1099) n'a **pas de borne
-  de fin de semaine** → il agrège des jours **futurs**. À **borner**.
-- **#1 (cosmétique, pas urgent)** : ménage du **code mort GAS** (`API_URL`,
-  `jsonpFetch`, `action:'saveHoraires'`).
-
-### CALENDRIER DE BASCULE (dim 14 → lun 15)
-
-- **Dimanche 14 au soir** : import réel **DEC_2026_06** (période **encore
-  ouverte**) — ré-export CSV → script → **test rollback** → commit.
-- **Nuit du 14 au 15** : le cron **gèle `DEC_2026_06` automatiquement**
-  (`date_fin` au 14 désormais passée → `ouverte` → `gelee`).
-- **Lundi 15** : bascule équipe — **tout le monde saisit sur Supabase**.
-- ⚠️ **Vigilance** : exporter le CSV **APRÈS la dernière saisie du 14**.
-  Sinon une saisie tardive serait **écrasée** par le `delete + insert` du script
-  d'import.
-
-## Architecture de déploiement & bascule du 15
-
-### PROD ACTUELLE (Settings → Pages)
-
-⚠️ **Bascule faite.** GitHub Pages sert désormais la branche **`supabase`** —
-mode **« Deploy from a branch »**, dossier **`/ (root)`** : c'est l'appli
-Supabase que les collègues utilisent en ce moment.
-**`main` n'est PLUS servie** : elle est la **branche de ROLLBACK** (prod
-GAS/Sheets intacte, à repointer dans Settings → Pages en cas de problème).
-Site live : **https://chantsdelaterre.github.io/suivi-temps/**
-(Les sections « bascule du 15 » ci-dessous sont **historiques** — le plan est
-exécuté.)
-
-### BRANCHE `supabase`
-
-Préparation de la bascule : **saisie sur Supabase** + tables/cron/import +
-correctifs (verrous, #3, #4). **~35 commits d'avance sur `main`**, **non
-déployée** (rien de Supabase n'est servi en prod tant que Pages pointe sur
-`main`).
-
-### BASCULE DU 15 — geste recommandé
-
-Dans **Settings → Pages → Build and deployment**, changer la **branche servie**
-de `main` à **`supabase`**, puis **Save**.
-- **Avantage : `main` reste intacte = ROLLBACK IMMÉDIAT.** En cas de problème,
-  il suffit de **remettre `main`** dans le menu pour revenir à la prod GAS/Sheets.
-- **Alternative** : merger `supabase` → `main` — mais ça **touche `main`** et
-  c'est **moins facile à annuler**. Non retenu par défaut.
-
-### À VÉRIFIER LE 14
-
-Que **`supabase` est bien à jour** (tout poussé sur `origin/supabase`) **avant**
-de pointer Pages dessus.
-
-### Hors périmètre de la bascule collab du 15
-
-`admin.html` et `manager.html` sont **encore sur GAS** — **non concernés** par
-cette bascule (qui ne porte que sur la saisie collaborateur `index.html`).
-
-### RÈGLE
-
-**Pas de commit/push sur `main`.** La bascule (changement de la branche servie
-par Pages) **revient à Guillaume**.
-
 ## Moteur de paie — règles de calcul (conception)
 
 ### Cadre du moteur de PÉRIODE
@@ -319,373 +191,6 @@ travaillées, heures AT, heures CS, CP ventilés par jour, nb jours travaillés)
 - **Distinguer AT/CS « 7 h auto » de « confirmé admin »** : flag
   `heures_confirmees`, OU la validation du collab = « tout vérifié » ?
   (phase Paie).
-
-### Prochain gros morceau : greffe de `historique_contrats`
-
-C'est **LA partie délicate** de l'admin (**pas technique, conceptuelle**) : on
-**AJOUTE une logique absente** de l'ancien système (`sauverCollab` GAS n'écrit
-que l'**état courant**). Un **changement de contrat** doit : **clôturer
-l'ancienne ligne** (poser `date_fin`) + **ouvrir une nouvelle** (`date_debut`,
-`date_fin` NULL) + **mettre à jour `collaborateurs`** (état courant) = **un
-geste, deux écritures coordonnées**. **QUESTION À TRANCHER** : quels champs
-**déclenchent une nouvelle ligne d'historique** (contractuels : heures,
-structure, `type_periode`, matricule Silae) vs quels champs se **corrigent sur
-place sans historiser** (administratifs : email, équipe) ?
-
-## Onglet Paie & workflow — avancement (cadré le 10/06/2026)
-
-### Moteur `calculerPaiePeriode` (phase 1 — lecture seule)
-
-Calcule par collab, sur une période : `heures_travaillees` (somme des
-`total_heures`), `AT`/`CS` pré-remplis **7 h** + `nb_at`/`nb_cs` (**nb de
-jours**), `nb_cp`, `nb_jours_travailles`. Résout le **contrat en vigueur** via
-`historique_contrats` (contexte + **détection de changement** en cours de
-période). **Aucune écriture.** Chiffres **validés** (Guillaume : 48 h / 4 CP sur
-`DECAL_2026_06`). Commit `98febd2` (+ SQL d'accès).
-
-### Vue récap Paie (phase 2)
-
-Vue récap **branchée sur le moteur**, tableau **12 colonnes** (CP/AT/CS en
-**NB DE JOURS** dans le récap ; les **heures** vivent dans le détail), sélecteur
-élargi `gelee` / `cloturee` / `ouverte` (**`ouverte` = TEMPORAIRE**, pour
-tester), bandeau **lecture seule**, colonnes centrées. Les **3 tableaux**
-(Collaborateurs / Récap / Paie) sont alignés de façon cohérente.
-
-### Workflow paie (conçu, validé)
-
-`jours` (saisie collab, **figée au gel, intouchable**) → **IMPORT dans
-`paie_detail`** (au **premier accès admin**, détecté par `paie_detail` vide pour
-la période) → l'admin **ajuste / valide** dans `paie_detail` → **CLÔTURE fige
-`recap_paie`** → **Pauline recopie à la main dans Silae** (export fichier =
-plus tard).
-
-- **Statuts période** : `ouverte` → `gelee` → `cloturee` (PAS de statut
-  intermédiaire ; `gelee` = **à traiter par l'admin**). **Réouverture possible**
-  (`cloturee` → `gelee`). **Pas d'historique des transitions**, juste
-  `recap_paie.date_validation`.
-- **Import** : copie **couche 1** (photo fidèle des `jours`) + **couche 2
-  pré-remplie** (`type_jour_valide = type_jour`, `heures_valide =
-  total_heures` / **7 h** AT·CS / **0** CP, `ajuste_admin = false`). L'unicité
-  `(periode_id, collab_id, date_jour)` **protège du double import**.
-- **RÈGLE SÉCURITÉ** : un **recalcul ne doit JAMAIS écraser un ajustement admin**
-  (`ajuste_admin = true` préservé).
-- **Heures sup** : **HORS moteur** (gérées à la main par l'admin, trop
-  particulier). **Annualisation** : chantier séparé, plus tard. **Jours fériés** :
-  à intégrer dans `jours` plus tard (catégorie absente aujourd'hui).
-- **AT / CS** : récap = **nb de jours** ; détail = **heures ajustables**.
-
-### SQL fait en base (tracé dans `sql/`)
-
-- `historique_contrats` : `GRANT` + policy **SELECT** `anon`.
-- `paie_detail` : `GRANT` + **3 policies** SELECT / INSERT / UPDATE `anon`.
-
-⚠️ **Lecture/écriture OUVERTES — PHASE DEV**, à **resécuriser avec l'auth admin
-POST-15** (écriture sur données de paie = particulièrement sensible).
-
-### Prochaine étape
-
-**Coder la fonction d'import** (phase 3, **première écriture**). **Tester** en
-**gelant temporairement `DECAL_2026_06`** — **sans risque** : les collabs
-saisissent encore sur **Sheets/GAS**, pas Supabase.
-
-### Ménage en attente
-
-- `grouperParSemaine` (**code mort**).
-- `initPaie` (**mort temporaire**).
-- Statut **`ouverte`** du sélecteur Paie (**à retirer post-test**).
-
-## Phase 3 paie — import + lecture (cadré le 11/06/2026)
-
-**PHASE 3 TERMINÉE (import + lecture).** Chaîne complète validée : ouverture
-d'une période **gelée** → **import auto** → récap **depuis la couche 2**, sans
-intervention console.
-
-### Étape A — `importerPaiePeriode(periodeId)` (1ʳᵉ ÉCRITURE du projet)
-
-Copie **couche 1** (photo fidèle des `jours`) + **couche 2 pré-remplie**
-(`type_jour_valide = type_jour`, `heures_valide = total_heures` / **7 h** AT·CS /
-**0** CP, `ajuste_admin = false`, `date_cloture = null`). **Idempotent** (n'écrit
-que si `paie_detail` est vide pour la période). Testé sur `DEC_2026_06`
-(**261 lignes**).
-
-### Étape B1 — `calculerPaieDepuisPaieDetail(periodeId)`
-
-L'onglet Paie lit `paie_detail` **COUCHE 2** (`type_jour_valide` /
-`heures_valide`) au lieu de `jours`. `chargerPaie` branché dessus. Sélecteur Paie
-restreint à **`gelee` + `cloturee`** (retrait du `'ouverte'` temporaire).
-Compteur « **X / Y collaborateurs** » ajouté.
-
-### Étape B2 — import auto au premier accès
-
-`chargerPaie` appelle `importerPaiePeriode` **avant** le calcul (idempotent,
-message d'erreur si échec). Bandeau = « **Paie en préparation — non validée
-(validation / clôture à faire)** ».
-
-### Précisions métier tranchées cette session
-
-- **`CS` = attribut ADMIN uniquement** (les collabs ne saisissent **jamais** de
-  CS) → le CS **n'arrive PAS par l'import** ; il est **ajouté par l'admin** dans
-  `paie_detail` (couche 2) pendant la validation.
-- **`AT`** : le collab saisit le **TYPE** (sans heures, `total_heures = 0`) ;
-  c'est l'**admin** qui pose les heures (**7 h** de départ en couche 2,
-  ajustables).
-- **Statuts période** : `ouverte` → `gelee` → `cloturee`. **Pas de statut
-  intermédiaire** (`gelee` = à traiter par l'admin). Import déclenché **au
-  premier accès** (`paie_detail` vide), **PAS dans le cron**.
-- **Séparation des onglets** : **Récap** = période **OUVERTE** (suivi live depuis
-  `jours`) ; **Paie** = période **GELÉE / CLÔTURÉE** (depuis `paie_detail`
-  couche 2).
-
-### Prochaines étapes
-
-- **Détail collab Paie** (`ouvrirSaisiesPaie`) lu depuis `paie_detail` (réutiliser
-  `fetchJoursCollab` / `renderSaisies`).
-- **Écritures admin couche 2** : ajustements `heures_valide` / `type_jour_valide`
-  (`ajuste_admin = true`), avec la règle « **un recalcul ne doit JAMAIS écraser un
-  ajustement** ». **C'est là que le CS s'ajoute.**
-- **Validation → clôture** (fige `recap_paie` + `date_cloture`).
-
-### Ménage en attente (actualisé)
-
-- `calculerPaiePeriode` (**doublon depuis B1**, à retirer).
-- `grouperParSemaine` (**mort**), `initPaie` (**mort**).
-- **Données de test** dans `paie_detail` pour `DEC_2026_06` (**à purger avant
-  mise en service**).
-- **Resécurisation RLS post-15** (`historique_contrats` + `paie_detail`).
-
-### État
-
-`DEC_2026_06` **remise en `ouverte`** après les tests (gel temporaire utilisé
-pour tester l'import — **sans risque**, collabs encore sur Sheets/GAS).
-
-## Onglet Paie — ajustement & validation (cadré le 13/06/2026)
-
-Commit courant : **`a3d4ca8`** sur `supabase`. Le cycle paie est **complet en
-lecture/écriture sur Supabase** (hors clôture/PDF).
-
-### FAIT
-
-- **Détail Paie lit `paie_detail` couche 2** (`type_jour_valide`/`heures_valide`)
-  via `ouvrirSaisiesPaie`/`renderSaisiesPaie`/`buildTableSaisies`. **Consultation
-  = lecture seule** (Type, créneaux, Total, Commentaire verrouillés hors mode
-  Modification). **Badge = statut de la période** (`poserBadgePaie`).
-- **Ajustement admin** (mode Modification) : **bascule de type**
-  (`travaillée`/`CP`/`AT`/`CS`) ; **case Total éditable pour AT/CS** (pré-remplie
-  **7** si vide) ; **total recalculé depuis les créneaux** pour `travaillée` ;
-  **créneaux vides** pour AT/CP/CS ; **restauration des créneaux d'origine** au
-  retour vers `travaillée` (depuis le modèle, couche 1). Piloté par
-  `majTotalPaie` selon le type courant, **sans re-render**.
-- **Écriture couche 2** : `UPDATE paie_detail` (`type_jour_valide`,
-  `heures_valide`, `ajuste_admin=true`) **UNIQUEMENT sur les lignes réellement
-  modifiées** (comparaison de **nombres arrondis 2 déc.** des deux côtés).
-  **Jamais la table `jours`** (couche 1 = trace intouchable). `date_ajuste_admin`
-  **écrit par l'Edge `ajuster-paie` depuis le 09/08/2026** (jamais par le front —
-  valeur posée côté serveur). Les ajustements **antérieurs restent NULL** et ne sont
-  **pas reconstituables** → « Modif admin » sans date à l'écran (~113 lignes).
-- **Bouton unique « 💾 Enregistrer et valider le relevé »** (`enregistrerEtValider`) :
-  enchaîne **UPDATE `paie_detail`** → recalcul des totaux → **upsert `recap_paie`**
-  (cœur partagé **`upsertRecapPaieCourant`**, sans alert). Après succès → **retour
-  à la liste Paie** (`retourPaie`). Un seul feedback.
-- **Liste Paie** : colonnes **Validation** (« ✅ Validé » si
-  `recap_paie.statut_validation='valide'`) et **Note admin** lues depuis
-  `recap_paie` (1 requête par période, injectée dans `calculerPaieDepuisPaieDetail`).
-
-### RESTE (backlog paie, par ordre)
-
-1. **Clôture de période** (`gelee → cloturee`) quand tous les collabs sont validés.
-2. **Cycle rouvrir** (`cloturee → gelee`).
-3. **Export PDF** du relevé détaillé.
-4. **Colonnes `nb_at` / `nb_cs`** à ajouter dans `recap_paie` (récap les ignore
-   aujourd'hui ; seules les heures AT/CS y sont).
-5. **Ménage** : `rechargerDetailPaie` devenue **inutilisée** ; + doublon
-   `calculerPaiePeriode`, `grouperParSemaine`, `initPaie`, fonctions GAS mortes.
-6. **RESÉCURISATION RLS post-15** : `paie_detail`, `recap_paie`,
-   `historique_contrats` sont en **accès `anon` ouvert (phase DEV)** — à
-   restreindre à l'auth admin avant mise en production.
-
-- Cosmétique / couche 2 : le front écrit '' (chaîne vide) là où la couche 1 a
-  null pour un créneau absent (le `|| ''` dans enregistrerEtValider). Sans effet
-  fonctionnel (fmtHeure('') === '' → créneau non affiché, modale et relevé), mais
-  ces lignes ressortent à tort dans une comparaison `c1_debut is distinct from
-  c1_debut_valide`. Constaté sur COLL016 / 2026-05-19 (c3).
-
-### Accès SQL ouverts en base (phase DEV, le 13/06)
-
-- **`recap_paie`** : `grant select, insert, update … to anon` + policies
-  lecture/insertion/maj (`using/with check (true)`). Consigné dans
-  `sql/recap_paie.sql`.
-- **`paie_detail`** : colonne **`date_ajuste_admin`** (`timestamptz`, nullable)
-  ajoutée par `ALTER TABLE` — **écrite par l'Edge `ajuster-paie` depuis le
-  09/08/2026** (jamais par le front). Ajustements antérieurs = NULL, non
-  reconstituables. Consignée dans `sql/paie_detail.sql`.
-
-## Onglet Paie refondu + PDF + état réel (cadré le 14/06/2026)
-
-Commit courant : **`7ca3484`** sur `supabase` (poussé). Cette section **fait
-foi** sur les points qu'elle recouvre (supersède le backlog du 13/06 : la
-**clôture est faite**, le **bouton Rouvrir est abandonné**).
-
-### ÉTAT ACTUEL (fait, sur `supabase`)
-
-- **Onglet Paie refondu en 2 sous-onglets** : **« À traiter »** (périodes
-  `gelee`) / **« Clôturées »** (périodes `cloturee`). Le sélecteur déroulant
-  unique a disparu.
-  - **À traiter** : en-tête listant les périodes gelées avec indicateur
-    **« X/Y validés »** (vert si X===Y) + **bouton Clôturer** — actif seulement
-    si **X===Y**, avec **re-vérif fraîche** au clic, puis `UPDATE periodes`
-    `statut` **gelee→cloturee**. X/Y calculés en **2 requêtes batch**
-    (`recap_paie` pour X validés, `paie_detail` pour Y = collabs avec données).
-  - **Clôturées** : **table transversale filtrable** (`recap_paie` × périodes
-    clôturées), **3 filtres** (structure / collaborateur / période, combinés
-    **en mémoire**), **structure croisée depuis `collaborateurs`** (pas figée
-    dans `recap_paie`), colonnes **AT/CS en « Xh/Yj »**. **Bouton Détail**
-    (ouvre le relevé du collab pour cette période ; **re-validation possible**).
-    **Bouton PDF** (relevé d'heures imprimable).
-- **`recap_paie`** : colonnes **`nb_at`** et **`nb_cs`** (nb de **jours** AT/CS)
-  ajoutées et **écrites par `upsertRecapPaieCourant`** à la validation.
-- **PDF relevé d'heures collab** (`genererPdfReleve`) : **impression navigateur**
-  (`window.print`), mise en page **A4**, lit **`paie_detail`**, **total semaine
-  recalculé à la volée** (reset lundi, **jamais `total_hebdo_prog`**), mapping
-  **structure→société** : `SCEA`/`SAS` → « … Chants de la Terre », `SARL` →
-  « SARL Les 6 Saveurs ». Fonds week-end + badges forcés à l'impression
-  (`print-color-adjust:exact`).
-- **`historique_contrats`** : **29 lignes** (18 anciens `COLL001`-`018` + 12
-  nouveaux `COLL019`-`030` comblés ce jour ; `TEST001` exclu). Toutes
-  `date_debut = 2026-01-01`, `date_fin = null`.
-
-### POINTS IMPORTANTS / DETTE
-
-- **`sauverCollab` écrit UNIQUEMENT dans `collaborateurs`, JAMAIS dans
-  `historique_contrats`.** L'**historisation automatique** (geste à 2 écritures :
-  clôturer l'ancienne ligne + ouvrir une nouvelle quand un champ **contractuel**
-  change) **n'est PAS implémentée** = **prochain gros morceau conceptuel**
-  (cf. « greffe de `historique_contrats` »).
-- **Écriture `anon` ouverte** sur `collaborateurs`, `periodes`, `recap_paie`,
-  `jours`, `paie_detail`, `historique_contrats` = **phase DEV non sécurisée**.
-  **Resécurisation RLS = chantier post-bascule prioritaire.**
-
-### BACKLOG
-
-- **Bug** : à la saisie d'un jour `CP`/`AT`/`CS`, **vider les créneaux**
-  (présent dans **`index.html` ET `admin-v2.html`**).
-- **PDF 2 (récap admin)** : contexte contrat, matricule Silae, date de
-  validation — **dépend en partie de l'historisation**.
-- **Indicateur de modification de contrat** sur le récap (badge « ! » + modale
-  avant/après) — **dépend de l'historisation branchée**.
-- **Ménage code mort** : `calculerPaiePeriode`, `grouperParSemaine`, `initPaie`,
-  `toggleValidation`, `sauverNote` (`peuplerSelecteurPaie` déjà retirée).
-- **ABANDONNÉ** : **verrou lecture seule période clôturée** + **bouton Rouvrir**.
-  Décision : on **rouvre 1 collab via Détail** (re-validation), la **période
-  reste `cloturee`**. (Supersède les points 1-2 « rouvrir » du backlog du 13/06.)
-
-## Chantier HISTORISATION DES CONTRATS — conception figée (14/06/2026)
-
-> À coder **à froid, en session dédiée**. Chantier **sensible** : on écrit dans
-> `historique_contrats`, table **lue par le calcul de paie**. Une erreur fausse
-> des calculs de paie. Procéder **par étapes testables**, comme la clôture.
-
-### Principe métier
-
-Un champ **contractuel** ne change jamais « en écrasant » : on garde la trace.
-**Geste à deux écritures coordonnées** :
-1. **Clôturer** la ligne d'historique en cours → `date_fin` = **veille de la date d'effet**.
-2. **Ouvrir** une nouvelle ligne → `date_debut` = date d'effet, `date_fin` = null, nouvelles valeurs.
-
-- Champs **contractuels** (déclenchent une nouvelle ligne) : `heures_hebdo`,
-  `structure`, `type_contrat`, `type_periode`, `matricule_silae`.
-- Champs **non contractuels** (ne touchent JAMAIS l'historique) : équipe, email,
-  nom, etc. (« administratif »).
-- **Règle d'or** : les champs contractuels ne sont JAMAIS modifiables librement —
-  ils ne changent QUE par le geste daté « changement de contrat », qui crée
-  toujours la trace historique correspondante.
-
-### Les 3 écrans
-
-1. **Formulaire de CRÉATION (l'actuel, conservé)** : tous les champs saisis (dont
-   contractuels). À la validation → crée la ligne `collaborateurs` **ET** la 1re
-   ligne `historique_contrats` (`date_debut` = **date d'activation du collab**,
-   `date_fin` = null). Seul ajout vs aujourd'hui : la création écrit aussi
-   l'historique.
-2. **Modale unique « Modifier collab » (existant) — DEUX zones / DEUX boutons** :
-   - **Haut — admin éditable** (nom, email, équipe…) : bouton « Enregistrer » →
-     met à jour `collaborateurs` **uniquement**, ne touche pas l'historique.
-   - **Bas — contrat / historique** : situation contractuelle **actuelle** en
-     **lecture seule** ; zone « changement de contrat » = les 5 champs
-     contractuels + **date d'effet** ; **bouton séparé** « Enregistrer le
-     changement de contrat ». Deux gestes de nature différente, **deux mécaniques
-     distinctes**.
-
-### Règles de date d'effet
-
-- Date d'effet **présente ou future** : cas normal, autorisé.
-- Date d'effet **rétroactive sur une période déjà clôturée** : **avertir / bloquer**
-  (pas de recalcul d'une paie déjà validée). Régularisation rétroactive = cas
-  avancé, traité plus tard.
-
-### Technique : geste à deux écritures = fonction SQL TRANSACTIONNELLE
-
-Le changement de contrat fait **3 écritures** (fermer ancienne ligne + ouvrir
-nouvelle + maj `collaborateurs`) → une **fonction SQL transactionnelle**
-(tout-ou-rien), même esprit que `verifier_admin`. **JAMAIS** un enchaînement de
-requêtes côté front pour ce geste.
-
-### Préalable au code (état des lieux en début de session)
-
-- Comment `sauverCollab` gère **création vs édition** aujourd'hui (champs,
-  formulaire HTML) pour savoir comment le **scinder** : création (geste 1 +
-  écriture historique) vs édition (modale 2 zones).
-- Structure de `historique_contrats` (connue) : `collab_id, date_debut,
-  date_fin, structure, type_contrat, heures_hebdo, matricule_silae, type_periode`.
-
-### Ce que ça débloque ensuite
-
-- **PDF 2 (récap admin)** : situation contrat au 1er jour de période /
-  modifications / situation au dernier jour (ou « pas de modification »). Ne
-  fonctionne vraiment qu'avec un historique vivant → **après ce chantier**.
-- **Indicateur de modification de contrat** sur le récap (badge « ! » + modale
-  avant/après).
-
-### État de départ (au 14/06/2026)
-
-- `historique_contrats` : **29 lignes**, toutes `date_debut=2026-01-01`,
-  `date_fin=null`, **une seule ligne par collab**.
-- `sauverCollab` écrit **UNIQUEMENT** dans `collaborateurs`, jamais dans
-  `historique_contrats` → c'est ce qu'on vient corriger.
-- `matricule_silae` : **null partout** (à renseigner un jour ; non bloquant).
-
-## Historisation des contrats — MODÈLE JOURNAL (cadré le 28/06/2026)
-
-⚠️ Cette section FAIT ÉVOLUER la vision « geste à deux écritures » décrite plus haut (section « greffe de historique_contrats »). Le modèle retenu est désormais un JOURNAL append-only.
-
-### Principe
-- `historique_contrats` = journal : on AJOUTE des lignes, on n'écrase jamais.
-- Chaque ligne : valeurs contractuelles + dates [date_debut, date_fin] + created_at (horodatage) + cree_par (auteur : Pauline / Guillaume / Elsa).
-- Le contrat ACTUEL se CALCULE, il ne se stocke pas comme un état figé.
-
-### Règle « contrat en vigueur aujourd'hui »
-La ligne où date_debut <= aujourd'hui ET (date_fin IS NULL OU date_fin >= aujourd'hui).
-- Si plusieurs (chevauchement) → la plus récente par created_at gagne.
-- Si aucune (trou) → pas de contrat ce jour-là (les trous sont OK).
-- Effet FUTUR autorisé (préparer un contrat à l'avance, ex. TESA→CDI de Jonas).
-- 3 états déduits des dates (jamais stockés) : passé (terminé) / présent (actuel) / futur (à venir).
-
-### Fiche collaborateurs = cache (OPTION 2 retenue)
-La fiche reste le statut courant. Un CRON QUOTIDIEN la met à jour avec le contrat en vigueur ce jour-là (bascule auto quand un contrat futur prend effet). Donc ajouter_contrat ne doit PAS mettre à jour la fiche immédiatement pour un effet futur.
-
-### Affichage : timeline
-Zone Contrat de la modale édition = toutes les lignes du collab, ordonnées, colorées selon passé/présent/futur. Bouton « + Nouvel événement » (Fin de contrat / Nouveau contrat) avec date d'effet + note + auteur.
-
-### Déjà en prod (mais à retoucher pour ce modèle)
-- Étape 1 : création écrit la 1re ligne (commit a19b032). OK.
-- cloturer_contrat (pose date_fin) — OK, en prod (79b38ea).
-- ajouter_contrat — à RETOUCHER (maj fiche immédiate ne convient plus ; garde-fou anti-chevauchement à revoir car chevauchement autorisé).
-- Front 2a (zone Contrat) : affichage « Aucun contrat en cours » FAUX (confond fin future et passée) → à REMPLACER par la timeline.
-
-### Décisions ABANDONNÉES (ne pas re-dériver)
-- Contrainte d'exclusion stricte anti-chevauchement → abandonnée (résolution par created_at).
-- « Modif données contrat » comme geste séparé → abandonnée (tout passe par fin/nouveau).
-
-Détail complet : plan_modele_journal_contrats.md (note de conception du 28/06).
 
 ## Multi-tenant (horizon — garder la porte ouverte, ne PAS implémenter maintenant)
 
@@ -1498,3 +1003,78 @@ donnait l'accès complet à l'administration.
 `@page { margin }` ne supprime pas ce pied de façon fiable dans
 Chrome ; seule la fenêtre dédiée le règle vraiment.
 
+
+## Décisions récupérées d'anciennes sections (26/08/2026)
+
+Sauvegarde des décisions et mises en garde qui n'existaient QUE dans des sections
+supprimées ce jour (144, 191, 228, 335, 397, 461, 522, 581, 656). Reformulées,
+origine citée.
+
+### Déploiement & ROLLBACK de la prod (origine : ancienne section 228)
+⚠️ **Filet de sécurité de la prod — à préserver intégralement.**
+- **GitHub Pages sert la branche `supabase`** (mode « Deploy from a branch »,
+  dossier `/ (root)`). C'est l'appli que les collègues utilisent.
+- Site live : **https://chantsdelaterre.github.io/suivi-temps/**
+- **`main` n'est PAS servie** : c'est la **branche de ROLLBACK**. Elle porte la
+  prod GAS/Sheets **intacte**.
+- **Pour revenir en arrière (rollback)** : **Settings → Pages → Build and
+  deployment**, changer la branche servie de `supabase` à **`main`**, puis
+  **Save**. Retour immédiat à la prod GAS/Sheets, sans toucher au code.
+- **Règle** : **jamais de commit/push sur `main`** ; le changement de branche
+  servie par Pages **revient à Guillaume**.
+
+### Date d'effet d'un contrat, rétroactive (origine : ancienne section 581)
+- Date d'effet **présente ou future** : cas normal, autorisé.
+- Date d'effet **rétroactive sur une période déjà CLÔTURÉE** : **avertir ou
+  bloquer** — **pas de recalcul d'une paie déjà validée**. La régularisation
+  rétroactive est un cas avancé, traité plus tard.
+
+### Heures sup & jours fériés (origine : ancienne section 335)
+- **Heures supplémentaires** : **HORS moteur de paie**, gérées **à la main** par
+  l'admin (trop particulier pour être automatisé).
+- **Jours fériés** : **catégorie absente de la table `jours`** aujourd'hui — **à
+  intégrer plus tard**.
+
+### Dette couche 1 / couche 2 de la paie (origine : ancienne section 461)
+- **Bug cosmétique** : le front écrit `''` (chaîne vide) là où la **couche 1** a
+  `null` pour un créneau absent (le `|| ''` dans `enregistrerEtValider`). **Sans
+  effet fonctionnel** (`fmtHeure('') === ''` → créneau non affiché), **mais** ces
+  lignes ressortent **à tort** dans une comparaison
+  `c1_debut is distinct from c1_debut_valide`. Constaté sur **COLL016 /
+  2026-05-19 (c3)**.
+- **`date_ajuste_admin`** est écrite par l'Edge **`ajuster-paie` depuis le
+  09/08/2026** (jamais par le front). Les **ajustements antérieurs** à cette date
+  restent **NULL** et **ne sont pas reconstituables** → affichage « **Modif
+  admin** » **sans date**.
+
+### Réouverture d'une paie clôturée (origine : ancienne section 522)
+- **Le bouton « Rouvrir » (cloturee → gelee) est ABANDONNÉ.** On **rouvre un seul
+  collaborateur via son Détail** (re-validation possible) ; **la période reste
+  `cloturee`**.
+
+### Modèle journal des contrats — note de conception (origine : ancienne section 656)
+- Détail complet du modèle : **`plan_modele_journal_contrats.md`** (note de
+  conception du 28/06/2026).
+
+## Saisie collaborateur — décisions du 26/08/2026
+
+**Brouillon local des créneaux.** Le collaborateur peut noter son
+heure d'arrivée sans enregistrer, et la retrouver plus tard.
+
+⚠️ En localStorage, **pas en base** — contrairement à la note du
+16/07 qui prévoyait une persistance serveur avec un mode
+`brouillon:true` dans l'Edge. Le besoin réel est de la mémoire, pas
+du pointage : ils veulent éviter d'avoir à se souvenir, pas laisser
+une trace horodatée. Le localStorage suffit et évite un chantier
+base + Edge + front sur l'écran des soixante.
+
+⚠️ Limites assumées : perdu si changement de téléphone ou vidage du
+navigateur. Éphémère en navigation privée — **ne pas croire à un bug
+en testant**.
+
+⚠️ Ne couvre que les CRÉNEAUX. Ni le type de journée, ni la remarque.
+Le quota de trois modifications n'est pas touché : seul
+« Enregistrer » écrit et compte.
+
+⚠️ `NOTE_saisie_au_fil_de_la_journee.md` est PÉRIMÉE — elle décrit la
+version serveur qui n'a pas été retenue.
