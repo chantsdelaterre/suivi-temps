@@ -110,10 +110,29 @@ seulement les cinq derniers jours modifiables.
 modifiable du consultable, sinon on crée de la frustration
 (« pourquoi je ne peux pas cliquer ici ? »).
 
-### Drummer cyclique et boutons de saisie
-Le sélecteur d'heures **butte** en haut et en bas — le rendre bouclant
-(00 ↔ 45). Front pur.
-Achever les boutons de saisie (chantier commencé).
+### Rouleaux du sélecteur d'heures — bouclage
+Les rouleaux buttent à 23 h et à 45 min. Les rendre cycliques.
+
+⚠️ Pas trivial : ils utilisent le scroll natif du navigateur (qui
+donne l'inertie au doigt), et un scroll natif a des butées dures.
+Deux voies :
+- **A** — tripler la liste et repositionner en douce. 1 à 2 h, mais
+  risque de saccade en fin de geste sur iOS. Tester sur plusieurs
+  téléphones avant de pousser.
+- **B** — réécrire le moteur en transform + inertie maison. Robuste,
+  mais une demi-journée à une journée, et on remplace du code qui
+  marche sur l'écran de soixante personnes. Plus de maintenance à vie.
+
+**Décision du 26/08 : on ne fait rien.** C'est du confort, le cas
+23 h → 00 h est rare dans le métier. À rouvrir seulement si l'usage
+montre que ça gêne vraiment.
+
+### Achever les boutons de saisie
+Chantier commencé.
+
+⚠️ Le reste du sélecteur est FAIT et en prod depuis le 26/08 : bouton
+OK déplacé en bas, traits encadrant la ligne sélectionnée, popup
+aligné sur le champ du créneau.
 
 ### Message trompeur hors ligne
 ⚠️ « **Aucun jour trouvé** » s'affiche aussi quand le réseau est coupé.
