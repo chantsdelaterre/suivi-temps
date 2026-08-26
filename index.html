@@ -53,6 +53,20 @@
         line-height: 1.45;
     }
 
+    /* Rappel (pas alerte) : brouillon local en cours. Teintes du thème, discret mais remarquable (gras).
+       Cohérent avec le bandeau fin de période (bordure --vide, coins arrondis) ; distinct par le fond --vert-pale + le gras. */
+    .bandeau-brouillon {
+        display: none;
+        margin-bottom: 10px;
+        padding: 12px 16px;
+        background: var(--vert-pale);
+        border: 1px solid var(--vide);
+        color: var(--texte);
+        border-radius: var(--radius);
+        font-size: 14px;
+        font-weight: 600;
+    }
+
     * {
         box-sizing: border-box;
         margin: 0;
@@ -705,6 +719,7 @@
                     <button class="type-btn" data-type="AT" onclick="selectType(this)">AT</button>
                 </div>
             </div>
+            <div id="bandeau-brouillon" class="bandeau-brouillon">Brouillon en cours — pensez à enregistrer</div>
             <div id="card-horaires" class="block">
                 <div class="block-label">Matin</div>
                 <div class="time-row">
@@ -817,6 +832,7 @@
     }
     // Session collaborateur résolue UNE fois via l'Edge collab-session, mémorisée pour les 3 fonctions.
     let _collabSession = null;
+    let _brouillonKey = null;   // clé localStorage du brouillon du JOUR COURANT ; null = jour passé / pas de jour → pas de brouillon
     async function getCollabSession() {
         if (_collabSession) return _collabSession;   // déjà résolue (normal : loadJourDuJour l'a posée)
         const { data: resp, error } = await sb.functions.invoke('collab-session', { body: { token: COLLAB_ID } });
@@ -906,6 +922,7 @@
                 periodeStatut: periode ? periode.statut : null,
                 verrouillee: !(periode && periode.statut === 'ouverte')
             };
+            _brouillonKey = 'cdt_draft_' + COLLAB_ID + '_' + String(jour.date_jour).slice(0, 10);   // brouillon du JOUR COURANT
             COLLAB_ROLE = collab.role || 'collab';
             COLLAB_EQUIPE_ID = equipeManagerToken;
             if (COLLAB_ROLE === 'responsable' && COLLAB_EQUIPE_ID) {
@@ -1042,6 +1059,7 @@
         document.getElementById('card-horaires').style.display = typeJour !== 'travaillée' ? 'none' : 'block';
         document.getElementById('form-actions-row').style.display = typeJour !== 'travaillée' ? 'none' : 'flex';
         document.getElementById('save-error').style.display = 'none';
+        restaurerBrouillon();   // écrase les créneaux par le brouillon du jour si présent (+ bandeau) ; no-op pour un jour passé
         showVue('formulaire');
     }
     function selectType(btn) {
@@ -1071,12 +1089,46 @@
         const t = document.getElementById(id).textContent;
         return t === '--:--' ? '' : t;
     }
+    // ─── Brouillon LOCAL des créneaux (localStorage) — JOUR COURANT uniquement, ni type ni remarque ───
+    function _lireCreneaux() {
+        return {
+            c1d: getTimeVal('c1-debut'), c1f: getTimeVal('c1-fin'),
+            c2d: getTimeVal('c2-debut'), c2f: getTimeVal('c2-fin'),
+            c3d: getTimeVal('c3-debut'), c3f: getTimeVal('c3-fin')
+        };
+    }
+    function majBandeauBrouillon(actif) {
+        const el = document.getElementById('bandeau-brouillon');
+        if (el) el.style.display = actif ? 'block' : 'none';
+    }
+    function sauverBrouillon() {                       // à chaque modif d'un créneau (même début seul)
+        if (!_brouillonKey) return;                    // jour passé / pas de jour → pas de brouillon
+        try { localStorage.setItem(_brouillonKey, JSON.stringify(_lireCreneaux())); } catch (e) {}
+        majBandeauBrouillon(true);
+    }
+    function effacerBrouillon() {                      // "Enregistrer" OK ou "Vider les créneaux"
+        if (_brouillonKey) { try { localStorage.removeItem(_brouillonKey); } catch (e) {} }
+        majBandeauBrouillon(false);
+    }
+    function restaurerBrouillon() {                    // à l'ouverture du formulaire du jour courant
+        let d = null;
+        if (_brouillonKey) { try { d = JSON.parse(localStorage.getItem(_brouillonKey) || 'null'); } catch (e) {} }
+        if (!d) { majBandeauBrouillon(false); return; }
+        setTimeBtn('c1-debut', d.c1d); setTimeBtn('c1-fin', d.c1f);
+        setTimeBtn('c2-debut', d.c2d); setTimeBtn('c2-fin', d.c2f);
+        setTimeBtn('c3-debut', d.c3d); setTimeBtn('c3-fin', d.c3f);
+        const hasC3 = !!(d.c3d || d.c3f);
+        document.getElementById('c3-section').style.display = hasC3 ? 'block' : 'none';
+        document.getElementById('btn-add-c3').style.display = hasC3 ? 'none' : 'flex';
+        majBandeauBrouillon(true);
+    }
     // Vide les TROIS créneaux (6 bornes) à --:-- et réinitialise le 3e créneau (replié) —
     // affichage seulement ; la sauvegarde se fait via "Enregistrer".
     function viderCreneaux() {
         ['c1-debut','c1-fin','c2-debut','c2-fin','c3-debut','c3-fin'].forEach(id => setTimeBtn(id, ''));
         document.getElementById('c3-section').style.display = 'none';
         document.getElementById('btn-add-c3').style.display = 'flex';
+        effacerBrouillon();   // le brouillon disparaît avec les créneaux
     }
     async function sauvegarder() {
         const errBox = document.getElementById('save-error');
@@ -1180,6 +1232,7 @@
             await prefetchMesJours();            // LE fetch déjà prévu : remplit le cache + le bandeau (dates)
             showVue('mesjours');                 // rend depuis le cache chaud → aucune requête supplémentaire
             showConfirmSaisie(jourData.dateJour); // confirmation discrète, auto-effacée
+            effacerBrouillon();                   // sauvegarde réussie → le brouillon local disparaît
         } catch (e) {
             clearTimeout(timeoutId);
             showToast('⚠️ Erreur réseau — réessayez', true);
@@ -1471,6 +1524,7 @@ tbody td.modif{font-size:9px;color:var(--txt2);white-space:nowrap;}
                 nbModifications: jour.nb_modifications || 0,
                 periodeStatut: periode ? periode.statut : null
             };
+            _brouillonKey = null;   // jour PASSÉ → aucun brouillon (flux actuel inchangé)
             // Verrouillé si verrou 5j/3modifs (!modifiable) OU période non 'ouverte'
             // (période introuvable ⇒ verrouillé par défaut, comme loadJourDuJour)
             const periodeOuverte = periode && periode.statut === 'ouverte';
@@ -1566,6 +1620,7 @@ tbody td.modif{font-size:9px;color:var(--txt2);white-space:nowrap;}
         btn.textContent = val;
         btn.classList.remove('empty-val');
         closePicker();
+        sauverBrouillon();   // un créneau vient d'être modifié → brouillon local
     }
     function cancelPicker() {
         closePicker();
