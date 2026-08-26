@@ -472,7 +472,6 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title" id="modal-titre">Nouveau collaborateur</span>
-      <button class="modal-close" onclick="fermerModal()">×</button>
     </div>
     <div class="modal-body">
       <!-- BLOC IDENTITÉ -->
@@ -522,6 +521,9 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
         <div id="contrat-fin-zone" style="margin-top:10px"></div>
         <div id="contrat-msg" style="display:none;font-size:13px;margin-top:8px"></div>
       </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fermerModal('modal-collab')">Fermer</button>
     </div>
   </div>
 </div>
@@ -622,6 +624,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_sMySTPpkgaiUtnban8uCtw_HQFxmsgv';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let ADMIN_TOKEN = new URLSearchParams(location.search).get('token') || '';
 let collabEnEdition = null;
+let _contratsDirty = false;   // levé quand une écriture de contrat RÉUSSIT dans la fiche → recharge l'onglet Contrats à la fermeture
 let collabsData = [];
 let equipesData = [];
 let filtreStatut = '';
@@ -1205,7 +1208,7 @@ async function confirmerFinContrat() {
     showMsg('Échec : ' + ((data && data.error) || 'inconnu'), false); return;
   }
   showMsg('✓ Date de fin enregistrée au ' + fmtDate(dateFin) + '.', true);
-  await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline
+  _contratsDirty = true; await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline
 }
 
 // Formulaire de contrat PARTAGÉ création/édition, déplié inline dans #contrat-fin-zone.
@@ -1345,7 +1348,7 @@ async function supprimerLigneContrat(id) {
     showMsg('Échec de la suppression : ' + ((data && data.error) || 'inconnu'), false); return;
   }
   showMsg('✓ Contrat supprimé.', true);
-  await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline
+  _contratsDirty = true; await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline
 }
 
 // ─── Helpers RENOUVELLEMENT (fiche) — dates proposées UNE fois, pas de recalcul en cascade ───
@@ -1438,7 +1441,7 @@ async function confirmerRenouvellement() {
     if (besoinCloture) {
       // Clôture faite, ajout échoué : on le dit explicitement PUIS on recharge (message posé APRÈS le
       // rechargement, car chargerContratActuel vide #contrat-fin-zone et réinitialise #contrat-msg).
-      await chargerContratActuel(collabEnEdition.collabId);
+      _contratsDirty = true; await chargerContratActuel(collabEnEdition.collabId);
       const m2 = document.getElementById('contrat-msg');
       if (m2) { m2.textContent = 'Le contrat a été clôturé au ' + fmtDate(finActuelle) + ' mais le nouveau contrat n\'a pas pu être créé. ' + detail; m2.style.color = 'var(--rouge)'; m2.style.display = 'block'; }
     } else {
@@ -1447,7 +1450,7 @@ async function confirmerRenouvellement() {
     return;
   }
   showMsg('✓ Contrat renouvelé.', true);
-  await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline (les deux lignes)
+  _contratsDirty = true; await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline (les deux lignes)
 }
 
 // Enregistre le contrat via l'Edge Function : ajouter-contrat (création) OU modifier-contrat (édition).
@@ -1502,7 +1505,7 @@ async function confirmerContrat() {
     showMsg(libErr + ((data && data.error) || 'inconnu'), false); return;
   }
   showMsg(enEdition ? '✓ Correction enregistrée.' : '✓ Contrat ajouté.', true);
-  await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline (et vide #contrat-fin-zone)
+  _contratsDirty = true; await chargerContratActuel(collabEnEdition.collabId);   // rafraîchit la timeline (et vide #contrat-fin-zone)
 }
 
 // Rend une modale déplaçable par son en-tête (appelée sur toutes les modales au DOMContentLoaded).
@@ -1571,7 +1574,11 @@ async function upsertRecapPaieCourant() {
 function fermerModal(id) {
   id = id || 'modal-collab';
   document.getElementById(id).classList.remove('open');
-  if (id === 'modal-collab') collabEnEdition = null;
+  if (id === 'modal-collab') {
+    collabEnEdition = null;
+    // Écriture(s) de contrat réussie(s) → rafraîchir l'onglet Contrats (SEUL, pas Collaborateurs). Sinon aucun appel.
+    if (_contratsDirty) { _contratsDirty = false; chargerContrats(); }
+  }
 }
 
 async function sauverCollab() {
