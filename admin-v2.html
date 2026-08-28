@@ -508,6 +508,16 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <select id="f-equipe"><option value="">— Aucune équipe —</option></select>
           </div>
         </div>
+        <!-- Personne à prévenir en cas d'urgence — tous facultatifs, ne bloquent jamais l'enregistrement -->
+        <div style="margin-top:14px;margin-bottom:10px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3)">Personne à prévenir en cas d'urgence</div>
+        <div class="form-grid">
+          <div class="form-group"><label for="f-urgence-prenom">Prénom</label><input type="text" id="f-urgence-prenom" placeholder="Jean"></div>
+          <div class="form-group"><label for="f-urgence-nom">Nom</label><input type="text" id="f-urgence-nom" placeholder="Dupont"></div>
+          <div class="form-group"><label for="f-urgence-telephone">Téléphone</label><input type="text" id="f-urgence-telephone" placeholder="06-12-34-56-78"></div>
+          <div class="form-group"><label for="f-urgence-lien">Lien</label>
+            <select id="f-urgence-lien"><option value="">—</option><option>Conjoint</option><option>Parent</option><option>Enfant</option><option>Frère ou sœur</option><option>Ami</option><option>Autre</option></select>
+          </div>
+        </div>
         <div id="modal-error" style="display:none;margin-top:12px" class="error-banner"></div>
         <div style="display:flex;justify-content:flex-end;margin-top:12px">
           <button class="btn btn-primary" id="btn-sauver" onclick="sauverCollab()">Enregistrer l'identité</button>
@@ -809,6 +819,10 @@ async function chargerCollabs() {
     dateActivation: c.date_activation,
     equipeId: c.equipe_id,
     matriculeSilae: c.matricule_silae,
+    urgencePrenom: c.urgence_prenom,
+    urgenceNom: c.urgence_nom,
+    urgenceTelephone: c.urgence_telephone,
+    urgenceLien: c.urgence_lien,
     role: c.role,
     token: c.token,
     lien: c.token ? 'https://chantsdelaterre.github.io/suivi-temps/?id=' + c.token : ''
@@ -1021,7 +1035,7 @@ function toggleIdentite() {
 function ouvrirModalCollab() {
   collabEnEdition = null;
   document.getElementById('modal-titre').textContent = 'Nouveau collaborateur';
-  ['f-prenom','f-nom','f-email','f-telephone','f-heures','f-date-activation'].forEach(id => document.getElementById(id).value = '');
+  ['f-prenom','f-nom','f-email','f-telephone','f-heures','f-date-activation','f-urgence-prenom','f-urgence-nom','f-urgence-telephone','f-urgence-lien'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-structure').value = '';
   document.getElementById('f-contrat').value = '';
   document.getElementById('f-statut').value = 'en_attente';
@@ -1055,6 +1069,10 @@ function ouvrirModalCollabData(encoded) {
   document.getElementById('f-matricule-silae').value = c.matriculeSilae||'';
   document.getElementById('f-date-activation').value = c.dateActivation||'';
   document.getElementById('f-equipe').value = c.equipeId||'';
+  document.getElementById('f-urgence-prenom').value = c.urgencePrenom||'';
+  document.getElementById('f-urgence-nom').value = c.urgenceNom||'';
+  document.getElementById('f-urgence-telephone').value = c.urgenceTelephone||'';
+  document.getElementById('f-urgence-lien').value = c.urgenceLien||'';
   document.getElementById('modal-error').style.display = 'none';
   document.getElementById('btn-sauver').disabled = false;
   document.getElementById('btn-sauver').textContent = 'Enregistrer l\'identité';
@@ -1605,6 +1623,10 @@ async function sauverCollab() {
   const dateActivation= document.getElementById('f-date-activation').value;
   const matriculeSilae= document.getElementById('f-matricule-silae').value;
   const equipeId      = document.getElementById('f-equipe').value;
+  const urgencePrenom = document.getElementById('f-urgence-prenom').value;
+  const urgenceNom    = document.getElementById('f-urgence-nom').value;
+  const urgenceTel    = document.getElementById('f-urgence-telephone').value;
+  const urgenceLien   = document.getElementById('f-urgence-lien').value;
 
   const enEdition = !!collabEnEdition;
   // Validations spécifiques à la CRÉATION (le contrat ne se définit qu'à la création / par événement)
@@ -1635,6 +1657,14 @@ async function sauverCollab() {
     champs.type_contrat = orNull(typeContrat);
     champs.type_periode = typePeriode;
     champs.heures_hebdo = heuresRaw === '' ? null : Number(heuresRaw);
+  }
+  // Personne à prévenir : ÉDITION uniquement. À la création manuelle ils restent vides
+  // (creer-collab / creer_collaborateur_avec_contrat NON touchés — viendront du formulaire candidat).
+  if (enEdition) {
+    champs.urgence_prenom    = orNull(urgencePrenom);
+    champs.urgence_nom       = orNull(urgenceNom);
+    champs.urgence_telephone = orNull(formatTel(urgenceTel));
+    champs.urgence_lien      = orNull(urgenceLien);
   }
 
   try {

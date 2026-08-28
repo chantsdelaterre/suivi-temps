@@ -15,6 +15,7 @@ function json(body: unknown, status = 200): Response {
 const CHAMPS_AUTORISES = [
   "prenom", "nom", "nom_affiche", "email", "telephone",
   "statut", "actif", "date_activation", "matricule_silae", "equipe_id",
+  "urgence_prenom", "urgence_nom", "urgence_telephone", "urgence_lien",
 ];
 
 Deno.serve(async (req) => {
