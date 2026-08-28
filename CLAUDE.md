@@ -920,6 +920,17 @@ est publique par conception. **La protection vient des `GRANT`, pas du
 secret de la clé.** Tout ce qui vit dans le navigateur est visible et
 contournable — la sécurité doit vivre en base.
 
+**Surveillance externe** — UptimeRobot, plan gratuit, deux moniteurs
+toutes les 5 minutes avec notification push :
+- l'Edge `ping` (type Keyword, cherche `ok`) — teste l'Edge runtime
+  ET la base
+- la page GitHub Pages — teste que l'appli est servie
+
+⚠️ L'Edge `ping` répond en **GET**, sans authentification, et
+n'expose **rien** d'autre que `ok` ou `ko`. Le plan gratuit
+d'UptimeRobot ne sait faire que du GET — le choix de méthode est
+payant. Et un token dans un service tiers, c'est un token qui fuite.
+
 
 ---
 
