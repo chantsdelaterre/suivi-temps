@@ -57,6 +57,14 @@ html, body { font-family: 'DM Sans', sans-serif; background: var(--fond); color:
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--texte3); border-bottom: 1px solid #e8f0f8; background: #fafcff; }
 td { padding: 12px 14px; border-bottom: 1px solid #f0f4f8; vertical-align: middle; }
+/* Onglet Contrats uniquement : en-têtes de colonnes figés au défilement de la page.
+   - overflow:visible retire le conteneur de scroll (sinon le sticky se calerait sur .table-wrap, pas sur la page)
+   - top:64px = hauteur du .header collant, l'en-tête se pose juste dessous
+   - z-index:5 : au-dessus des lignes, sous le .header (100) et les modales (500)
+   - background var(--fond) : opaque (les lignes ne transparaissent pas) et variable (suit le thème) */
+#vue-contrats .card { overflow: visible; }
+#vue-contrats .table-wrap { overflow: visible; }
+#vue-contrats thead th { position: sticky; top: 64px; z-index: 5; background: var(--fond); }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: #fafcff; }
 #saisies-body tr:hover td { background: transparent; }
@@ -279,9 +287,6 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     </div><!-- /vue-equipes -->
     <div class="vue" id="vue-contrats">
       <div class="card">
-        <div class="card-header">
-          <span class="card-title">Contrats</span>
-        </div>
         <div class="filter-bar">
           <input type="search" class="filter-search" id="search-contrats" list="contrats-noms" aria-label="Rechercher un collaborateur" placeholder="🔍 Rechercher…" oninput="rechercheContrats()" style="width:220px">
           <datalist id="contrats-noms"></datalist>
@@ -305,12 +310,12 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <button class="filter-btn" data-val="true" onclick="setFiltreContratsHistorique(true,this)">Historique complet</button>
           </div>
           <span id="contrats-incoherences" style="display:none;align-items:center;gap:6px;font-size:13px;color:var(--rouge);font-weight:600"></span>
-          <span class="filter-count" id="contrats-filter-count"></span>
         </div>
         <div style="display:flex;gap:12px;align-items:center;padding:0 24px 14px">
           <button class="btn btn-primary btn-sm" id="contrats-btn-renouveler" onclick="ouvrirRenouvellementLot()" disabled>Renouveler la sélection</button>
           <span id="contrats-sel-count" style="font-size:13px;color:var(--texte2)">0 contrat sélectionné</span>
           <button class="btn btn-secondary btn-sm" onclick="ouvrirJournal()">Journal</button>
+          <span class="filter-count" id="contrats-filter-count"></span>
         </div>
         <div class="table-wrap">
           <table>
@@ -3465,15 +3470,27 @@ function renderContratsFiltered(list) {
   const result = list || contratsData;
   const tbody = document.getElementById('contrats-tbody');
   if (!tbody) return;
+  // Seuil de renouvellement APRÈS la fin : même valeur que l'actionnabilité de la fiche (40 j).
+  // Au-delà, c'est une reprise, pas un renouvellement. Calcul en date locale, front pur.
+  const SEUIL_RENOUV_J = 40;
+  const _aujMinuit = new Date(); _aujMinuit.setHours(0, 0, 0, 0);
   tbody.innerHTML = !result.length
     ? '<tr><td colspan="10" style="text-align:center;color:var(--texte3);padding:32px">Aucun contrat</td></tr>'
     : result.map(c => {
       const taux = (c.taux_horaire != null && c.taux_horaire !== '') ? Number(c.taux_horaire).toFixed(2).replace('.', ',') + ' €' : '—';
       // Colonne Actions = un simple lien vers la fiche, sur TOUTES les lignes (l'écriture unitaire vit dans la fiche).
       const cellActions = '<button type="button" class="btn btn-secondary btn-sm" style="background:none;border:none;color:var(--bleu);text-decoration:underline;padding:4px" onclick="ouvrirFicheDepuisContrat(\'' + (c.collab_id || '') + '\')">Voir la fiche</button>';
-      // Cochable : TESA courant, avec date de fin, sans successeur (un CDI se poursuit, ne se renouvelle pas).
+      // Cochable : TESA avec date de fin, sans successeur (un CDI se poursuit, ne se renouvelle pas),
+      // ET soit courant, soit terminé depuis MOINS DE 40 j (renouveler après la fin = cas normal, le + fréquent).
       // Garde sur la LIGNE (type_contrat), pas sur le filtre : tient même avec le filtre type sur « Tous ».
-      const cochable = (c.type_contrat === 'TESA' && c.est_courant === true && c.date_fin != null && c.a_une_suite === false);
+      let finRecente = false;
+      if (c.date_fin != null) {
+        const dp = String(c.date_fin).slice(0, 10).split('-');
+        const fin = new Date(Number(dp[0]), Number(dp[1]) - 1, Number(dp[2]));   // date locale, minuit
+        const diffJ = Math.round((_aujMinuit - fin) / 86400000);                 // > 0 = fin passée
+        finRecente = (diffJ > 0 && diffJ < SEUIL_RENOUV_J);                       // strictement moins de 40 j
+      }
+      const cochable = (c.type_contrat === 'TESA' && c.date_fin != null && c.a_une_suite === false && (c.est_courant === true || finRecente));
       const cellCheck = cochable
         ? '<input type="checkbox" class="contrat-check" data-id="' + c.id + '" data-nom="' + String(c.nom_complet || '').replace(/"/g, '&quot;') + '" onchange="majSelectionContrats()">'
         : '';
