@@ -291,9 +291,6 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
         <div class="filter-bar">
           <input type="search" class="filter-search" id="search-contrats" list="contrats-noms" aria-label="Rechercher un collaborateur" placeholder="🔍 Rechercher…" oninput="rechercheContrats()" style="width:220px">
           <datalist id="contrats-noms"></datalist>
-          <div class="filter-group">
-            <button class="filter-btn" id="btn-fin-proche" onclick="toggleFinProche(this)">Sans renouvellement</button>
-          </div>
           <div class="filter-group" data-grp="structure">
             <button class="filter-btn active" data-val="" onclick="setFiltreContrats('structure','',this)">Toutes</button>
             <button class="filter-btn" data-val="SCEA" onclick="setFiltreContrats('structure','SCEA',this)">SCEA</button>
@@ -311,6 +308,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <button class="filter-btn" data-val="true" onclick="setFiltreContratsHistorique(true,this)">Historique complet</button>
           </div>
           <span id="contrats-incoherences" style="display:none;align-items:center;gap:6px;font-size:13px;color:var(--rouge);font-weight:600"></span>
+          <span id="contrats-sans-renouv" style="display:none;align-items:center;gap:6px;font-size:13px;color:var(--orange);font-weight:600"></span>
         </div>
         <div style="display:flex;gap:12px;align-items:center;padding:0 24px 14px">
           <button class="btn btn-primary btn-sm" id="contrats-btn-renouveler" onclick="ouvrirRenouvellementLot()" disabled>Renouveler la sélection</button>
@@ -3390,12 +3388,13 @@ function renderRecapFiltered(list) {
 // Lit l'Edge contrats-liste (auth admin, expose le taux horaire). Vue par défaut
 // (historique=false) = contrats courants + échus dont le collab est encore actif.
 let contratsData = [];
-let filtreContratsFinProche = false;    // bouton bascule : true = n'afficher que les etat 'fin_proche'
+let filtreContratsFinProche = false;    // drapeau dédié « Voir » sans renouvellement (etat 'fin_proche') ; remis à zéro par tout autre filtre
 let filtreContratsIncoherences = false; // drapeau DÉDIÉ à « Voir » (echu_actif) ; remis à zéro dès qu'un autre filtre bouge
 let filtreContratsStructure = '';   // '' | SCEA | SAS | SARL
 let filtreContratsType = 'TESA';    // défaut TESA (99 % des cas d'usage) — sinon '' | CDI | CDD
 let filtreContratsHistorique = false; // false = En cours (défaut) ; true = Historique complet (relance l'Edge)
 let contratsIncoherences = null;    // compteur GLOBAL renvoyé par l'Edge (échus dont le collab est actif) ; null = inconnu
+let contratsSansRenouv = null;      // compteur GLOBAL « sans renouvellement » (etat fin_proche), calculé au front ; null = inconnu
 
 async function chargerContrats() {
   const tbody = document.getElementById('contrats-tbody');
@@ -3412,6 +3411,7 @@ async function chargerContrats() {
     }
     contratsData = data.contrats;
     contratsIncoherences = (typeof data.incoherences === 'number') ? data.incoherences : null;   // état global, indépendant du filtre
+    contratsSansRenouv = (contratsData || []).filter(c => c.etat === 'fin_proche').length;        // GLOBAL (non filtré), calculé au front
   } catch (e) {
     contratsData = [];
     if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
@@ -3448,17 +3448,22 @@ function contratEtatBadge(c) {
   }
 }
 
-// Bouton bascule « Fin < 30 j » (prend/perd .active). Toucher un filtre sort de la vue « Voir ».
-function toggleFinProche(btn) {
-  filtreContratsFinProche = !filtreContratsFinProche;
+// « Voir » sans renouvellement : applique le filtre (etat fin_proche = Fin <= 10 j et sans suite).
+// PAS une bascule — on en sort par « Tous » / « En cours » / « Historique complet » (comme les incohérences).
+function voirSansRenouv() {
+  filtreContratsStructure = '';
+  filtreContratsType = '';
   filtreContratsIncoherences = false;
-  btn.classList.toggle('active', filtreContratsFinProche);
+  const search = document.getElementById('search-contrats'); if (search) search.value = '';
+  filtreContratsFinProche = true;   // drapeau dédié « Voir » (pas via un handler → ne se remet pas à zéro tout seul)
+  majBoutonsFiltresContrats();
   filtrerContrats();
 }
 
 // Recherche : sort aussi de la vue « Voir » (drapeau à zéro).
 function rechercheContrats() {
   filtreContratsIncoherences = false;
+  filtreContratsFinProche = false;
   filtrerContrats();
 }
 
@@ -3467,6 +3472,7 @@ function setFiltreContrats(type, val, btn) {
   if (type === 'structure') filtreContratsStructure = val;
   else                      filtreContratsType = val;
   filtreContratsIncoherences = false;
+  filtreContratsFinProche = false;
   btn.closest('.filter-group').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   filtrerContrats();
@@ -3476,6 +3482,7 @@ function setFiltreContrats(type, val, btn) {
 function setFiltreContratsHistorique(val, btn) {
   filtreContratsHistorique = val;
   filtreContratsIncoherences = false;
+  filtreContratsFinProche = false;
   btn.closest('.filter-group').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   chargerContrats();
@@ -3493,6 +3500,19 @@ function majIncoherences() {
   el.style.display = 'inline-flex';
 }
 
+// Compteur « sans renouvellement » dans la filter-bar, calqué sur majIncoherences (même structure DOM/classes).
+// > 0 → « 📅 N sans renouvellement Voir » ; 0/null → RIEN. Nombre GLOBAL (non filtré). 📅 = échéance, pas anomalie.
+function majSansRenouv() {
+  // MARQUEUR_COMPTEUR_SANSRENOUV
+  const el = document.getElementById('contrats-sans-renouv');
+  if (!el) return;
+  const n = contratsSansRenouv;
+  if (!n || n <= 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.innerHTML = '📅 ' + n + ' sans renouvellement'
+    + ' <button type="button" onclick="voirSansRenouv()" style="background:none;border:none;color:var(--orange);text-decoration:underline;cursor:pointer;font:inherit;font-weight:600;padding:0">Voir</button>';
+  el.style.display = 'inline-flex';
+}
+
 // Reflète l'état des variables de filtre sur les boutons (.active), par data-grp / data-val.
 function _syncGroupeContrats(grp, val) {
   document.querySelectorAll('#vue-contrats .filter-group[data-grp="' + grp + '"] .filter-btn').forEach(b => {
@@ -3500,8 +3520,6 @@ function _syncGroupeContrats(grp, val) {
   });
 }
 function majBoutonsFiltresContrats() {
-  const bfp = document.getElementById('btn-fin-proche');
-  if (bfp) bfp.classList.toggle('active', filtreContratsFinProche);
   _syncGroupeContrats('structure', filtreContratsStructure);
   _syncGroupeContrats('type', filtreContratsType);
   _syncGroupeContrats('historique', filtreContratsHistorique ? 'true' : 'false');
@@ -3529,7 +3547,7 @@ function filtrerContrats() {
     if (fStruct && c.structure !== fStruct) return false;
     if (fType && c.type_contrat !== fType) return false;
     if (filtreContratsIncoherences && c.etat !== 'echu_actif') return false;   // vue « Voir » (drapeau dédié)
-    if (filtreContratsFinProche && c.etat !== 'fin_proche') return false;      // bouton bascule Fin < 30 j
+    if (filtreContratsFinProche && c.etat !== 'fin_proche') return false;      // vue « Voir » sans renouvellement : Fin <= 10 j et sans suite
     return true;
   });
   // Tri d'affichage (vit dans le front — change plus souvent que le ORDER BY serveur) :
@@ -3549,6 +3567,7 @@ function filtrerContrats() {
     count.textContent = result.length + ' contrat' + s + ' affiché' + s + (result.length < m ? ' sur ' + m : '');
   }
   majIncoherences();
+  majSansRenouv();
   renderContratsFiltered(result);
 }
 
