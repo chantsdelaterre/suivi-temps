@@ -224,6 +224,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <button class="filter-btn" onclick="setFilter('contrat','CDD',this)">CDD</button>
           </div>
           <span class="filter-count" id="filter-count"></span>
+          <button class="btn btn-secondary btn-sm" onclick="exporterCollabsPdf()">Exporter en PDF</button>
         </div>
         <div class="table-wrap">
           <table>
@@ -647,6 +648,7 @@ let filtreStructure = '';
 let filtreContrat = '';
 let triColonne = 'nom';
 let triDesc = false;
+let _collabsFiltres = [];   // dernier sous-ensemble filtré+trié affiché (source de l'export PDF)
 
 // Rapatrie TOUTES les lignes d'une requête, par pages de 500, pour contourner le
 // plafond PostgREST (~1000 lignes par défaut). supabase-js ne permet PAS de réutiliser
@@ -870,6 +872,7 @@ function filtrerCollabs() {
   });
   const count = document.getElementById('filter-count');
   if (count) count.textContent = result.length + ' / ' + collabsData.length + ' collaborateur' + (collabsData.length > 1 ? 's' : '');
+  _collabsFiltres = result;   // export PDF : exactement la liste affichée
   renderCollabsFiltered(result);
 }
 
@@ -3191,6 +3194,89 @@ async function genererPdfReleve(collabIdEnc, periodeId) {
   const w = window.open('', '_blank');
   if (!w) { alert('Autorise les fenêtres pop-up pour générer le PDF.'); return; }
   w.document.write(html); w.document.close();
+}
+
+// Sous-titre de l'export : filtres + recherche actifs (sinon on ignore ce qu'on regarde 3 semaines plus tard).
+function _libelleFiltresCollabs() {
+  const parts = [];
+  const st = { actif: 'Actifs', inactif: 'Inactifs', en_attente: 'En attente' };
+  if (filtreStatut)    parts.push(st[filtreStatut] || filtreStatut);
+  if (filtreStructure) parts.push(filtreStructure);
+  if (filtreContrat)   parts.push(filtreContrat);
+  const q = (document.getElementById('search-collab')?.value || '').trim();
+  if (q) parts.push('Recherche « ' + q + ' »');
+  return parts.length ? parts.join(' · ') : 'Tous les collaborateurs';
+}
+
+// Export PDF de la liste des collaborateurs TELLE QU'AFFICHÉE (filtres + recherche + tri, via _collabsFiltres).
+// ⚠️ JAMAIS le lien/token ni le matricule Silae : ce PDF circule (annulerait la sécurité de la semaine).
+// Fenêtre dédiée (patron enveloppePdf) → aucun token au pied de page du navigateur.
+function exporterCollabsPdf() {
+  const liste = _collabsFiltres || [];
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const dateJour = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+  const n = liste.length;
+  const rows = liste.map(c => {
+    const nom = c.nomAffiche || ((c.prenom || '') + ' ' + (c.nom || '')).trim() || '—';
+    return '<tr>'
+      + '<td class="nom">' + esc(nom) + '</td>'
+      + '<td>' + esc(c.structure || '—') + '</td>'
+      + '<td>' + esc(c.typeContrat || '—') + '</td>'
+      + '<td class="dim">' + (c.heuresHebdo ? esc(c.heuresHebdo) + ' h' : '—') + '</td>'
+      + '<td class="equipe">' + esc(nomEquipe(c.equipeId)) + '</td>'
+      + '<td class="tel">' + esc(c.telephone || '—') + '</td>'
+      + '</tr>';
+  }).join('');
+  const page =
+    '<div class="page">'
+    + '<div class="entete">'
+    +   '<div class="societe">Chants de la Terre — Collaborateurs</div>'
+    +   '<div class="meta"><span>' + esc(_libelleFiltresCollabs()) + '</span>'
+    +     '<span>' + dateJour + ' · ' + n + ' personne' + (n > 1 ? 's' : '') + '</span></div>'
+    + '</div>'
+    + '<table>'
+    + '<colgroup><col class="c-nom"><col class="c-struct"><col class="c-contrat"><col class="c-hsem"><col class="c-equipe"><col class="c-tel"></colgroup>'
+    + '<thead><tr>'
+    +   '<th>Nom</th><th>Structure</th><th>Contrat</th><th>H/sem</th><th>Équipe</th><th>Téléphone</th>'
+    + '</tr></thead><tbody>'
+    + (rows || '<tr><td colspan="6" style="padding:24px;text-align:center;color:#888">Aucun collaborateur à afficher.</td></tr>')
+    + '</tbody></table>'
+    + '</div>';
+  const html = enveloppeContactsPdf(page, 'Collaborateurs — Chants de la Terre');
+  const w = window.open('', '_blank');
+  if (!w) { alert('Autorise les fenêtres pop-up pour générer le PDF.'); return; }
+  w.document.write(html); w.document.close();
+}
+
+// Enveloppe HTML autonome de l'export contacts (patron enveloppePdf : fenêtre dédiée + auto-impression).
+// Mise en page « liste de contacts » : A4 portrait, caractères confortables, lignes aérées, téléphone en avant.
+function enveloppeContactsPdf(contenu, titre) {
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>${titre || 'Collaborateurs'}</title>
+<style>
+:root{--txt:#1a1a1a;--txt2:#555;--vert:#2d4a3e;--bord:#e6e6e6;}
+*{box-sizing:border-box}
+body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--txt);margin:0;padding:0;background:#f0f0f0;}
+.page{width:210mm;min-height:297mm;margin:16px auto;background:#fff;padding:10mm 12mm;box-shadow:0 2px 12px rgba(0,0,0,.12);}
+.entete{border-bottom:2.5px solid var(--vert);padding-bottom:8px;margin-bottom:10px;}
+.entete .societe{font-size:18px;font-weight:700;color:var(--vert);letter-spacing:.2px;}
+.entete .meta{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-top:4px;font-size:11.5px;color:var(--txt2);}
+.entete .meta span:first-child{font-weight:600;color:var(--vert);}
+table{width:100%;border-collapse:collapse;table-layout:fixed;}
+thead{display:table-header-group;}
+col.c-nom{width:36%}col.c-struct{width:9%}col.c-contrat{width:9%}col.c-hsem{width:7%}col.c-equipe{width:19%}col.c-tel{width:20%}
+thead th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);border-bottom:1.5px solid var(--vert);padding:5px 6px;}
+thead th:last-child{text-align:right;}
+tbody td{padding:5px 6px;border-bottom:1px solid var(--bord);font-size:12px;vertical-align:baseline;overflow:hidden;}
+tbody td.nom{font-weight:700;font-size:13px;}
+tbody td.dim{color:var(--txt2);}
+tbody td.equipe{white-space:nowrap;}
+tbody td.tel{font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;}
+@media print{body{background:#fff;}.page{margin:0;box-shadow:none;width:auto;min-height:auto;padding:8mm;}tbody tr{break-inside:avoid;}@page{size:A4 portrait;margin:9mm;}}
+</style></head>
+<body>${contenu}
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`;
 }
 
 async function chargerPeriodes() {
