@@ -72,5 +72,11 @@ Deno.serve(async (req) => {
   const { data: rData, error: rErr } = await supabase.rpc("ajouter_contrat", rpcArgs);
   if (rErr) return json({ ok: false, error: rErr.message || "Échec de l'ajout de contrat" }, 500);
 
+  // Synchronise actif/statut d'apres les contrats (meme fonction que le cron
+  // trigger_quotidien). Idempotent : permet un demarrage le jour meme sans
+  // attendre le cron de 2h.
+  const { error: eSync } = await supabase.rpc("synchroniser_activite");
+  if (eSync) console.error("synchroniser_activite:", eSync.message);
+
   return json({ ok: true, admin: adminNom, collab_id: rData });
 });

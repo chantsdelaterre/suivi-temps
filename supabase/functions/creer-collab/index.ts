@@ -104,5 +104,11 @@ Deno.serve(async (req) => {
     if (eTel) tel_ok = false;
   }
 
+  // Synchronise actif/statut d'apres les contrats (meme fonction que le cron
+  // trigger_quotidien). Idempotent : permet un demarrage le jour meme sans
+  // attendre le cron de 2h.
+  const { error: eSync } = await supabase.rpc("synchroniser_activite");
+  if (eSync) console.error("synchroniser_activite:", eSync.message);
+
   return json({ ok: true, collab_id, token, tel_ok });
 });
