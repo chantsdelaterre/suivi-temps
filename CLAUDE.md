@@ -404,8 +404,13 @@ appartient au dossier, pas au journal.
   **`calculerPaiePeriode`** (seule autre occurrence = un commentaire) et
   **`toggleValidation`** — ⚠️ à NE PAS confondre avec `toggleValidationModal`,
   qui, lui, est appelé (`onclick` du bouton « Valider »).
-- **Vivant, NE PAS supprimer** : `toggleCollab` (appelé via `onclick`) et
-  `toggleValidationModal`.
+- **Vivant, NE PAS supprimer** : `toggleValidationModal` (appelé via
+  `onclick` du bouton « Valider »).
+- **`toggleCollab` RETIRÉE le 14/09/2026** (avec les boutons « Activer » /
+  « Désactiver » de la colonne Actions du tableau Collaborateurs) : l'activité
+  (`actif` / `statut`) est désormais pilotée par le cron
+  `synchroniser_activite()` d'après les contrats — le geste manuel n'a plus
+  lieu d'être. La note « Vivant » ci-dessus ne la concerne donc plus.
 
 ## Import paie & lectures Supabase — décisions du LOT 1 (30/07/2026)
 

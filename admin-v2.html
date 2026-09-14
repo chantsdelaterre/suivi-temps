@@ -209,7 +209,6 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <button class="filter-btn active" onclick="setFilter('statut','',this)">Tous</button>
             <button class="filter-btn" onclick="setFilter('statut','actif',this)">Actifs</button>
             <button class="filter-btn" onclick="setFilter('statut','inactif',this)">Inactifs</button>
-            <button class="filter-btn" onclick="setFilter('statut','en_attente',this)">En attente</button>
           </div>
           <div class="filter-group">
             <button class="filter-btn active" onclick="setFilter('structure','',this)">Toutes</button>
@@ -898,8 +897,6 @@ function renderCollabsFiltered(collabs) {
   tbody.innerHTML = collabs.map(c => {
     const badgeClass = c.statut === 'actif' ? 'badge-actif' : c.statut === 'inactif' ? 'badge-inactif' : 'badge-attente';
     const badgeLabel = c.statut === 'actif' ? 'Actif' : c.statut === 'inactif' ? 'Inactif' : 'En attente';
-    const toggleLabel = c.statut === 'inactif' ? 'Activer' : 'Désactiver';
-    const toggleClass = c.statut === 'inactif' ? 'btn-success' : 'btn-danger';
     const collabJson = encodeURIComponent(JSON.stringify(c));
     return `<tr>
       <td><strong>${c.nomAffiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim()}</strong></td>
@@ -914,7 +911,6 @@ function renderCollabsFiltered(collabs) {
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" onclick="ouvrirModalCollabData('${collabJson}')">✏️</button>
         <button class="btn btn-secondary btn-sm" onclick="copierMessage('${collabJson}')" title="Copier le message d'invitation">📨</button>
-        <button class="btn ${toggleClass} btn-sm" onclick="toggleCollab('${c.collabId}', this)">${toggleLabel}</button>
       </td>
     </tr>`;
   }).join('');
@@ -1734,37 +1730,6 @@ async function sauverCollab() {
       }
   } catch (e) {
     showErr('Erreur : ' + (e && e.message ? e.message : e));
-  }
-}
-
-async function toggleCollab(collabId, btn) {
-  const c = (collabsData || []).find(x => x.collabId === collabId);
-  if (!c) { alert('Collaborateur introuvable, recharge la page.'); return; }
-  // Sens depuis collabsData (statut), pas depuis le libellé du bouton : actif OU en attente → on désactive
-  // (même logique que le libellé, qui n'affiche « Activer » que pour un statut 'inactif').
-  const desactivation = c.statut !== 'inactif';
-  const nom = c.nomAffiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim() || collabId;
-  if (desactivation && !confirm('Désactiver ' + nom + ' ? Ses jours ne seront plus générés automatiquement.')) return;
-  // statut ET actif bougent TOUJOURS de concert (aucun cas mixte en base).
-  const champs = desactivation ? { statut: 'inactif', actif: false } : { statut: 'actif', actif: true };
-  btn.disabled = true;
-  try {
-    const { data, error } = await sb.functions.invoke('modifier-collab', {
-      body: { admin_token: ADMIN_TOKEN, collab_id: collabId, champs }
-    });
-    if (error) {
-      let detail = 'échec de l\'enregistrement';
-      try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
-      alert('Échec : ' + detail);
-      return;
-    }
-    if (!data || data.ok !== true) {
-      alert('Échec : ' + ((data && data.error) || 'inconnu'));
-      return;
-    }
-    chargerCollabs();
-  } finally {
-    btn.disabled = false;
   }
 }
 
