@@ -1274,7 +1274,9 @@ function renderFormContrat(opts) {
   const cell = 'display:flex;flex-direction:column;gap:3px';
   const grid = 'display:grid;grid-template-columns:1fr 1fr;gap:8px 12px';
   // Pré-sélection de la période UNIQUEMENT en création (jamais à l'ouverture d'une correction).
-  const onNcContrat = mode === 'create' ? ' onchange="preselectPeriode(this.value, \'nc-periode\')"' : '';
+  const onNcContrat = mode === 'create'
+    ? ' onchange="preselectPeriode(this.value, \'nc-periode\'); majAsterisqueDateFin()"'
+    : ' onchange="majAsterisqueDateFin()"';
   document.getElementById('contrat-fin-zone').innerHTML =
     '<div style="display:flex;flex-direction:column;gap:8px;background:#f7fafd;border:1px solid #e8f0f8;border-radius:10px;padding:12px">'
     + '<div style="font-weight:600;font-size:13px;color:var(--texte2)">' + titre + '</div>'
@@ -1285,7 +1287,7 @@ function renderFormContrat(opts) {
     +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-periode">Type période *</label><select id="nc-periode" style="'+inp+'"><option value="">— Choisir —</option><option value="civil">Civile</option><option value="decalee">Décalée</option></select></div>'
     +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-heures">Heures / semaine *</label><input type="number" id="nc-heures" step="0.5" min="0" style="'+inp+'">' + noteHeuresHtml + '</div>'
     +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-taux">Taux horaire</label><input type="text" id="nc-taux" style="'+inp+'"></div>'
-    +   '<div style="'+cell+'"><label style="'+lbl+'" for="nc-date-fin">Date de fin</label><input type="date" id="nc-date-fin" style="'+inp+'"></div>'
+    +   '<div style="'+cell+'"><label style="'+lbl+'" id="nc-date-fin-label" for="nc-date-fin">Date de fin</label><input type="date" id="nc-date-fin" style="'+inp+'"></div>'
     + '</div>'
     + '<div id="nc-msg" style="display:none;font-size:13px;margin-top:2px"></div>'
     + '<div style="display:flex;gap:8px;margin-top:4px"><button type="button" class="btn btn-success btn-sm" onclick="confirmerContrat()">' + btnLabel + '</button><button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById(\'contrat-fin-zone\').innerHTML=\'\'">Annuler</button></div>'
@@ -1309,6 +1311,17 @@ function renderFormContrat(opts) {
     const el = document.getElementById(id);
     if (el) { el.disabled = true; el.style.background = '#eef1f5'; el.style.color = 'var(--texte3)'; }
   });
+  majAsterisqueDateFin();   // astérisque initial selon le type (obligatoire sauf CDI)
+}
+
+// Astérisque du label « Date de fin » selon le type sélectionné : obligatoire sauf CDI
+// (miroir de la garde de confirmerContrat et de la contrainte CHECK en base).
+// Appelée au rendu ET à chaque changement de nc-contrat (via son onchange).
+function majAsterisqueDateFin() {
+  const sel = document.getElementById('nc-contrat');
+  const lab = document.getElementById('nc-date-fin-label');
+  if (!sel || !lab) return;
+  lab.textContent = (sel.value === 'CDI') ? 'Date de fin' : 'Date de fin *';
 }
 
 // Mode CRÉATION (bouton "+ Nouvel événement").
@@ -1438,6 +1451,10 @@ async function confirmerRenouvellement() {
   const date_fin = v('rc-fin') || null;
   if (!date_debut) { showMsg('Date de début du nouveau contrat requise.', false); return; }
   if (date_fin && date_fin < date_debut) { showMsg('La date de fin ne peut pas précéder la date de début.', false); return; }
+  // Date de fin OBLIGATOIRE sauf CDI (miroir de la contrainte CHECK). Le type est repris de la ligne renouvelée.
+  if (!date_fin && r.type_contrat !== 'CDI') {
+    showMsg('La date de fin est obligatoire pour un contrat ' + r.type_contrat + '.', false); return;
+  }
   const besoinCloture = !r.date_fin;   // décision sur la valeur STOCKÉE de la ligne
   if (besoinCloture && !finActuelle) { showMsg('Date de fin du contrat actuel requise pour le clôturer.', false); return; }
   // Écriture 1 (conditionnelle) : clôturer le contrat courant.
@@ -1507,9 +1524,9 @@ async function confirmerContrat() {
   const heures_hebdo = Number(heuresRaw.replace(',', '.'));
   if (Number.isNaN(heures_hebdo)) { showMsg('Heures / semaine : valeur numérique attendue.', false); return; }
   if (date_fin && date_fin < date_debut) { showMsg('La date de fin ne peut pas précéder la date de début.', false); return; }
-  // Garde-fou TESA sans date de fin (création ET édition) — avertit, laisse passer si confirmé.
-  if (type_contrat === 'TESA' && !date_fin) {
-    if (!confirm('Contrat TESA sans date de fin. Êtes-vous sûr ?')) return;
+  // Date de fin OBLIGATOIRE sauf CDI (miroir de la contrainte CHECK contrat_date_fin_obligatoire en base).
+  if (!date_fin && type_contrat !== 'CDI') {
+    showMsg('La date de fin est obligatoire pour un contrat ' + type_contrat + '.', false); return;
   }
   // Alerte période inhabituelle — CRÉATION uniquement (modifier_contrat interdit déjà de changer la période sur un contrat commencé).
   if (ncEditId == null && !confirmerPeriodeInhabituelle(type_contrat, type_periode)) return;
