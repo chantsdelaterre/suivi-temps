@@ -48,16 +48,23 @@ La saisie d'un jour par un collaborateur est possible **si et seulement si les 4
 
 **Principe :** toutes les écritures front passent par des Edge Functions Supabase authentifiées. Le rôle `anon` (clé publishable, publique) est en LECTURE SEULE. Les fonctions écrivent en `service_role`.
 
-**9 Edge Functions** (`supabase/functions/`) :
+**Edge Functions** (`supabase/functions/`) — *liste établie le 16/07 (9 fonctions) ; voir la note datée en fin de bloc* :
 - `sauver-remarque` — remarque manager (auth `manager_token` + appartenance équipe)
 - `sauver-saisie` — saisie collab (auth token collab + appartenance ; recalcul serveur des totaux + règles 3 modifs/jour, J-5, période ouverte)
 - `modifier-collab` — édition collab (auth admin, whitelist colonnes)
-- `creer-collab` — création collab (auth admin ; génère collab_id + token serveur, appelle la RPC, pose le téléphone)
+- `creer-collab` — création collab (auth admin ; génère collab_id + token serveur, appelle la RPC, pose le téléphone ; **appelle `synchroniser_activite` depuis le 14/09/2026**)
 - `cloturer-periode` — clôture (auth admin + invariant gelee→cloturee)
 - `cloturer-contrat` — fin de contrat (auth admin, wrappe la RPC cloturer_contrat)
+- `ajouter-contrat` — nouveau contrat / renouvellement (auth admin, wrappe la RPC `ajouter_contrat` ; **appelle `synchroniser_activite` depuis le 14/09/2026**) [ajoutée à l'inventaire le 14/09/2026]
 - `importer-paie` — import bulk paie_detail (auth admin, idempotent)
 - `ajuster-paie` — ajustements couche 2 paie_detail (auth admin, batch)
 - `valider-recap` — upsert recap_paie (auth admin)
+
+> ⚠️ **Note du 14/09/2026** : l'inventaire ci-dessus est un instantané du 16/07 et n'est
+> PLUS exhaustif — d'autres Edge existent depuis (`modifier-contrat`, `supprimer-contrat`,
+> `renouveler-lot`, `contrats-liste`, `collaborateurs-liste`, `equipes-liste`,
+> `manager-equipe`, `collab-session`, `candidats-cloture`, `journal`, `ping`…). La liste
+> qui fait foi se constate par `ls supabase/functions/`, jamais depuis ce fichier.
 
 **Auth :** token applicatif dans le body, vérifié serveur — collab : `collaborateurs.token` ; manager : `equipes.manager_token` ; admin : RPC `verifier_admin`. Acteur collab = non fiable → recalcul serveur. Acteur admin = de confiance → fonctions « fines » (calcul au front).
 
@@ -329,9 +336,12 @@ la génération des jours + tout le front qui lit ces colonnes).
 - `cloturer_contrat` ne touche PAS la fiche (asymétrie avec la
   précédente).
 - Dans le **SQL versionné du dépôt** (`sql/trigger_quotidien.sql`),
-  `trigger_quotidien` enchaîne 4 étapes (activer_collabs_en_attente →
-  ouvrir_geler_periodes → generer_periodes_suivantes → generer_jour_aujourdhui) et
-  **aucune ne lit `historique_contrats`**. ⚠️ Le dépôt reflète le fichier de
+  `trigger_quotidien` enchaîne 4 étapes. **Mis à jour le 14/09/2026** : l'étape 1
+  est désormais `synchroniser_activite` (~~activer_collabs_en_attente~~ →
+  ouvrir_geler_periodes → generer_periodes_suivantes → generer_jour_aujourdhui).
+  ~~**aucune ne lit `historique_contrats`**~~ → **`synchroniser_activite` LIT
+  `historique_contrats`** (c'est tout son objet : caler actif/statut sur les
+  contrats). ⚠️ Le dépôt reflète le fichier de
   référence, PAS forcément l'état exact de la base (à confirmer côté base si un
   doute). Aucun cron de rafraîchissement de fiche n'existe dans `sql/`.
 
@@ -373,11 +383,17 @@ appartient au dossier, pas au journal.
 
 ### Manques identifiés (non traités, notés)
 
-- `ajouter_contrat` et `creer_collaborateur_avec_contrat` n'ont PAS de
-  paramètre `date_fin` (écrit en dur à null) → aucun TESA ne peut naître
-  avec sa date de fin, alors qu'un TESA est un contrat à terme connu à
-  la signature. Conséquence : l'alerte J-5 « fin de contrat » ne pourra
-  jamais se déclencher tant que ce n'est pas corrigé.
+- ~~`ajouter_contrat` et `creer_collaborateur_avec_contrat` n'ont PAS de
+  paramètre `date_fin` (écrit en dur à null)~~ — **FAUX depuis le 21/08,
+  acté le 14/09/2026** : les DEUX RPC acceptent désormais `p_date_fin` ET
+  `p_taux_horaire` (tous deux `DEFAULT NULL`). Signatures en base :
+  `creer_collaborateur_avec_contrat(…,numeric,date)` (17 params : taux 16e,
+  date_fin 17e) et `ajouter_contrat(…,date,numeric)` (9 params). Définition
+  complète versionnée dans `sql/creer_collaborateur_avec_contrat.sql`. Le
+  formulaire « Nouveau collaborateur » les transmet depuis le 14/09/2026
+  (date de fin **obligatoire sauf CDI**, contrainte CHECK
+  `contrat_date_fin_obligatoire` en base). Un TESA peut donc naître avec sa
+  date de fin.
 - Le TAUX HORAIRE n'existe nulle part dans l'appli (le tableau TESA le
   porte : 9,85 à 16 €). Donnée contractuelle et datée → sa place serait
   dans le journal. À décider : dans l'appli ou chez Silae ?
@@ -465,9 +481,12 @@ appartient au dossier, pas au journal.
 - `statut_validation` reste `'valide'` : `calculerCountsPaie` et `cloturerPeriode`
   sont **inchangés**. Le collab borné compte dans X **comme** dans Y et **ne bloque
   pas** la clôture globale.
-- Le collab borné **n'est PAS désactivé** par le chantier. La désactivation reste un
-  **geste manuel** (règle : désactiver si aucune ligne de `historique_contrats` n'a
-  `date_fin` nulle ou ≥ aujourd'hui).
+- Le collab borné **n'est PAS désactivé** par le chantier (LOT 2 lui-même).
+  ~~La désactivation reste un **geste manuel**~~ — **mis à jour le 14/09/2026 :
+  la désactivation est désormais AUTOMATIQUE via `synchroniser_activite()`**
+  (appelée par `trigger_quotidien` et les Edge de contrat). Règle inchangée :
+  inactif si aucune ligne de `historique_contrats` ne couvre aujourd'hui
+  (`date_fin` nulle ou ≥ aujourd'hui, tolérance J-1).
 
 ### 2. Le déclencheur est `historique_contrats`, pas une décision admin
 - Le geste naît d'une **date de fin posée sur le contrat**, pas d'une intention de
@@ -712,18 +731,30 @@ pour pouvoir nommer le coupable.
   compte qui fonctionne, pas quelqu'un en poste. Filtre retiré de
   l'onglet Contrats pour cette raison.
 
-### La règle d'activité (pas encore automatisée)
+### La règle d'activité (~~pas encore automatisée~~ automatisée le 14/09/2026)
 
 **Un collaborateur est actif s'il existe un contrat couvrant
-aujourd'hui ou demain.** Une condition, deux effets : activation la
-veille du premier jour, désactivation le lendemain du dernier.
+aujourd'hui.** Une condition, deux effets : activation le jour du
+premier (`date_debut`), désactivation le surlendemain du dernier
+(tolérance J-1 sur `date_fin`).
+~~« couvrant aujourd'hui **ou demain** » / « activation la veille du
+premier jour, désactivation le lendemain du dernier »~~ — formulation
+d'origine PÉRIMÉE (corrigée le 14/09/2026), voir le ⚠️ ci-dessous.
 
-⚠️ « Demain » et non « aujourd'hui » : le cron de génération des jours
+⚠️ ~~« Demain » et non « aujourd'hui » : le cron de génération des jours
 tourne vers 00 h 10 ; activer la veille supprime la course entre les
-deux tâches.
+deux tâches.~~ **Corrigé le 14/09/2026 : pas besoin d'anticiper.** Dans
+`trigger_quotidien`, l'activation (étape 1, `synchroniser_activite`) passe
+AVANT la génération des jours (étape 4). Le 15 à 2 h : le collab devient
+actif, PUIS son jour du 15 est créé — un seul passage, pas de jour parasite
+(tranché dans la note de conception du 25/08).
 ⚠️ **Les administrateurs sont exclus** de la désactivation. Confirmé
 par les données : deux des trois admins n'ont aucun contrat en vigueur.
-⚠️ À brancher **en dernier**, quand les contrats sont justes.
+⚠️ ~~À brancher **en dernier**, quand les contrats sont justes.~~
+**Branchée le 14/09/2026** via `synchroniser_activite()` (versionnée dans
+`sql/synchroniser_activite.sql`) : appelée en étape 1 de `trigger_quotidien`
+ET par les Edge `ajouter-contrat` / `creer-collab` (démarrage le jour même,
+idempotent).
 
 ### Ce que l'appli ne fait pas
 
