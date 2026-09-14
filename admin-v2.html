@@ -495,12 +495,13 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <select id="f-structure"><option value="">— Choisir —</option><option>SCEA</option><option>SAS</option><option>SARL</option></select>
           </div>
           <div class="form-group contrat-field"><label for="f-contrat">Type contrat *</label>
-            <select id="f-contrat" onchange="preselectPeriode(this.value, 'f-type-periode')"><option value="">— Choisir —</option><option>CDI</option><option>TESA</option><option>CDD</option></select>
+            <select id="f-contrat" onchange="preselectPeriode(this.value, 'f-type-periode'); majAsterisqueDateFinCollab()"><option value="">— Choisir —</option><option>CDI</option><option>TESA</option><option>CDD</option></select>
           </div>
           <div class="form-group contrat-field"><label for="f-type-periode">Type période *</label>
             <select id="f-type-periode"><option value="">— Choisir —</option><option value="decalee">Décalée</option><option value="civil">Civile</option></select>
           </div>
-          <div class="form-group contrat-field"><label for="f-heures">Heures / semaine</label><input type="number" id="f-heures" placeholder="35" min="1" max="60"></div>
+          <div class="form-group contrat-field"><label for="f-heures">Heures / semaine *</label><input type="number" id="f-heures" placeholder="35" min="1" max="60"></div>
+          <div class="form-group contrat-field"><label for="f-date-fin" id="f-date-fin-label">Date de fin</label><input type="date" id="f-date-fin"></div>
           <div class="form-group"><label for="f-statut">Statut</label>
             <select id="f-statut"><option value="en_attente">En attente</option><option value="actif">Actif</option><option value="inactif">Inactif</option></select>
           </div>
@@ -1037,7 +1038,7 @@ function toggleIdentite() {
 function ouvrirModalCollab() {
   collabEnEdition = null;
   document.getElementById('modal-titre').textContent = 'Nouveau collaborateur';
-  ['f-prenom','f-nom','f-email','f-telephone','f-heures','f-date-activation','f-urgence-prenom','f-urgence-nom','f-urgence-telephone','f-urgence-lien'].forEach(id => document.getElementById(id).value = '');
+  ['f-prenom','f-nom','f-email','f-telephone','f-heures','f-date-fin','f-date-activation','f-urgence-prenom','f-urgence-nom','f-urgence-telephone','f-urgence-lien'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-structure').value = '';
   document.getElementById('f-contrat').value = '';
   document.getElementById('f-statut').value = 'en_attente';
@@ -1052,6 +1053,7 @@ function ouvrirModalCollab() {
   document.getElementById('zone-contrat').style.display = 'none';
   document.getElementById('identite-entete').style.display = 'none';   // création : pas d'en-tête, tout se saisit
   setIdentitePliee(false);                                             // bloc identité DÉPLIÉ
+  majAsterisqueDateFinCollab();                                        // astérisque initial (f-contrat vide → obligatoire par défaut)
   document.getElementById('modal-collab').classList.add('open');
 }
 
@@ -1316,6 +1318,15 @@ function renderFormContrat(opts) {
 function majAsterisqueDateFin() {
   const sel = document.getElementById('nc-contrat');
   const lab = document.getElementById('nc-date-fin-label');
+  if (!sel || !lab) return;
+  lab.textContent = (sel.value === 'CDI') ? 'Date de fin' : 'Date de fin *';
+}
+
+// Idem pour la modale statique « Nouveau collaborateur » (ids f-contrat / f-date-fin-label).
+// Obligatoire sauf CDI — miroir de la garde de sauverCollab et de la contrainte CHECK en base.
+function majAsterisqueDateFinCollab() {
+  const sel = document.getElementById('f-contrat');
+  const lab = document.getElementById('f-date-fin-label');
   if (!sel || !lab) return;
   lab.textContent = (sel.value === 'CDI') ? 'Date de fin' : 'Date de fin *';
 }
@@ -1638,6 +1649,7 @@ async function sauverCollab() {
   const typeContrat   = document.getElementById('f-contrat').value;
   const typePeriode   = document.getElementById('f-type-periode').value;
   const heuresRaw     = document.getElementById('f-heures').value.trim();
+  const dateFin       = document.getElementById('f-date-fin').value;
   const statut        = document.getElementById('f-statut').value;
   const dateActivation= document.getElementById('f-date-activation').value;
   const matriculeSilae= document.getElementById('f-matricule-silae').value;
@@ -1652,6 +1664,9 @@ async function sauverCollab() {
   if (!enEdition) {
     if (!typePeriode) { showErr('Aucune période de paie définie pour ce collaborateur — veuillez sélectionner un type de période.'); return; }
     if (!dateActivation) { showErr('Date d\'activation requise.'); return; }
+    if (heuresRaw === '' || Number.isNaN(Number(heuresRaw))) { showErr('Heures / semaine : valeur numérique requise.'); return; }
+    if (!dateFin && typeContrat !== 'CDI') { showErr('La date de fin est obligatoire pour un contrat ' + typeContrat + '.'); return; }
+    if (dateFin && dateFin < dateActivation) { showErr('La date de fin ne peut pas précéder la date de début.'); return; }
     // Alerte période inhabituelle (annuler = retour au formulaire, rien n'est envoyé ; le bouton est ré-armé).
     if (!confirmerPeriodeInhabituelle(typeContrat, typePeriode)) { btn.disabled = false; btn.textContent = 'Enregistrer'; return; }
   }
@@ -1676,6 +1691,7 @@ async function sauverCollab() {
     champs.type_contrat = orNull(typeContrat);
     champs.type_periode = typePeriode;
     champs.heures_hebdo = heuresRaw === '' ? null : Number(heuresRaw);
+    if (dateFin) champs.date_fin = dateFin;   // transmise seulement si renseignée (l'Edge n'envoie p_date_fin que si champs.date_fin est présent)
   }
   // Personne à prévenir : ÉDITION uniquement. À la création manuelle ils restent vides
   // (creer-collab / creer_collaborateur_avec_contrat NON touchés — viendront du formulaire candidat).
