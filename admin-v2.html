@@ -65,6 +65,11 @@ td { padding: 12px 14px; border-bottom: 1px solid #f0f4f8; vertical-align: middl
 #vue-contrats .card { overflow: visible; }
 #vue-contrats .table-wrap { overflow: visible; }
 #vue-contrats thead th { position: sticky; top: 64px; z-index: 5; background: var(--fond); }
+/* Vue « par collaborateur » (Historique complet) : chevron + sous-lignes de contrats dépliables.
+   Rattachement des sous-lignes = fond atténué + cellules chevron/nom vides (retrait), sans répéter le nom. */
+#vue-contrats .chevron-groupe { cursor: pointer; user-select: none; color: var(--texte3); font-size: 13px; }
+#vue-contrats .contrat-sub-row { background: var(--fond); }
+#vue-contrats .contrat-sub-row td { color: var(--texte3); }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: #fafcff; }
 #saisies-body tr:hover td { background: transparent; }
@@ -3489,6 +3494,10 @@ function setFiltreContratsHistorique(val, btn) {
   filtreContratsHistorique = val;
   filtreContratsIncoherences = false;
   filtreContratsFinProche = false;
+  // Vue par personne : le défaut TESA découperait la liste des gens → Tous.
+  // Retour sur « En cours » : on restaure le défaut nominal TESA.
+  filtreContratsType = val ? '' : 'TESA';
+  _syncGroupeContrats('type', filtreContratsType);
   btn.closest('.filter-group').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   chargerContrats();
@@ -3543,21 +3552,54 @@ async function voirIncoherences() {
   await chargerContrats();   // recharge en historique ; filtrerContrats (echu_actif) s'applique ensuite
 }
 
+// Prédicat par-contrat PARTAGÉ par les deux modes. En cours = filtre les contrats ;
+// Historique groupé = une personne est retenue si AU MOINS UN de ses contrats le passe.
+function _contratPasseFiltres(c, recherche, fStruct, fType) {
+  if (recherche && !((c.nom_complet || '').toLowerCase().includes(recherche))) return false;
+  if (fStruct && c.structure !== fStruct) return false;
+  if (fType && c.type_contrat !== fType) return false;
+  if (filtreContratsIncoherences && c.etat !== 'echu_actif') return false;   // vue « Voir » (drapeau dédié)
+  if (filtreContratsFinProche && c.etat !== 'fin_proche') return false;      // vue « Voir » sans renouvellement : Fin <= 10 j et sans suite
+  return true;
+}
+
+// Sélection (cases + renouvellement) : possible en « En cours », masquée en groupé (lecture seule).
+function _majUiModeContrats() {
+  const groupe = filtreContratsHistorique;
+  const btn = document.getElementById('contrats-btn-renouveler');
+  const sel = document.getElementById('contrats-sel-count');
+  const all = document.getElementById('contrats-check-all');
+  if (btn) btn.style.display = groupe ? 'none' : '';
+  if (sel) sel.style.display = groupe ? 'none' : '';
+  if (all) all.style.display = groupe ? 'none' : '';
+}
+
 // Filtrage EN MÉMOIRE (jamais de masquage CSS), puis re-render complet du tbody.
+// AIGUILLAGE : Historique complet → vue par collaborateur ; sinon vue par contrat (INCHANGÉE).
 function filtrerContrats() {
   const recherche = (document.getElementById('search-contrats')?.value || '').toLowerCase();
   const fStruct = filtreContratsStructure;
   const fType = filtreContratsType;
-  const result = (contratsData || []).filter(c => {
-    if (recherche && !((c.nom_complet || '').toLowerCase().includes(recherche))) return false;
-    if (fStruct && c.structure !== fStruct) return false;
-    if (fType && c.type_contrat !== fType) return false;
-    if (filtreContratsIncoherences && c.etat !== 'echu_actif') return false;   // vue « Voir » (drapeau dédié)
-    if (filtreContratsFinProche && c.etat !== 'fin_proche') return false;      // vue « Voir » sans renouvellement : Fin <= 10 j et sans suite
-    return true;
-  });
-  // Tri d'affichage (vit dans le front — change plus souvent que le ORDER BY serveur) :
-  // 1) anomalies d'abord, 2) structure en ordre MÉTIER (SCEA, SAS, SARL), 3) nom.
+  _majUiModeContrats();
+
+  if (filtreContratsHistorique) {
+    // ── VUE PAR COLLABORATEUR ──
+    const personnes = _grouperContratsParCollab(recherche, fStruct, fType);
+    const count = document.getElementById('contrats-filter-count');
+    if (count) {
+      const m = new Set((contratsData || []).map(c => c.collab_id)).size;   // personnes distinctes au total
+      const s = personnes.length > 1 ? 's' : '';
+      count.textContent = personnes.length + ' collaborateur' + s + (personnes.length < m ? ' sur ' + m : '');
+    }
+    majIncoherences();
+    majSansRenouv();
+    renderContratsGroupe(personnes);
+    return;
+  }
+
+  // ── VUE PAR CONTRAT (En cours) — logique identique à l'origine ──
+  const result = (contratsData || []).filter(c => _contratPasseFiltres(c, recherche, fStruct, fType));
+  // Tri d'affichage : 1) anomalies d'abord, 2) structure en ordre MÉTIER (SCEA, SAS, SARL), 3) nom.
   const STRUCT_ORDRE = { SCEA: 0, SAS: 1, SARL: 2 };
   result.sort((a, b) => {
     const anoA = contratEstAnomalie(a), anoB = contratEstAnomalie(b);
@@ -3575,6 +3617,48 @@ function filtrerContrats() {
   majIncoherences();
   majSansRenouv();
   renderContratsFiltered(result);
+}
+
+// Regroupe contratsData par collab_id (vue Historique). Personne RETENUE si ≥1 contrat passe
+// le prédicat (règle #4) → on affiche ALORS TOUS ses contrats. Tri interne : date_debut desc,
+// départage est_courant d'abord, date_fin desc (null=en cours en tête), id desc.
+function _grouperContratsParCollab(recherche, fStruct, fType) {
+  const parCollab = new Map();
+  for (const c of (contratsData || [])) {
+    const k = c.collab_id || '';
+    if (!parCollab.has(k)) parCollab.set(k, []);
+    parCollab.get(k).push(c);
+  }
+  const cmp = (a, b) => {
+    const da = String(a.date_debut || '').slice(0, 10), db = String(b.date_debut || '').slice(0, 10);
+    if (da !== db) return da < db ? 1 : -1;                                   // date_debut DESC
+    if (!!a.est_courant !== !!b.est_courant) return a.est_courant ? -1 : 1;   // est_courant d'abord
+    const an = a.date_fin == null, bn = b.date_fin == null;
+    if (an !== bn) return an ? -1 : 1;                                        // date_fin null (en cours) en tête
+    if (!an) {
+      const fa = String(a.date_fin).slice(0, 10), fb = String(b.date_fin).slice(0, 10);
+      if (fa !== fb) return fa < fb ? 1 : -1;                                 // date_fin DESC
+    }
+    return String(b.id).localeCompare(String(a.id), undefined, { numeric: true });   // id DESC
+  };
+  const personnes = [];
+  for (const [collabId, contrats] of parCollab) {
+    if (!contrats.some(c => _contratPasseFiltres(c, recherche, fStruct, fType))) continue;
+    const tries = contrats.slice().sort(cmp);
+    personnes.push({
+      collabId,
+      nomComplet: tries[0].nom_complet || '—',
+      tete: tries[0],
+      autres: tries.slice(1),
+      nbContrats: tries.length,
+      aAnomalie: contrats.some(contratEstAnomalie),
+    });
+  }
+  personnes.sort((p, q) => {
+    if (p.aAnomalie !== q.aAnomalie) return p.aAnomalie ? -1 : 1;   // anomalie d'abord (règle #5)
+    return (p.nomComplet || '').localeCompare(q.nomComplet || '');  // puis nom
+  });
+  return personnes;
 }
 
 function renderContratsFiltered(list) {
@@ -3605,6 +3689,8 @@ function renderContratsFiltered(list) {
       const cellCheck = cochable
         ? '<input type="checkbox" class="contrat-check" data-id="' + c.id + '" data-nom="' + String(c.nom_complet || '').replace(/"/g, '&quot;') + '" onchange="majSelectionContrats()">'
         : '';
+      // ⚠️ DUPLICATION ASSUMÉE : les 7 cellules Structure→État existent aussi dans renderContratsGroupe
+      //    (cellulesContrat). Toute modif de colonne ICI doit être reportée LÀ-BAS, et inversement.
       return `
       <tr>
         <td style="text-align:center">${cellCheck}</td>
@@ -3620,6 +3706,65 @@ function renderContratsFiltered(list) {
       </tr>`;
     }).join('');
   majSelectionContrats();   // #contrats-tbody réécrit → cases réinitialisées : compteur à 0, bouton grisé, check-all décoché
+}
+
+// Rendu de la VUE PAR COLLABORATEUR (Historique complet) : ligne maître + sous-lignes dépliables.
+// ⚠️ DUPLICATION ASSUMÉE : cellulesContrat reproduit les 7 cellules Structure→État de
+//    renderContratsFiltered. Toute modif de colonne ICI doit être reportée LÀ-BAS, et inversement.
+function renderContratsGroupe(personnes) {
+  const tbody = document.getElementById('contrats-tbody');
+  if (!tbody) return;
+  // Règle #3 revue : sous un filtre d'anomalie (« Voir » incohérences / sans renouvellement),
+  // les personnes s'affichent DÉPLIÉES d'office pour montrer le contrat en cause sans clic.
+  const deplieDoffice = !!(filtreContratsIncoherences || filtreContratsFinProche);
+  const cellulesContrat = c => {
+    const taux = (c.taux_horaire != null && c.taux_horaire !== '') ? Number(c.taux_horaire).toFixed(2).replace('.', ',') + ' €' : '—';
+    return '<td style="text-align:center">' + (c.structure || '—') + '</td>'
+      + '<td style="text-align:center">' + (c.type_contrat || '—') + '</td>'
+      + '<td style="text-align:center;white-space:nowrap">' + fmtDate(c.date_debut) + '</td>'
+      + '<td style="text-align:center;white-space:nowrap">' + (c.date_fin ? fmtDate(c.date_fin) : '—') + '</td>'
+      + '<td style="text-align:center">' + (c.heures_hebdo != null ? c.heures_hebdo + 'h' : '—') + '</td>'
+      + '<td style="text-align:center;white-space:nowrap">' + taux + '</td>'
+      + '<td style="text-align:center">' + contratEtatBadge(c) + '</td>';
+  };
+  tbody.innerHTML = !personnes.length
+    ? '<tr><td colspan="10" style="text-align:center;color:var(--texte3);padding:32px">Aucun collaborateur</td></tr>'
+    : personnes.map(p => {
+      const multi = p.nbContrats > 1;
+      const ouvert = deplieDoffice && multi;
+      const chevron = multi
+        ? '<span class="chevron-groupe" data-collab="' + p.collabId + '" onclick="toggleContratGroupe(\'' + p.collabId + '\')">' + (ouvert ? '▾' : '▸') + '</span>'
+        : '';
+      const badge = multi
+        ? ' <span style="font-size:11px;color:var(--texte3);font-weight:600">(' + p.nbContrats + ' contrats)</span>'
+        : '';
+      const actions = '<button type="button" class="btn btn-secondary btn-sm" style="background:none;border:none;color:var(--bleu);text-decoration:underline;padding:4px" onclick="ouvrirFicheDepuisContrat(\'' + (p.collabId || '') + '\')">Voir la fiche</button>';
+      const maitre = '<tr>'
+        + '<td style="text-align:center">' + chevron + '</td>'
+        + '<td><strong>' + (p.nomComplet || '—') + '</strong>' + badge + '</td>'
+        + cellulesContrat(p.tete)
+        + '<td style="text-align:center">' + actions + '</td>'
+        + '</tr>';
+      // Sous-lignes : cellules chevron ET nom VIDES (rattachement = retrait + fond atténué, sans répéter le nom).
+      const sous = p.autres.map(c => '<tr class="contrat-sub-row" data-collab="' + p.collabId + '"'
+          + (ouvert ? '' : ' style="display:none"') + '>'
+        + '<td></td>'
+        + '<td></td>'
+        + cellulesContrat(c)
+        + '<td></td>'
+        + '</tr>').join('');
+      return maitre + sous;
+    }).join('');
+}
+
+// Déplie/replie les sous-lignes d'un collaborateur. État DANS le DOM (comme les cases du renouvellement).
+function toggleContratGroupe(collabId) {
+  const sous = document.querySelectorAll('#contrats-tbody .contrat-sub-row[data-collab="' + collabId + '"]');
+  if (!sous.length) return;
+  const ouvrir = sous[0].style.display === 'none';
+  sous.forEach(tr => { tr.style.display = ouvrir ? '' : 'none'; });
+  const chev = document.querySelector('#contrats-tbody .chevron-groupe[data-collab="' + collabId + '"]');
+  if (chev) chev.textContent = ouvrir ? '▾' : '▸';
 }
 
 // "Voir la fiche" (colonne Actions de l'onglet Contrats) : réutilise l'ouverture existante (collab de collabsData).
