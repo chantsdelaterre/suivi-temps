@@ -221,26 +221,42 @@ une copie par client). Détail complet : NOTE_Mes_Heures_Pro_commercialisation.m
   l'Edge Function / RLS), elle ne se rajoute pas après — une seule "serrure" mal
   posée = fuite de données entre clients.
 
-## À AMÉLIORER — UX de l'activation programmée (piège identifié le 01/07/2026)
+## Pilotage de l'activité des collaborateurs
 
-Problème constaté : poser une `date_activation` (même à aujourd'hui) sur un collab
-au statut `inactif` ne l'active PAS. Le cron `activer_collabs_en_attente` ne bascule
-que les collabs au statut `en_attente` → `actif`. Un `inactif` avec date_activation
-reste inactif (donc pas de génération de jours). Cas réel : Sati GUNDUZ (COLL019)
-n'a pas eu son jour du 01/07, rattrapée à la main (activation manuelle + relance de
-generer_jour_aujourdhui, idempotente).
+> ~~À AMÉLIORER — UX de l'activation programmée (piège identifié le 01/07/2026)~~ —
+> le piège décrit ci-dessous **N'EXISTE PLUS** depuis le chantier `f-statut`
+> (14-15/09/2026). Section conservée pour mémoire + état réel.
 
-Comportement actuel (à connaître) :
-- date_activation SEULE ne déclenche rien. Il faut le statut `en_attente` pour que
-  le cron active au jour dit, OU activer à la main (actif=true, statut=actif).
-- C'est contre-intuitif (on croit que « mettre une date d'activation » suffit).
+**Trace de l'ancien fonctionnement (PÉRIMÉ) :**
+- ~~Poser une `date_activation` sur un collab `inactif` ne l'activait PAS ; seul le
+  cron `activer_collabs_en_attente` basculait les collabs `en_attente` → `actif`.
+  Un `inactif` avec `date_activation` restait inactif (pas de génération de jours).
+  Cas réel : Sati GUNDUZ (COLL019), jour du 01/07 rattrapé à la main.~~
+- ~~Il fallait le statut `en_attente` pour que le cron active au jour dit, OU
+  activer à la main (`actif=true, statut=actif`).~~
+- ~~UI associée : select `f-statut` dans la modale, filtre « En attente », boutons
+  Activer/Désactiver.~~ — **tous retirés le 14/09/2026.**
 
-Pistes d'amélioration (à concevoir plus tard, pas urgent) :
-- Que poser une date_activation FUTURE bascule automatiquement le collab en
-  `en_attente` (au lieu de le laisser inactif).
-- OU un message clair dans la modale expliquant la différence inactif / en_attente.
-- OU un bouton admin « générer le jour manquant » pour rattraper une activation
-  tardive sans passer par le SQL (déjà évoqué au backlog).
+**État réel aujourd'hui (15/09/2026) :**
+- L'activité (`actif`/`statut`) est pilotée par **`synchroniser_activite()`** d'après
+  `historique_contrats` (contrat couvrant aujourd'hui → actif ; sinon inactif,
+  tolérance J-1). **Aucun réglage manuel nulle part.**
+- Appelée **en étape 1 de `trigger_quotidien`** (cron 2 h UTC) ET par les Edge
+  **`ajouter-contrat` / `creer-collab`** à la création, **suivie de
+  `generer_jour_aujourdhui`** (ajout du 15/09) → **démarrage le jour même**, jour de
+  saisie compris, sans attendre le cron.
+- La modale collaborateur envoie **`statut='inactif'`, `actif=false` en dur** à la
+  création ; `synchroniser_activite` **recale immédiatement** d'après le contrat.
+- `activer_collabs_en_attente()` **existe toujours en base** mais **n'est plus appelée
+  par personne** (retirée de `trigger_quotidien` le 14/09).
+
+**Reste à faire :**
+- Un **bouton admin « générer le jour manquant »** pour le **rattrapage RÉTROACTIF**.
+  Les automatisations ci-dessus couvrent la création du jour **courant**, PAS les jours
+  passés d'un contrat **saisi en retard**. Cas réel : les jours du 14/09 de David PROT,
+  Séverine HERMELINE et Dominique DANIEAU (contrats saisis en cours de journée) ont dû
+  être insérés **à la main en SQL**. Le cas se reproduira à chaque contrat saisi avec
+  retard.
 
 ## Fonctionnalités livrées (07/07/2026)
 
