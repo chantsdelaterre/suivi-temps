@@ -35,6 +35,11 @@ grant  execute on function public.renouveler_contrats_lot(bigint[],date,date,tex
 -- D2. Verrouiller les fonctions cron/maintenance (postgres conserve l'EXECUTE en tant que propriétaire)
 revoke execute on function public.activer_collabs_en_attente()  from public, anon;
 revoke execute on function public.generer_jour_aujourdhui()     from public, anon;
+-- Ajouté le 15/09/2026 : les Edge ajouter-contrat / creer-collab appellent
+-- generer_jour_aujourdhui APRÈS synchroniser_activite. Sans ce grant, l'appel
+-- échoue en « permission denied » (même symptôme constaté sur synchroniser_activite
+-- le 14/09). Les autres fonctions du bloc D2 restent postgres-only (crons).
+grant  execute on function public.generer_jour_aujourdhui()     to service_role;
 revoke execute on function public.generer_periodes_suivantes()  from public, anon;
 revoke execute on function public.ouvrir_geler_periodes()       from public, anon;
 revoke execute on function public.rls_auto_enable()             from public, anon;

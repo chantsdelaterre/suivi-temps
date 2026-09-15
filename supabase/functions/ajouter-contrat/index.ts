@@ -78,5 +78,11 @@ Deno.serve(async (req) => {
   const { error: eSync } = await supabase.rpc("synchroniser_activite");
   if (eSync) console.error("synchroniser_activite:", eSync.message);
 
+  // Genere le jour du jour pour les collabs devenus actifs a l'instant.
+  // APRES synchroniser_activite obligatoirement : la fonction ne cree un jour
+  // que pour les collaborateurs actif = true. Idempotent (ON CONFLICT DO NOTHING).
+  const { error: eJour } = await supabase.rpc("generer_jour_aujourdhui");
+  if (eJour) console.error("generer_jour_aujourdhui:", eJour.message);
+
   return json({ ok: true, admin: adminNom, collab_id: rData });
 });
