@@ -1,0 +1,50 @@
+/* tokens.css — variables de design UNIQUEMENT (aucune règle de mise en page).
+   .theme-collab = pages collaborateur (vert) ; .theme-gestion = pages admin/manager (bleu).
+   Créé le 16/09/2026. */
+
+:root {
+  --font-sans: 'DM Sans', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --blanc: #ffffff;
+  --rouge: #c0392b;
+}
+
+.theme-collab {
+  --primaire: #2d5a2d;
+  --primaire-clair: #4a8c4a;
+  --primaire-pale: #e8f2e8;
+  --fond: #f5f2ed;
+  --texte: #1a2e1a;
+  --texte2: #5a6e5a;
+  --texte3: #8a9e8a;
+  --vide: #c8d8c8;
+  --radius: 16px;
+  --vert: var(--primaire);
+  --vert-clair: var(--primaire-clair);
+  --vert-pale: var(--primaire-pale);
+}
+
+.theme-gestion {
+  --primaire: #1e3a5f;
+  --primaire-clair: #2d5a8e;
+  --primaire-pale: #e8f0fb;
+  --primaire-mid: #c5d8f5;
+  --fond: #f4f6fa;
+  --texte: #0f1f33;
+  --texte2: #4a5e75;
+  --texte3: #8a9db5;
+  --succes: #1a7a4a;
+  --succes-pale: #e6f5ee;
+  --alerte: #c8621a;
+  --alerte-pale: #fff0e4;
+  --radius: 12px;
+  --shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
+  --bleu: var(--primaire);
+  --bleu-clair: var(--primaire-clair);
+  --bleu-pale: var(--primaire-pale);
+  --bleu-mid: var(--primaire-mid);
+  --vert: var(--succes);
+  --vert-pale: var(--succes-pale);
+  --orange: var(--alerte);
+  --orange-pale: var(--alerte-pale);
+}
