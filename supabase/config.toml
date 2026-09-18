@@ -419,6 +419,9 @@ verify_jwt = false
 [functions.journal]
 verify_jwt = false
 
+[functions.journal-regles]
+verify_jwt = false
+
 [functions.collaborateurs-liste]
 verify_jwt = false
 
