@@ -199,6 +199,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     <div class="tab" onclick="showTab('periodes', this)">📅 Périodes</div>
     <div class="tab" onclick="showTab('recap', this)">📊 Récap</div>
     <div class="tab" onclick="showTab('paie', this)">💶 Paie</div>
+    <div class="tab" onclick="showTab('parametres', this)">⚙️ Paramètres</div>
   </div>
   <div class="main">
     <div class="vue active" id="vue-collabs">
@@ -474,6 +475,39 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     </div>
 
     </div>
+    <!-- TAB PARAMÈTRES -->
+    <div class="vue" id="vue-parametres">
+      <!-- SECTION · Règles du journal -->
+      <div class="card">
+        <div class="card-header" style="align-items:flex-start">
+          <div>
+            <span class="card-title">Règles du journal</span>
+            <div style="color:var(--texte2);font-size:13px;line-height:1.5;margin-top:4px">Ces règles définissent les tâches administratives à effectuer quand un contrat est créé, modifié, se termine ou est rompu.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="ouvrirModalRegle()">+ Nouvelle règle</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Mouvement</th>
+                <th>Type contrat</th>
+                <th>Condition</th>
+                <th>Objet</th>
+                <th>Tiers</th>
+                <th>Échéance</th>
+                <th style="text-align:center">Actif</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="regles-tbody">
+              <tr><td colspan="8"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Sections à venir (jours fériés, textes, admins) : ajouter une .card ici, rien d'autre à toucher. -->
+    </div><!-- /vue-parametres -->
   </div>
 </div>
 <div class="modal-overlay" id="modal-collab">
@@ -643,6 +677,64 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
 
 
 
+<!-- MODALE RÈGLE DU JOURNAL (onglet Paramètres) -->
+<div class="modal-overlay" id="modal-regle">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-regle-titre">Nouvelle règle</span>
+      <button class="modal-close" onclick="fermerModal('modal-regle')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="regle-mouvement">Mouvement *</label>
+          <select id="regle-mouvement"></select>
+        </div>
+        <div class="form-group">
+          <label for="regle-type">Type de contrat</label>
+          <select id="regle-type"></select>
+        </div>
+        <div class="form-group" style="grid-column:1 / -1">
+          <label for="regle-condition">Condition</label>
+          <select id="regle-condition"></select>
+        </div>
+        <div class="form-group" style="grid-column:1 / -1">
+          <label for="regle-objet">Objet * — ce qu'il faut faire</label>
+          <input type="text" id="regle-objet" placeholder="ex : Établir la déclaration d'embauche">
+        </div>
+        <div class="form-group">
+          <label for="regle-tiers">Tiers *</label>
+          <select id="regle-tiers"></select>
+        </div>
+        <div class="form-group">
+          <label for="regle-echeance-jours">Échéance</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="number" id="regle-echeance-jours" min="0" placeholder="jours" style="width:90px">
+            <select id="regle-sens" style="flex:1"></select>
+          </div>
+        </div>
+        <div class="form-group" style="grid-column:1 / -1">
+          <label for="regle-note">Note (facultatif)</label>
+          <textarea id="regle-note" rows="2" style="resize:vertical"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="regle-ordre">Ordre d'affichage</label>
+          <input type="number" id="regle-ordre" value="0">
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:22px">
+          <input type="checkbox" id="regle-actif" checked style="width:auto">
+          <label for="regle-actif" style="margin:0">Règle active</label>
+        </div>
+      </div>
+      <div id="modal-regle-error" style="display:none;margin-top:12px" class="error-banner"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fermerModal('modal-regle')">Annuler</button>
+      <button class="btn btn-primary" id="btn-sauver-regle" onclick="sauverRegle()">Créer la règle</button>
+    </div>
+  </div>
+</div>
+
 <div class="copy-toast" id="toast">✓ Lien copié !</div>
 <script>
 const SUPABASE_URL = 'https://oldkmapumqnibdcniecd.supabase.co';
@@ -650,6 +742,8 @@ const SUPABASE_ANON_KEY = 'sb_publishable_sMySTPpkgaiUtnban8uCtw_HQFxmsgv';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let ADMIN_TOKEN = new URLSearchParams(location.search).get('token') || '';
 let collabEnEdition = null;
+let _reglesData = [];        // cache des règles du journal (onglet Paramètres)
+let _regleEnEdition = null;  // id de la règle en cours d'édition ; null = création
 let _contratsDirty = false;   // levé quand une écriture de contrat RÉUSSIT dans la fiche → recharge l'onglet Contrats à la fermeture
 let collabsData = [];
 let equipesData = [];
@@ -783,6 +877,7 @@ function showTab(nom, el) {
   if (nom === 'paie') chargerPeriodes().then(() => setPaieSousOnglet(paieSousOnglet));
   if (nom === 'equipes') chargerVueEquipes();
   if (nom === 'contrats') chargerContrats();
+  if (nom === 'parametres') chargerRegles();
 }
 
 async function chargerEquipes() {
@@ -1024,6 +1119,224 @@ function voirCollabsEquipe(btn) {
 
 function fermerEquipeDetail() {
   document.getElementById('equipe-detail').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PARAMÈTRES · Règles du journal (Edge `journal-regles`, routée par action)
+// ═══════════════════════════════════════════════════════════════════════════
+// Dictionnaires technique <-> lisible : SEUL endroit où vivent les valeurs
+// techniques. Ils remplissent les <select> de la modale ET traduisent le tableau.
+const REGLE_MOUVEMENTS = [
+  { v: 'creation',     label: 'Création de contrat' },
+  { v: 'modification', label: 'Modification' },
+  { v: 'fin',          label: 'Fin de contrat' },
+  { v: 'rupture',      label: 'Rupture anticipée' },
+];
+const REGLE_TYPES = [
+  { v: '',     label: 'Tous' },   // '' <-> null en base
+  { v: 'TESA', label: 'TESA' },
+  { v: 'CDI',  label: 'CDI' },
+  { v: 'CDD',  label: 'CDD' },
+];
+const REGLE_CONDITIONS = [
+  { v: '',      label: 'Dans tous les cas' },                    // '' <-> null
+  { v: 'true',  label: 'Seulement si un contrat suit' },         // 'true' <-> true
+  { v: 'false', label: 'Seulement si aucun contrat ne suit' },   // 'false' <-> false
+];
+const REGLE_TIERS = [
+  { v: 'MSA',               label: 'MSA' },
+  { v: 'SILAE',             label: 'Silae' },
+  { v: 'GESTIONNAIRE_PAIE', label: 'Gestionnaire de paie' },
+  { v: 'EMPLOYE',           label: 'Employé' },
+  { v: 'FRANCE_TRAVAIL',    label: 'France Travail' },
+  { v: 'AUTRE',             label: 'Autre' },
+];
+const REGLE_SENS = [
+  { v: 'avant', label: 'avant l\'événement' },
+  { v: 'apres', label: 'après l\'événement' },
+];
+
+const _labelDe = (dict, v) => { const o = dict.find(x => x.v === (v == null ? '' : String(v))); return o ? o.label : '—'; };
+const labelMouvement = v => _labelDe(REGLE_MOUVEMENTS, v);
+const labelType      = v => _labelDe(REGLE_TYPES, v);
+const labelCondition = v => _labelDe(REGLE_CONDITIONS, v);
+const labelTiers     = v => _labelDe(REGLE_TIERS, v);
+const _escRegle = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function labelEcheance(jours, sens) {
+  if (jours == null || sens == null) return '—';
+  if (Number(jours) === 0) return 'le jour même';
+  return jours + ' jour' + (jours > 1 ? 's' : '') + ' ' + _labelDe(REGLE_SENS, sens);
+}
+
+// Remplit les <select> de la modale depuis les dictionnaires. Une seule fois.
+let _reglesSelectsPrets = false;
+function _initReglesSelects() {
+  if (_reglesSelectsPrets) return;
+  const opt = o => '<option value="' + o.v + '">' + o.label + '</option>';
+  document.getElementById('regle-mouvement').innerHTML = '<option value="">— Choisir —</option>' + REGLE_MOUVEMENTS.map(opt).join('');
+  document.getElementById('regle-type').innerHTML      = REGLE_TYPES.map(opt).join('');
+  document.getElementById('regle-condition').innerHTML = REGLE_CONDITIONS.map(opt).join('');
+  document.getElementById('regle-tiers').innerHTML     = '<option value="">— Choisir —</option>' + REGLE_TIERS.map(opt).join('');
+  document.getElementById('regle-sens').innerHTML      = '<option value="">—</option>' + REGLE_SENS.map(opt).join('');
+  _reglesSelectsPrets = true;
+}
+
+async function chargerRegles() {
+  const tb = document.getElementById('regles-tbody');
+  tb.innerHTML = '<tr><td colspan="8"><div class="loader"><div class="spinner"></div>Chargement…</div></td></tr>';
+  const { data: resp, error: eEdge } = await sb.functions.invoke('journal-regles', { body: { admin_token: ADMIN_TOKEN, action: 'liste' } });
+  if (eEdge || !resp || resp.ok !== true) {
+    console.error('chargerRegles : lecture règles (Edge) en échec', eEdge || (resp && resp.error));
+    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--rouge);padding:24px">Erreur de chargement.</td></tr>';
+    return;
+  }
+  _reglesData = Array.isArray(resp.regles) ? resp.regles : [];
+  renderRegles(_reglesData);
+}
+
+function renderRegles(regles) {
+  const tb = document.getElementById('regles-tbody');
+  if (!regles.length) {
+    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--texte3);padding:32px">Aucune règle. Cliquez sur « + Nouvelle règle » pour en créer une.</td></tr>';
+    return;
+  }
+  tb.innerHTML = regles.map(r => {
+    const attenue = r.actif ? '' : ' style="opacity:.5"';   // règles inactives atténuées
+    const badge = r.actif
+      ? '<span class="badge badge-actif">Oui</span>'
+      : '<span class="badge badge-inactif">Non</span>';
+    return '<tr' + attenue + '>' +
+      '<td>' + labelMouvement(r.mouvement) + '</td>' +
+      '<td>' + labelType(r.type_contrat) + '</td>' +
+      '<td>' + labelCondition(r.avec_suite) + '</td>' +
+      '<td><strong>' + _escRegle(r.objet) + '</strong></td>' +
+      '<td>' + labelTiers(r.tiers) + '</td>' +
+      '<td>' + labelEcheance(r.echeance_jours, r.echeance_sens) + '</td>' +
+      '<td style="text-align:center">' + badge + '</td>' +
+      '<td style="white-space:nowrap">' +
+        '<button class="btn btn-secondary btn-sm" onclick="ouvrirModalRegleEdit(' + r.id + ')">✏️ Modifier</button> ' +
+        '<button class="btn btn-danger btn-sm" onclick="supprimerRegle(' + r.id + ')">🗑 Supprimer</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function _cacherErreurRegle() {
+  const box = document.getElementById('modal-regle-error');
+  box.style.display = 'none'; box.innerHTML = '';
+}
+// Message HUMAIN en gros ; détail technique (Postgres) en petit, atténué, sous la phrase.
+function _afficherErreurRegle(humain, technique) {
+  const box = document.getElementById('modal-regle-error');
+  box.innerHTML = '<div>' + _escRegle(humain) + '</div>' +
+    (technique ? '<div style="font-size:11px;opacity:.6;margin-top:4px">' + _escRegle(technique) + '</div>' : '');
+  box.style.display = 'block';
+}
+
+function ouvrirModalRegle() {
+  _initReglesSelects();
+  _regleEnEdition = null;
+  document.getElementById('modal-regle-titre').textContent = 'Nouvelle règle';
+  document.getElementById('regle-mouvement').value = '';
+  document.getElementById('regle-type').value = '';
+  document.getElementById('regle-condition').value = '';
+  document.getElementById('regle-objet').value = '';
+  document.getElementById('regle-tiers').value = '';
+  document.getElementById('regle-echeance-jours').value = '';
+  document.getElementById('regle-sens').value = '';
+  document.getElementById('regle-note').value = '';
+  document.getElementById('regle-ordre').value = '0';
+  document.getElementById('regle-actif').checked = true;
+  _cacherErreurRegle();
+  const btn = document.getElementById('btn-sauver-regle'); btn.disabled = false; btn.textContent = 'Créer la règle';
+  document.getElementById('modal-regle').classList.add('open');
+}
+
+function ouvrirModalRegleEdit(id) {
+  const r = (_reglesData || []).find(x => x.id === id);
+  if (!r) return;
+  _initReglesSelects();
+  _regleEnEdition = id;
+  document.getElementById('modal-regle-titre').textContent = 'Modifier la règle';
+  document.getElementById('regle-mouvement').value = r.mouvement || '';
+  document.getElementById('regle-type').value = r.type_contrat || '';
+  document.getElementById('regle-condition').value = (r.avec_suite == null ? '' : String(r.avec_suite));
+  document.getElementById('regle-objet').value = r.objet || '';
+  document.getElementById('regle-tiers').value = r.tiers || '';
+  document.getElementById('regle-echeance-jours').value = (r.echeance_jours == null ? '' : r.echeance_jours);
+  document.getElementById('regle-sens').value = r.echeance_sens || '';
+  document.getElementById('regle-note').value = r.note || '';
+  document.getElementById('regle-ordre').value = (r.ordre == null ? '0' : r.ordre);
+  document.getElementById('regle-actif').checked = !!r.actif;
+  _cacherErreurRegle();
+  const btn = document.getElementById('btn-sauver-regle'); btn.disabled = false; btn.textContent = 'Enregistrer';
+  document.getElementById('modal-regle').classList.add('open');
+}
+
+async function sauverRegle() {
+  const mouvement = document.getElementById('regle-mouvement').value;
+  const objet = (document.getElementById('regle-objet').value || '').trim();
+  const tiers = document.getElementById('regle-tiers').value;
+  const joursStr = (document.getElementById('regle-echeance-jours').value || '').trim();
+  const sens = document.getElementById('regle-sens').value;
+
+  // Validation front — messages humains, JAMAIS d'erreur brute (les CHECK base restent le dernier filet).
+  if (!mouvement) { _afficherErreurRegle('Choisissez un mouvement.'); return; }
+  if (!objet)     { _afficherErreurRegle('L\'objet est obligatoire (ce qu\'il faut faire).'); return; }
+  if (!tiers)     { _afficherErreurRegle('Choisissez un tiers.'); return; }
+  const jVide = (joursStr === ''), sVide = (sens === '');
+  if (jVide !== sVide) { _afficherErreurRegle('Pour une échéance, renseignez le nombre de jours ET le sens, ou laissez les deux vides.'); return; }
+  let echeance_jours = null;
+  if (!jVide) {
+    echeance_jours = Number(joursStr);
+    if (!Number.isInteger(echeance_jours) || echeance_jours < 0) { _afficherErreurRegle('Le nombre de jours doit être un entier positif ou nul.'); return; }
+  }
+
+  // Lisible -> technique.
+  const condVal = document.getElementById('regle-condition').value;   // '' | 'true' | 'false'
+  const body = {
+    admin_token: ADMIN_TOKEN,
+    action: _regleEnEdition ? 'modifier' : 'creer',
+    mouvement,
+    type_contrat: document.getElementById('regle-type').value || null,
+    avec_suite: condVal === '' ? null : (condVal === 'true'),
+    objet,
+    tiers,
+    echeance_jours,
+    echeance_sens: sVide ? null : sens,
+    note: (document.getElementById('regle-note').value || '').trim() || null,
+    ordre: Number(document.getElementById('regle-ordre').value) || 0,
+    actif: document.getElementById('regle-actif').checked,
+  };
+  if (_regleEnEdition) body.id = _regleEnEdition;
+
+  const btn = document.getElementById('btn-sauver-regle'); btn.disabled = true;
+  const { data, error } = await sb.functions.invoke('journal-regles', { body });
+  btn.disabled = false;
+  if (error) {
+    let detail = ''; try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+    _afficherErreurRegle('Enregistrement impossible, vérifiez les champs.', detail); return;
+  }
+  if (!data || data.ok !== true) {
+    _afficherErreurRegle('Enregistrement impossible, vérifiez les champs.', data && data.error); return;
+  }
+  fermerModal('modal-regle');
+  chargerRegles();
+}
+
+async function supprimerRegle(id) {
+  const r = (_reglesData || []).find(x => x.id === id);
+  if (!r) return;
+  if (!confirm('Supprimer la règle « ' + (r.objet || '') + ' » ?\nCette action est définitive.')) return;
+  const { data, error } = await sb.functions.invoke('journal-regles', { body: { admin_token: ADMIN_TOKEN, action: 'supprimer', id } });
+  if (error || !data || data.ok !== true) {
+    let detail = '';
+    if (error) { try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {} }
+    else { detail = (data && data.error) || ''; }
+    alert('Suppression impossible.' + (detail ? '\n\n' + detail : ''));
+    return;
+  }
+  chargerRegles();
 }
 
 function copierLien(lien) {
