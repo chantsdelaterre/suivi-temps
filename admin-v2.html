@@ -3873,8 +3873,14 @@ function composerTexteJournal(mvts) {
               : 'Nouveau ' + (m.type_contrat || '—') + ' à partir du ' + _jjmm(m.date_debut);
             if (m.rupture_anticipee) l += ' (rupture anticipée)';
             lignes.push('      ☐ ' + l);
+          } else if (m.mouvement === 'fin') {
+            lignes.push('      ☐ Fin de ' + (m.type_contrat || '—') + ' le ' + _jjmm(m.date_fin));
+            lignes.push('          du ' + _jjmm(m.date_debut) + (m.date_fin ? ' au ' + _jjmm(m.date_fin) : '') + ' · ' + heuresTxt(m.heures_hebdo) + ' · ' + tauxTxt(m.taux_horaire));
+          } else if (m.mouvement === 'rupture') {
+            lignes.push('      ☐ Rupture anticipée de ' + (m.type_contrat || '—') + ' le ' + _jjmm(m.date_fin));
+            lignes.push('          du ' + _jjmm(m.date_debut) + (m.date_fin ? ' au ' + _jjmm(m.date_fin) : '') + ' · ' + heuresTxt(m.heures_hebdo) + ' · ' + tauxTxt(m.taux_horaire));
           } else {
-            // Une FIN de contrat = une modification qui a posé une date de fin, indiscernable → toujours "vérifier".
+            // Filet : tout mouvement inconnu (dont 'modification') → "vérifier".
             let tete = 'Contrat modifié — vérifier';
             if (m.rupture_anticipee) tete += ' (rupture anticipée)';
             lignes.push('      ☐ ' + tete);
@@ -3919,6 +3925,12 @@ function rendreHtmlJournal(mvts) {
               : 'Nouveau ' + esc(m.type_contrat || '—') + ' à partir du ' + _jjmm(m.date_debut);
             if (m.rupture_anticipee) l += ' (rupture anticipée)';
             html += '<div style="display:flex;align-items:flex-start;padding-left:42px;margin-top:5px"><span>' + carre + '</span><span>' + l + '</span></div>';
+          } else if (m.mouvement === 'fin') {
+            html += '<div style="display:flex;align-items:flex-start;padding-left:42px;margin-top:5px"><span>' + carre + '</span><span>Fin de ' + esc(m.type_contrat || '—') + ' le ' + _jjmm(m.date_fin) + '</span></div>';
+            html += '<div style="padding-left:64px;color:var(--texte3);font-size:12px;margin-top:1px">du ' + _jjmm(m.date_debut) + (m.date_fin ? ' au ' + _jjmm(m.date_fin) : '') + ' · ' + heuresTxt(m.heures_hebdo) + ' · ' + tauxTxt(m.taux_horaire) + '</div>';
+          } else if (m.mouvement === 'rupture') {
+            html += '<div style="display:flex;align-items:flex-start;padding-left:42px;margin-top:5px"><span>' + carre + '</span><span>Rupture anticipée de ' + esc(m.type_contrat || '—') + ' le ' + _jjmm(m.date_fin) + '</span></div>';
+            html += '<div style="padding-left:64px;color:var(--texte3);font-size:12px;margin-top:1px">du ' + _jjmm(m.date_debut) + (m.date_fin ? ' au ' + _jjmm(m.date_fin) : '') + ' · ' + heuresTxt(m.heures_hebdo) + ' · ' + tauxTxt(m.taux_horaire) + '</div>';
           } else {
             let tete = 'Contrat modifié — vérifier';
             if (m.rupture_anticipee) tete += ' (rupture anticipée)';
