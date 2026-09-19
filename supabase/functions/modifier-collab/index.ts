@@ -14,7 +14,7 @@ function json(body: unknown, status = 200): Response {
 
 const CHAMPS_AUTORISES = [
   "prenom", "nom", "nom_affiche", "email", "telephone",
-  "statut", "actif", "date_activation", "matricule_silae", "equipe_id",
+  "statut", "actif", "date_activation", "matricule_silae", "numero_securite_sociale", "equipe_id",
   "urgence_prenom", "urgence_nom", "urgence_telephone", "urgence_lien",
 ];
 
@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
   if (Object.keys(maj).length === 0) return json({ ok: false, error: "Aucun champ modifiable fourni" }, 400);
 
   const { error: uErr } = await supabase.from("collaborateurs").update(maj).eq("collab_id", collab_id);
-  if (uErr) return json({ ok: false, error: "Échec de l'enregistrement" }, 500);
+  if (uErr) return json({ ok: false, error: uErr.message || "Échec de l'enregistrement" }, 500);
 
   return json({ ok: true, admin: adminNom });
 });

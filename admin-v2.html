@@ -527,11 +527,12 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
         <!-- IDENTITÉ -->
         <div id="form-titre-identite" style="display:none;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3);margin-bottom:10px">Identité</div>
         <div class="form-grid">
-          <div class="form-group"><label for="f-prenom">Prénom *</label><input type="text" id="f-prenom" placeholder="Marie"></div>
-          <div class="form-group"><label for="f-nom">Nom *</label><input type="text" id="f-nom" placeholder="Dupont"></div>
-          <div class="form-group"><label for="f-email">Email</label><input type="email" id="f-email" placeholder="marie@exemple.fr"></div>
-          <div class="form-group"><label for="f-telephone">Téléphone</label><input type="text" id="f-telephone" placeholder="06-12-34-56-78"></div>
-          <div class="form-group"><label for="f-matricule-silae">Matricule Silae</label><input type="text" id="f-matricule-silae" placeholder="ex: 00042"></div>
+          <div class="form-group"><label for="f-prenom">Prénom *</label><input type="text" id="f-prenom"></div>
+          <div class="form-group"><label for="f-nom">Nom *</label><input type="text" id="f-nom"></div>
+          <div class="form-group"><label for="f-email">Email</label><input type="email" id="f-email"></div>
+          <div class="form-group"><label for="f-telephone">Téléphone</label><input type="text" id="f-telephone"></div>
+          <div class="form-group"><label for="f-matricule-silae">Matricule Silae</label><input type="text" id="f-matricule-silae"></div>
+          <div class="form-group"><label for="f-nss">N° sécurité sociale</label><input type="text" id="f-nss" inputmode="numeric" oninput="this.value=_formatNSS(this.value)"></div>
         </div>
         <!-- CONTRAT INITIAL — masqué en édition (contrat-field) : le contrat s'y modifie via la timeline -->
         <div class="contrat-field" style="margin-top:14px;margin-bottom:10px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3)">Contrat initial</div>
@@ -561,9 +562,9 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
         <!-- Personne à prévenir en cas d'urgence — tous facultatifs, ne bloquent jamais l'enregistrement -->
         <div style="margin-top:14px;margin-bottom:10px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--texte3)">Personne à prévenir en cas d'urgence</div>
         <div class="form-grid">
-          <div class="form-group"><label for="f-urgence-prenom">Prénom</label><input type="text" id="f-urgence-prenom" placeholder="Jean"></div>
-          <div class="form-group"><label for="f-urgence-nom">Nom</label><input type="text" id="f-urgence-nom" placeholder="Dupont"></div>
-          <div class="form-group"><label for="f-urgence-telephone">Téléphone</label><input type="text" id="f-urgence-telephone" placeholder="06-12-34-56-78"></div>
+          <div class="form-group"><label for="f-urgence-prenom">Prénom</label><input type="text" id="f-urgence-prenom"></div>
+          <div class="form-group"><label for="f-urgence-nom">Nom</label><input type="text" id="f-urgence-nom"></div>
+          <div class="form-group"><label for="f-urgence-telephone">Téléphone</label><input type="text" id="f-urgence-telephone"></div>
           <div class="form-group"><label for="f-urgence-lien">Lien</label>
             <select id="f-urgence-lien"><option value="">—</option><option>Conjoint</option><option>Parent</option><option>Enfant</option><option>Frère ou sœur</option><option>Ami</option><option>Autre</option></select>
           </div>
@@ -931,6 +932,7 @@ async function chargerCollabs() {
     dateActivation: c.date_activation,
     equipeId: c.equipe_id,
     matriculeSilae: c.matricule_silae,
+    numeroSecuriteSociale: c.numero_securite_sociale,
     urgencePrenom: c.urgence_prenom,
     urgenceNom: c.urgence_nom,
     urgenceTelephone: c.urgence_telephone,
@@ -1360,10 +1362,27 @@ function toggleIdentite() {
   setIdentitePliee(corps.style.display !== 'none');   // visible → replier ; replié → déplier
 }
 
+// Formate un n° de sécu au format français : groupes 1-2-2-2-3-3-2 (comme la carte Vitale).
+// Ne garde que les chiffres (max 15), reformate progressivement — tolère une saisie partielle.
+function _formatNSS(raw) {
+  const d = String(raw || '').replace(/\D/g, '').slice(0, 15);
+  if (!d) return '';
+  const groupes = [1, 2, 2, 2, 3, 3, 2], out = [];
+  let i = 0;
+  for (const n of groupes) { if (i >= d.length) break; out.push(d.slice(i, i + n)); i += n; }
+  return out.join(' ');
+}
+
+// Traduit le rejet de la contrainte de clé de contrôle NSS en message lisible ;
+// sinon renvoie le message tel quel (ne casse pas le diagnostic des autres erreurs).
+const _traduireErrNSS = m => (m && String(m).includes('nss_cle_chk'))
+  ? 'Numéro de sécurité sociale invalide (clé de contrôle incorrecte).'
+  : m;
+
 function ouvrirModalCollab() {
   collabEnEdition = null;
   document.getElementById('modal-titre').textContent = 'Nouveau collaborateur';
-  ['f-prenom','f-nom','f-email','f-telephone','f-heures','f-taux-horaire','f-date-fin','f-date-activation','f-urgence-prenom','f-urgence-nom','f-urgence-telephone','f-urgence-lien'].forEach(id => document.getElementById(id).value = '');
+  ['f-prenom','f-nom','f-email','f-telephone','f-heures','f-taux-horaire','f-date-fin','f-date-activation','f-urgence-prenom','f-urgence-nom','f-urgence-telephone','f-urgence-lien','f-nss'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-structure').value = '';
   document.getElementById('f-contrat').value = '';
   document.getElementById('f-type-periode').value = '';
@@ -1394,6 +1413,7 @@ function ouvrirModalCollabData(encoded) {
   document.getElementById('f-type-periode').value = c.typePeriode||'';
   document.getElementById('f-heures').value = c.heuresHebdo||'';
   document.getElementById('f-matricule-silae').value = c.matriculeSilae||'';
+  document.getElementById('f-nss').value = _formatNSS(c.numeroSecuriteSociale || '');
   document.getElementById('f-date-activation').value = c.dateActivation||'';
   document.getElementById('f-equipe').value = c.equipeId||'';
   document.getElementById('f-urgence-prenom').value = c.urgencePrenom||'';
@@ -1976,6 +1996,7 @@ async function sauverCollab() {
   const dateFin       = document.getElementById('f-date-fin').value;
   const dateActivation= document.getElementById('f-date-activation').value;
   const matriculeSilae= document.getElementById('f-matricule-silae').value;
+  const numeroSecu    = document.getElementById('f-nss').value.replace(/\s/g, '');   // 15 chiffres SANS espaces pour la base
   const equipeId      = document.getElementById('f-equipe').value;
   const urgencePrenom = document.getElementById('f-urgence-prenom').value;
   const urgenceNom    = document.getElementById('f-urgence-nom').value;
@@ -2003,6 +2024,7 @@ async function sauverCollab() {
     telephone:       orNull(formatTel(telephone)),
     date_activation: orNull(dateActivation),
     matricule_silae: orNull(matriculeSilae),
+    numero_securite_sociale: orNull(numeroSecu),
     equipe_id:       orNull(equipeId),
   };
   // Champs CONTRACTUELS : UNIQUEMENT à la création (1er contrat). En édition, ils ne
@@ -2037,11 +2059,11 @@ async function sauverCollab() {
         if (error) {
           let detail = 'Échec de l\'enregistrement';
           try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
-          showErr('Échec de l\'enregistrement : ' + detail);
+          showErr('Échec de l\'enregistrement : ' + _traduireErrNSS(detail));
           return;
         }
         if (!data || data.ok !== true) {
-          showErr('Échec de l\'enregistrement : ' + ((data && data.error) || 'inconnu'));
+          showErr('Échec de l\'enregistrement : ' + _traduireErrNSS((data && data.error) || 'inconnu'));
           return;
         }
         // Édition : modale OUVERTE (feedback bref), bouton ré-activé, liste rafraîchie derrière.
@@ -2064,8 +2086,16 @@ async function sauverCollab() {
           showErr('Échec de la création : ' + ((data && data.error) || 'inconnu'));
           return;
         }
-        alert(data.tel_ok === false
-          ? 'Collaborateur créé, mais le téléphone n\'a pas pu être enregistré — à ressaisir en édition.'
+        const soucis = [];
+        if (data.tel_ok === false) soucis.push('téléphone non enregistré');
+        if (data.nss_ok === false) {
+          const m = String(data.nss_erreur || '');
+          soucis.push(m.includes('nss_cle_chk')
+            ? _traduireErrNSS(m)
+            : 'n° sécurité sociale refusé : ' + (m || 'contrainte rejetée'));
+        }
+        alert(soucis.length
+          ? 'Collaborateur créé, mais :\n- ' + soucis.join('\n- ') + '\nÀ corriger en édition.'
           : '✓ Collaborateur créé !');
         fermerModal();
         chargerCollabs();

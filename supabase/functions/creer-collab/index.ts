@@ -104,6 +104,15 @@ Deno.serve(async (req) => {
     if (eTel) tel_ok = false;
   }
 
+  // 5bis. N° sécurité sociale (non géré par la RPC ; CHECK de clé de contrôle en base).
+  // Le collab est DÉJÀ créé : en cas de rejet on n'échoue pas, on signale nss_ok=false + le message.
+  let nss_ok = true;
+  let nss_erreur: string | null = null;
+  if (champs.numero_securite_sociale) {
+    const { error: eNss } = await supabase.from("collaborateurs").update({ numero_securite_sociale: champs.numero_securite_sociale }).eq("collab_id", collab_id);
+    if (eNss) { nss_ok = false; nss_erreur = eNss.message || "n° de sécurité sociale rejeté"; }
+  }
+
   // Synchronise actif/statut d'apres les contrats (meme fonction que le cron
   // trigger_quotidien). Idempotent : permet un demarrage le jour meme sans
   // attendre le cron de 2h.
@@ -116,5 +125,5 @@ Deno.serve(async (req) => {
   const { error: eJour } = await supabase.rpc("generer_jour_aujourdhui");
   if (eJour) console.error("generer_jour_aujourdhui:", eJour.message);
 
-  return json({ ok: true, collab_id, token, tel_ok });
+  return json({ ok: true, collab_id, token, tel_ok, nss_ok, nss_erreur });
 });
