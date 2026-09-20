@@ -138,6 +138,12 @@ th.sort-asc::after { content: ' ↑'; opacity: 1; color: var(--bleu); }
 th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
 .token-link { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--bleu-clair); background: var(--bleu-pale); padding: 3px 8px; border-radius: 6px; cursor: pointer; border: none; transition: background .15s; }
 .token-link:hover { background: var(--bleu-mid); }
+.tache-rem { border: none; background: transparent; color: var(--vert); font-size: 13px; padding: 5px 2px; border-bottom: 1.5px solid transparent; transition: border-color .15s; }
+.tache-rem::placeholder { color: var(--texte3); }
+.tache-rem:focus { outline: none; border-bottom-color: var(--vert); }
+.tache-etat { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 3px 11px; font-size: 12px; font-weight: 600; color: #fff; cursor: default; }
+.tache-etat-faite { background: var(--vert); }
+.tache-etat-so { background: var(--texte3); }
 .copy-toast { position: fixed; bottom: 24px; right: 24px; background: var(--texte); color: white; padding: 10px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 999; }
 .copy-toast.show { opacity: 1; }
 .recap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
@@ -193,7 +199,8 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     <div class="header-admin" id="header-admin"></div>
   </div>
   <div class="tabs">
-    <div class="tab active" onclick="showTab('collabs', this)">👥 Collaborateurs</div>
+    <div class="tab active" onclick="showTab('taches', this)">🗂️ Tâches</div>
+    <div class="tab" onclick="showTab('collabs', this)">👥 Collaborateurs</div>
     <div class="tab" onclick="showTab('equipes', this)">🌿 Équipes</div>
     <div class="tab" onclick="showTab('contrats', this)">📄 Contrats</div>
     <div class="tab" onclick="showTab('periodes', this)">📅 Périodes</div>
@@ -202,7 +209,42 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     <div class="tab" onclick="showTab('parametres', this)">⚙️ Paramètres</div>
   </div>
   <div class="main">
-    <div class="vue active" id="vue-collabs">
+    <!-- TAB TÂCHES (écran par défaut) -->
+    <div class="vue active" id="vue-taches">
+      <div class="card">
+        <div class="card-header" style="align-items:flex-start;flex-wrap:wrap;gap:10px">
+          <div>
+            <span class="card-title">Tâches administratives</span>
+            <div style="color:var(--texte2);font-size:13px;line-height:1.5;margin-top:4px">Tâches déclenchées par les mouvements de contrat (création, modification, fin, rupture), triées par échéance.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="ajouterTacheStub()">+ Ajouter une tâche</button>
+        </div>
+        <div class="filter-bar">
+          <div class="filter-group">
+            <button class="filter-btn active" id="taches-filtre-a_faire" onclick="setTachesStatut('a_faire', this)">À faire <span id="taches-cpt" style="font-weight:400;opacity:.75"></span></button>
+            <button class="filter-btn" id="taches-filtre-faite" onclick="setTachesStatut('faite', this)">Fait</button>
+            <button class="filter-btn" id="taches-filtre-sans_objet" onclick="setTachesStatut('sans_objet', this)">Sans objet</button>
+            <button class="filter-btn" id="taches-filtre-toutes" onclick="setTachesStatut('toutes', this)">Toutes</button>
+          </div>
+          <label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--texte3)">Collaborateur<select id="taches-f-collab" onchange="filtrerTaches()"></select></label>
+          <label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--texte3)">Mouvement<select id="taches-f-mouvement" onchange="chargerTaches()"></select></label>
+          <label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--texte3)">Type de contrat<select id="taches-f-type" onchange="chargerTaches()"></select></label>
+          <label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--texte3)">Tiers<select id="taches-f-tiers" onchange="chargerTaches()"></select></label>
+          <label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--texte3)">Structure<select id="taches-f-structure" onchange="chargerTaches()"></select></label>
+          <label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--texte3)">Trier par<select id="taches-f-tri" onchange="filtrerTaches()"></select></label>
+        </div>
+        <div id="taches-barre-sel" style="display:none;position:sticky;top:64px;align-items:center;gap:12px;background:#fff;border-bottom:1px solid #e8f0f8;padding:10px 6px;margin-bottom:4px;box-shadow:0 4px 12px rgba(0,0,0,.06);z-index:6">
+          <button class="btn btn-secondary btn-sm" id="taches-btn-all" onclick="toggleAllTaches()">Tout cocher</button>
+          <span id="taches-sel-nb" style="font-weight:600;font-size:13px;color:var(--texte2)"></span>
+          <button class="btn btn-success btn-sm" id="taches-btn-fait" onclick="validerSelection('faite')" style="margin-left:auto">✓ Marquer fait</button>
+          <button class="btn btn-secondary btn-sm" id="taches-btn-so" onclick="validerSelection('sans_objet')">Ø Sans objet</button>
+        </div>
+        <div id="taches-contenu" style="padding:4px">
+          <div class="loader"><div class="spinner"></div>Chargement…</div>
+        </div>
+      </div>
+    </div><!-- /vue-taches -->
+    <div class="vue" id="vue-collabs">
       <div class="card">
         <div class="card-header">
           <span class="card-title">Collaborateurs</span>
@@ -861,6 +903,7 @@ async function login() {
   document.getElementById('header-admin').textContent = 'Connecté : ' + nom;
   await chargerEquipes();
   chargerCollabs();
+  chargerTaches();
 }
 
 if (ADMIN_TOKEN) { document.getElementById('login-token').value = ADMIN_TOKEN; login(); }
@@ -879,6 +922,7 @@ function showTab(nom, el) {
   if (nom === 'equipes') chargerVueEquipes();
   if (nom === 'contrats') chargerContrats();
   if (nom === 'parametres') chargerRegles();
+  if (nom === 'taches') chargerTaches();
 }
 
 async function chargerEquipes() {
@@ -1097,6 +1141,16 @@ function copierLienManager(btn) {
   navigator.clipboard.writeText(lien).then(() => {
     const t = document.getElementById('toast');
     t.textContent = '✓ Lien copié !';
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2000);
+  });
+}
+
+// Copie d'email (écran Tâches) — même mécanique que copierLienManager mais toast dédié.
+function copierEmail(btn) {
+  navigator.clipboard.writeText(btn.dataset.lien).then(() => {
+    const t = document.getElementById('toast');
+    t.textContent = '✓ Email copié !';
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 2000);
   });
@@ -1340,6 +1394,309 @@ async function supprimerRegle(id) {
   }
   chargerRegles();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TÂCHES du journal (Edge `journal-taches` : GET liste + POST traiter)
+// ═══════════════════════════════════════════════════════════════════════════
+let _tachesData = [];
+let _tachesStatut = 'a_faire';        // 'a_faire' | 'faite' | 'sans_objet' | 'toutes'
+let _tachesCollab = '';               // filtre collaborateur (client) ; '' = tous
+let _tachesTri = 'echeance';          // 'echeance' | 'collab' | 'tache'
+let _tachesSel = new Set();           // ids (string) des tâches cochées pour la validation groupée
+let _tachesSelectsPrets = false;
+const ORDRE_TIERS_TACHES = ['MSA','SILAE','GESTIONNAIRE_PAIE','EMPLOYE','FRANCE_TRAVAIL','AUTRE'];
+
+// Picto "deux carrés" (copier), inline, currentColor. Réutilisé email / matricule / n° sécu.
+const SVG_COPIE = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M8 8m0 2a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2z" /><path d="M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2" /></svg>';
+
+// Copie générique + toast personnalisé ("<label> copié").
+function copierValeur(btn) {
+  navigator.clipboard.writeText(btn.dataset.val || '').then(() => {
+    const t = document.getElementById('toast');
+    t.textContent = '✓ ' + (btn.dataset.label || 'Valeur') + ' copié';
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2000);
+  });
+}
+
+// Remplit les 4 <select> de filtre depuis les dictionnaires REGLE_* déjà définis. Une fois.
+function _initTachesSelects() {
+  if (_tachesSelectsPrets) return;
+  const opt = o => '<option value="' + o.v + '">' + o.label + '</option>';
+  const tous = '<option value="">Tous</option>';
+  document.getElementById('taches-f-mouvement').innerHTML = tous + REGLE_MOUVEMENTS.map(opt).join('');
+  document.getElementById('taches-f-type').innerHTML      = REGLE_TYPES.map(opt).join('');   // contient déjà "Tous"
+  document.getElementById('taches-f-tiers').innerHTML     = tous + REGLE_TIERS.map(opt).join('');
+  document.getElementById('taches-f-structure').innerHTML = tous + ['SCEA','SAS','SARL'].map(s => '<option value="' + s + '">' + s + '</option>').join('');
+  document.getElementById('taches-f-tri').innerHTML = [['echeance','Échéance'],['collab','Collaborateur'],['tache','Tâche']].map(([v,l]) => '<option value="' + v + '">' + l + '</option>').join('');
+  _tachesSelectsPrets = true;
+}
+
+function setTachesStatut(v, btn) {
+  _tachesStatut = v;
+  document.querySelectorAll('#vue-taches .filter-group .filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  chargerTaches();
+}
+
+async function chargerTaches() {
+  _initTachesSelects();
+  const box = document.getElementById('taches-contenu');
+  box.innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
+  const params = new URLSearchParams();
+  params.set('admin_token', ADMIN_TOKEN);
+  params.set('statut', _tachesStatut);   // a_faire | faite | sans_objet | toutes ('toutes' → null côté Edge)
+  const mv = document.getElementById('taches-f-mouvement').value;
+  const tc = document.getElementById('taches-f-type').value;
+  const ti = document.getElementById('taches-f-tiers').value;
+  const st = document.getElementById('taches-f-structure').value;
+  if (mv) params.set('mouvement', mv);
+  if (tc) params.set('type_contrat', tc);
+  if (ti) params.set('tiers', ti);
+  if (st) params.set('structure', st);
+  let data;
+  try {
+    const resp = await fetch(SUPABASE_URL + '/functions/v1/journal-taches?' + params.toString(), {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY }
+    });
+    data = await resp.json();
+  } catch (e) {
+    box.innerHTML = '<div style="text-align:center;color:var(--rouge);padding:40px">Erreur réseau : ' + _escRegle(e && e.message ? e.message : String(e)) + '</div>';
+    return;
+  }
+  if (!data || data.ok !== true) {
+    box.innerHTML = '<div style="text-align:center;color:var(--rouge);padding:40px">' + _escRegle((data && data.error) || 'Erreur de chargement') + '</div>';
+    return;
+  }
+  _tachesData = Array.isArray(data.taches) ? data.taches : [];
+  const nbAfaire = _tachesData.filter(t => t.statut === 'a_faire').length;
+  const cpt = document.getElementById('taches-cpt');
+  if (cpt) cpt.textContent = nbAfaire ? '(' + nbAfaire + ')' : '';
+  _majCollabSelect();
+  filtrerTaches();   // applique filtre collab (client) + tri, puis rend
+}
+
+// Peuple le menu Collaborateur d'après les tâches chargées ; préserve la sélection si toujours présente.
+function _majCollabSelect() {
+  const sel = document.getElementById('taches-f-collab');
+  const prev = sel.value;
+  const map = new Map();
+  for (const t of _tachesData) {
+    const id = t.collab_id != null ? String(t.collab_id) : '';
+    if (id && !map.has(id)) map.set(id, t.nom_complet || id);
+  }
+  const items = [...map.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  const escAttr = s => _escRegle(s).replace(/"/g, '&quot;');
+  sel.innerHTML = '<option value="">Tous</option>' + items.map(([id, nom]) => '<option value="' + escAttr(id) + '">' + _escRegle(nom) + '</option>').join('');
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+  else _tachesCollab = '';
+}
+
+// Filtre collaborateur (client) + tri choisi → rendu. Pas de rechargement réseau.
+function filtrerTaches() {
+  _tachesCollab = document.getElementById('taches-f-collab').value;
+  _tachesTri = document.getElementById('taches-f-tri').value;
+  let taches = _tachesData;
+  if (_tachesCollab) taches = taches.filter(t => String(t.collab_id) === _tachesCollab);
+  renderTaches(taches);
+}
+
+// Comparateur intra-groupe selon le tri choisi (échéance : nulls en dernier).
+function _comparateurTri(tri) {
+  const nom = t => String(t.nom_complet || '');
+  const dk = t => t.date_echeance ? String(t.date_echeance) : '9999-99-99';
+  if (tri === 'collab') return (a, b) => nom(a).localeCompare(nom(b)) || dk(a).localeCompare(dk(b));
+  if (tri === 'tache')  return (a, b) => String(a.objet || '').localeCompare(String(b.objet || '')) || nom(a).localeCompare(nom(b));
+  return (a, b) => dk(a).localeCompare(dk(b)) || nom(a).localeCompare(nom(b));   // 'echeance' par défaut
+}
+
+// ─── Sélection multiple + validation groupée ───
+function onTacheCheck(cb) {
+  const id = String(cb.dataset.id);
+  if (cb.checked) _tachesSel.add(id); else _tachesSel.delete(id);
+  _majBarreSel();
+}
+
+function _majBarreSel() {
+  const bar = document.getElementById('taches-barre-sel');
+  if (!bar) return;
+  const total = document.querySelectorAll('#taches-contenu .tache-check').length;   // tâches cochables visibles
+  const n = _tachesSel.size;
+  bar.style.display = total ? 'flex' : 'none';   // barre présente dès qu'il y a des cochables
+  const lbl = document.getElementById('taches-sel-nb');
+  if (lbl) lbl.textContent = n ? (n + ' sélectionnée' + (n > 1 ? 's' : '')) : 'Aucune sélection';
+  const bf = document.getElementById('taches-btn-fait'); if (bf) bf.disabled = !n;
+  const bo = document.getElementById('taches-btn-so');   if (bo) bo.disabled = !n;
+  const ba = document.getElementById('taches-btn-all');  if (ba) ba.textContent = (total && n >= total) ? 'Tout décocher' : 'Tout cocher';
+}
+
+// Coche tout si tout n'est pas déjà coché, sinon décoche tout (bouton unique).
+function toggleAllTaches() {
+  const checkboxes = [...document.querySelectorAll('#taches-contenu .tache-check')];
+  const allChecked = checkboxes.length > 0 && checkboxes.every(c => c.checked);
+  checkboxes.forEach(c => {
+    c.checked = !allChecked;
+    const id = String(c.dataset.id);
+    if (c.checked) _tachesSel.add(id); else _tachesSel.delete(id);
+  });
+  _majBarreSel();
+}
+
+// Applique `statut` à toutes les tâches cochées (un POST chacune), puis UN seul
+// rechargement à la fin — plus de "refresh" à chaque ligne.
+async function validerSelection(statut) {
+  const ids = [..._tachesSel];
+  if (!ids.length) return;
+  const bar = document.getElementById('taches-barre-sel');
+  const btns = bar ? [...bar.querySelectorAll('button')] : [];
+  btns.forEach(b => { b.disabled = true; });
+  const echecs = [];
+  for (const id of ids) {
+    const remInput = document.getElementById('tache-rem-' + id);
+    const remarque = remInput ? remInput.value : null;
+    const { data, error } = await sb.functions.invoke('journal-taches', {
+      body: { admin_token: ADMIN_TOKEN, id: Number(id), statut, remarque }
+    });
+    if (error || !data || data.ok !== true) {
+      let detail = '';
+      if (error) { try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {} }
+      else { detail = (data && data.error) || ''; }
+      echecs.push('#' + id + (detail ? ' — ' + detail : ''));
+    }
+  }
+  _tachesSel.clear();
+  btns.forEach(b => { b.disabled = false; });
+  if (echecs.length) alert('Certaines tâches n\'ont pas pu être traitées :\n' + echecs.join('\n'));
+  chargerTaches();   // un seul rechargement à la fin
+}
+
+function renderTaches(taches) {
+  const box = document.getElementById('taches-contenu');
+  // Purge la sélection des tâches non visibles + MAJ de la barre de validation.
+  const visibles = new Set(taches.map(t => String(t.id)));
+  [..._tachesSel].forEach(id => { if (!visibles.has(id)) _tachesSel.delete(id); });
+  if (!taches.length) { box.innerHTML = '<div style="text-align:center;color:var(--texte3);padding:40px">Aucune tâche.</div>'; _majBarreSel(); return; }
+  const cmp = _comparateurTri(_tachesTri);
+  let html = '';
+  for (const tiers of ORDRE_TIERS_TACHES) {
+    const grp = taches.filter(t => t.tiers === tiers);
+    if (!grp.length) continue;   // groupes vides masqués
+    grp.sort(cmp);   // tri intra-groupe selon le sélecteur "Trier par"
+    html += '<div style="font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--texte2);margin:18px 0 8px;font-size:13px">' + labelTiers(tiers) + ' <span style="color:var(--texte3);font-weight:400">(' + grp.length + ')</span></div>';
+    html += grp.map(_ligneTache).join('');
+  }
+  box.innerHTML = html;
+  _majBarreSel();
+}
+
+function _ligneTache(t) {
+  const esc = _escRegle;
+  const escAttr = s => esc(s).replace(/"/g, '&quot;');
+  // Teinte de la carte selon le statut (fond pastel + bord gauche saturé).
+  const CARTE_STATUT = {
+    a_faire:    { bg: '#fff',             bord: 'var(--orange)' },
+    faite:      { bg: 'var(--vert-pale)', bord: 'var(--vert)' },
+    sans_objet: { bg: 'var(--fond)',      bord: 'var(--texte3)' },
+  };
+  const cs = CARTE_STATUT[t.statut] || CARTE_STATUT.a_faire;
+  const structType = [esc(t.structure || ''), (t.type_contrat ? esc(labelType(t.type_contrat)) : '')].filter(Boolean).join(' · ');
+  const ech = t.date_echeance ? _jjmm(t.date_echeance) : '—';
+
+  // Raccourci portail selon le tiers (nouvel onglet). Autres tiers : rien.
+  let raccourci = '';
+  if (t.tiers === 'MSA') {
+    raccourci = '<a href="https://www.msa.fr/lfp" target="_blank" rel="noopener" title="Ouvrir la MSA (LFP)" style="font-size:12px;font-weight:600;color:var(--bleu);text-decoration:none;white-space:nowrap">MSA ↗</a>';
+  } else if (t.tiers === 'SILAE') {
+    raccourci = '<a href="https://my.silae.fr/sign-in" target="_blank" rel="noopener" title="Ouvrir Silae" style="font-size:12px;font-weight:600;color:var(--bleu);text-decoration:none;white-space:nowrap">Silae ↗</a>';
+  }
+
+  // Bouton copier réutilisable (picto deux carrés, toast personnalisé).
+  const btnCopie = (val, label) => '<button class="token-link" onclick="copierValeur(this)" data-val="' + escAttr(val) + '" data-label="' + escAttr(label) + '" title="Copier ' + escAttr(label) + '" style="padding:2px 5px;display:inline-flex;align-items:center">' + SVG_COPIE + '</button>';
+  // Matricule + n° sécu : en clair sur la ligne (comme le téléphone), avec bouton copier.
+  const matr = t.matricule_silae
+    ? '<span style="font-size:13px;color:var(--texte2);white-space:nowrap;display:inline-flex;align-items:center;gap:4px">Mat. ' + esc(t.matricule_silae) + btnCopie(t.matricule_silae, 'matricule') + '</span>'
+    : '';
+  const nss  = t.numero_securite_sociale
+    ? '<span style="font-size:13px;color:var(--texte2);white-space:nowrap;display:inline-flex;align-items:center;gap:4px">N° sécu ' + esc(_formatNSS(t.numero_securite_sociale)) + btnCopie(t.numero_securite_sociale, 'n° de sécurité sociale') + '</span>'
+    : '';
+
+  // Coordonnées : téléphone en clair ; email = mailto + copier (absents si vide).
+  const tel = t.telephone ? '<span style="font-size:13px;color:var(--texte2);white-space:nowrap">📞 ' + esc(t.telephone) + '</span>' : '';
+  let email = '';
+  if (t.email) {
+    email = '<span style="display:inline-flex;align-items:center;gap:6px">'
+          + '<a href="mailto:' + escAttr(t.email) + '" title="Envoyer un email (' + escAttr(t.email) + ')" style="text-decoration:none;font-size:18px;line-height:1">✉️</a>'
+          + '<button class="token-link" onclick="copierEmail(this)" data-lien="' + escAttr(t.email) + '" title="Copier l\'email" style="padding:3px 6px;display:inline-flex;align-items:center">' + SVG_COPIE + '</button>'
+          + '</span>';
+  }
+  const pieces = [tel, matr, nss, email].filter(Boolean);
+  const coord = pieces.length
+    ? '<span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">' + pieces.join('') + '</span>'
+    : '';
+
+  // Case à cocher (sélection pour validation groupée), uniquement sur les tâches à faire.
+  const check = t.statut === 'a_faire'
+    ? '<input type="checkbox" class="tache-check" data-id="' + t.id + '" onchange="onTacheCheck(this)"' + (_tachesSel.has(String(t.id)) ? ' checked' : '') + ' title="Sélectionner" style="width:16px;height:16px;cursor:pointer;flex:0 0 auto">'
+    : '';
+  // Bloc droit de la ligne 2 : remarque seule (a_faire — validation via la barre du bas) OU badge (traitée).
+  let bas;
+  if (t.statut === 'a_faire') {
+    bas = '<input type="text" id="tache-rem-' + t.id + '" class="tache-rem" value="' + escAttr(t.remarque || '') + '" placeholder="Remarque…" style="flex:1 1 200px;min-width:140px">';
+  } else {
+    const badge = t.statut === 'faite'
+      ? '<span class="tache-etat tache-etat-faite">✓ Fait</span>'
+      : '<span class="tache-etat tache-etat-so">Sans objet</span>';
+    const par = t.fait_par ? '<span style="color:var(--texte3);font-size:12px">par ' + esc(t.fait_par) + '</span>' : '';
+    const rem = t.remarque ? '<span style="color:var(--texte2);font-size:12px">— ' + esc(t.remarque) + '</span>' : '';
+    const annuler = '<button class="btn btn-secondary btn-sm" onclick="annulerTache(this)" data-id="' + t.id + '" data-remarque="' + escAttr(t.remarque || '') + '" title="Repasser cette tâche à faire" style="padding:2px 8px">↩ Annuler</button>';
+    bas = '<span style="display:inline-flex;align-items:center;gap:8px;margin-left:auto">' + badge + par + rem + annuler + '</span>';
+  }
+
+  return '<div style="border:1px solid #e8f0f8;border-left:3px solid ' + cs.bord + ';border-radius:10px;padding:8px 12px;margin-bottom:8px;background:' + cs.bg + '">'
+    // Ligne 1 : identité + objet + échéance + raccourci portail + info-bulle
+    + '<div style="display:flex;align-items:center;gap:10px">'
+    +   check
+    +   '<span style="font-weight:600;white-space:nowrap">' + esc(t.nom_complet || '—') + '</span>'
+    +   (structType ? '<span style="font-size:12px;color:var(--texte2);white-space:nowrap">' + structType + '</span>' : '')
+    +   '<span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escAttr(t.objet || '') + '">' + esc(t.objet || '') + '</span>'
+    +   '<span style="display:inline-flex;align-items:center;gap:8px;white-space:nowrap;margin-left:auto">'
+    +     '<span style="font-size:13px;color:var(--texte2)">éch. ' + ech + '</span>'
+    +     raccourci
+    +   '</span>'
+    + '</div>'
+    // Ligne 2 : coordonnées + remarque/actions (ou badge)
+    + '<div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap">'
+    +   coord
+    +   bas
+    + '</div>'
+    + '</div>';
+}
+
+async function _postTache(id, statut, remarque) {
+  const { data, error } = await sb.functions.invoke('journal-taches', {
+    body: { admin_token: ADMIN_TOKEN, id, statut, remarque }
+  });
+  if (error) {
+    let detail = 'Échec';
+    try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+    alert('Impossible de traiter la tâche :\n' + detail);
+    return;
+  }
+  if (!data || data.ok !== true) {
+    alert('Impossible de traiter la tâche :\n' + ((data && data.error) || 'inconnu'));
+    return;
+  }
+  chargerTaches();   // recharge (respecte le filtre courant)
+}
+
+// Repasse une tâche traitée à 'a_faire' (fait_le/fait_par remis à null côté SQL).
+// Remarque existante PRÉSERVÉE (data-remarque), pas écrasée par null.
+async function annulerTache(btn) {
+  _postTache(Number(btn.dataset.id), 'a_faire', btn.dataset.remarque || null);
+}
+
+// Stub : bouton visible, aucun comportement (câblage dans une itération suivante).
+function ajouterTacheStub() { /* TODO : formulaire d'ajout de tâche manuelle */ }
 
 function copierLien(lien) {
   navigator.clipboard.writeText(lien).then(() => {
