@@ -43,7 +43,9 @@ Deno.serve(async (req) => {
 
   // 3. Écriture
   const { error: uErr } = await supabase
-    .from("periodes").update({ statut: "cloturee" }).eq("periode_id", periode_id);
+    .from("periodes")
+    .update({ statut: "cloturee", date_cloture: new Date().toISOString().slice(0, 10) })
+    .eq("periode_id", periode_id);
   if (uErr) return json({ ok: false, error: "Échec de la clôture" }, 500);
 
   return json({ ok: true, admin: adminNom });
