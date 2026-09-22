@@ -17,6 +17,7 @@ function json(body: unknown, status = 200): Response {
 const COLS_ECRITURE = [
   "mouvement", "type_contrat", "avec_suite", "objet", "tiers",
   "echeance_jours", "echeance_sens", "note", "ordre", "actif",
+  "type_periode", "portee",
 ];
 
 // Construit un objet ne contenant QUE les colonnes whitelistées présentes dans le body.

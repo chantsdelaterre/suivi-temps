@@ -117,6 +117,11 @@ textarea { resize: vertical; min-height: 72px; }
 .modal { background: white; border-radius: 16px; width: 560px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
 #modal-collab .modal { width: 760px; }   /* max-width:95vw hérité → responsable petit écran */
 #modal-collab { align-items: flex-start; padding-top: 5vh; }   /* remonte la fiche vers le haut (au lieu du centrage vertical) ; horizontal + scroll interne inchangés */
+/* #modal-regle : colonne flex plafonnée → le body scrolle, le footer reste visible quelle que soit la hauteur du formulaire (ex. bascule "Clôture de période"). */
+#modal-regle .modal { display: flex; flex-direction: column; max-height: 90vh; width: 620px; }
+#modal-regle .modal-body { max-height: none; flex: 1 1 auto; }
+#modal-regle .form-group { min-width: 0; }          /* cellules rétrécissables → plus de débordement horizontal de la grille */
+#grp-regle-type-periode { max-width: 150px; }       /* "Type de période" : select compact (3 options courtes) */
 .modal-header { padding: 20px 24px; border-bottom: 1px solid #e8f0f8; display: flex; align-items: center; justify-content: space-between; }
 .modal-title { font-size: 16px; font-weight: 600; }
 .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--texte3); line-height: 1; padding: 4px; }
@@ -225,6 +230,11 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <button class="filter-btn" id="taches-filtre-faite" onclick="setTachesStatut('faite', this)">Fait</button>
             <button class="filter-btn" id="taches-filtre-sans_objet" onclick="setTachesStatut('sans_objet', this)">Sans objet</button>
             <button class="filter-btn" id="taches-filtre-toutes" onclick="setTachesStatut('toutes', this)">Toutes</button>
+          </div>
+          <div class="filter-group">
+            <button class="filter-btn" id="taches-portee-indiv" onclick="setTachesPortee('indiv', this)">Individuelles</button>
+            <button class="filter-btn" id="taches-portee-periode" onclick="setTachesPortee('periode', this)">Période</button>
+            <button class="filter-btn active" id="taches-portee-toutes" onclick="setTachesPortee('toutes', this)">Toutes</button>
           </div>
           <label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--texte3)">Collaborateur<select id="taches-f-collab" onchange="filtrerTaches()"></select></label>
           <label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--texte3)">Mouvement<select id="taches-f-mouvement" onchange="chargerTaches()"></select></label>
@@ -731,13 +741,21 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
       <div class="form-grid">
         <div class="form-group">
           <label for="regle-mouvement">Mouvement *</label>
-          <select id="regle-mouvement"></select>
+          <select id="regle-mouvement" onchange="_majFormeRegle()"></select>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="grp-regle-type">
           <label for="regle-type">Type de contrat</label>
           <select id="regle-type"></select>
         </div>
-        <div class="form-group" style="grid-column:1 / -1">
+        <div class="form-group" id="grp-regle-type-periode" style="display:none">
+          <label for="regle-type-periode">Type de période</label>
+          <select id="regle-type-periode"></select>
+        </div>
+        <div class="form-group" id="grp-regle-portee" style="display:none">
+          <label for="regle-portee">Portée *</label>
+          <select id="regle-portee"></select>
+        </div>
+        <div class="form-group" id="grp-regle-condition" style="grid-column:1 / -1">
           <label for="regle-condition">Condition</label>
           <select id="regle-condition"></select>
         </div>
@@ -1187,6 +1205,7 @@ const REGLE_MOUVEMENTS = [
   { v: 'modification', label: 'Modification' },
   { v: 'fin',          label: 'Fin de contrat' },
   { v: 'rupture',      label: 'Rupture anticipée' },
+  { v: 'cloture_periode', label: 'Clôture de période' },
 ];
 const REGLE_TYPES = [
   { v: '',     label: 'Tous' },   // '' <-> null en base
@@ -1211,6 +1230,15 @@ const REGLE_SENS = [
   { v: 'avant', label: 'avant l\'événement' },
   { v: 'apres', label: 'après l\'événement' },
 ];
+const REGLE_TYPE_PERIODE = [
+  { v: '',        label: 'Toutes' },   // '' <-> null en base
+  { v: 'civil',   label: 'Civile' },
+  { v: 'decalee', label: 'Décalée' },
+];
+const REGLE_PORTEE = [
+  { v: 'collaborateur', label: 'Par collaborateur' },
+  { v: 'periode',       label: 'Pour toute la période' },
+];
 
 const _labelDe = (dict, v) => { const o = dict.find(x => x.v === (v == null ? '' : String(v))); return o ? o.label : '—'; };
 const labelMouvement = v => _labelDe(REGLE_MOUVEMENTS, v);
@@ -1234,7 +1262,19 @@ function _initReglesSelects() {
   document.getElementById('regle-condition').innerHTML = REGLE_CONDITIONS.map(opt).join('');
   document.getElementById('regle-tiers').innerHTML     = '<option value="">— Choisir —</option>' + REGLE_TIERS.map(opt).join('');
   document.getElementById('regle-sens').innerHTML      = '<option value="">—</option>' + REGLE_SENS.map(opt).join('');
+  document.getElementById('regle-type-periode').innerHTML = REGLE_TYPE_PERIODE.map(opt).join('');
+  document.getElementById('regle-portee').innerHTML       = '<option value="">— Choisir —</option>' + REGLE_PORTEE.map(opt).join('');
   _reglesSelectsPrets = true;
+}
+
+// Bascule la forme du formulaire selon le mouvement :
+// cloture_periode => Type de période + Portée ; sinon => Type de contrat + Condition.
+function _majFormeRegle() {
+  const cloture = document.getElementById('regle-mouvement').value === 'cloture_periode';
+  document.getElementById('grp-regle-type').style.display         = cloture ? 'none' : '';
+  document.getElementById('grp-regle-condition').style.display    = cloture ? 'none' : '';
+  document.getElementById('grp-regle-type-periode').style.display = cloture ? '' : 'none';
+  document.getElementById('grp-regle-portee').style.display       = cloture ? '' : 'none';
 }
 
 async function chargerRegles() {
@@ -1296,6 +1336,8 @@ function ouvrirModalRegle() {
   document.getElementById('regle-mouvement').value = '';
   document.getElementById('regle-type').value = '';
   document.getElementById('regle-condition').value = '';
+  document.getElementById('regle-type-periode').value = '';
+  document.getElementById('regle-portee').value = '';
   document.getElementById('regle-objet').value = '';
   document.getElementById('regle-tiers').value = '';
   document.getElementById('regle-echeance-jours').value = '';
@@ -1303,6 +1345,7 @@ function ouvrirModalRegle() {
   document.getElementById('regle-note').value = '';
   document.getElementById('regle-ordre').value = '0';
   document.getElementById('regle-actif').checked = true;
+  _majFormeRegle();
   _cacherErreurRegle();
   const btn = document.getElementById('btn-sauver-regle'); btn.disabled = false; btn.textContent = 'Créer la règle';
   document.getElementById('modal-regle').classList.add('open');
@@ -1317,6 +1360,8 @@ function ouvrirModalRegleEdit(id) {
   document.getElementById('regle-mouvement').value = r.mouvement || '';
   document.getElementById('regle-type').value = r.type_contrat || '';
   document.getElementById('regle-condition').value = (r.avec_suite == null ? '' : String(r.avec_suite));
+  document.getElementById('regle-type-periode').value = r.type_periode || '';
+  document.getElementById('regle-portee').value = r.portee || '';
   document.getElementById('regle-objet').value = r.objet || '';
   document.getElementById('regle-tiers').value = r.tiers || '';
   document.getElementById('regle-echeance-jours').value = (r.echeance_jours == null ? '' : r.echeance_jours);
@@ -1324,6 +1369,7 @@ function ouvrirModalRegleEdit(id) {
   document.getElementById('regle-note').value = r.note || '';
   document.getElementById('regle-ordre').value = (r.ordre == null ? '0' : r.ordre);
   document.getElementById('regle-actif').checked = !!r.actif;
+  _majFormeRegle();
   _cacherErreurRegle();
   const btn = document.getElementById('btn-sauver-regle'); btn.disabled = false; btn.textContent = 'Enregistrer';
   document.getElementById('modal-regle').classList.add('open');
@@ -1340,6 +1386,10 @@ async function sauverRegle() {
   if (!mouvement) { _afficherErreurRegle('Choisissez un mouvement.'); return; }
   if (!objet)     { _afficherErreurRegle('L\'objet est obligatoire (ce qu\'il faut faire).'); return; }
   if (!tiers)     { _afficherErreurRegle('Choisissez un tiers.'); return; }
+  const estCloture = (mouvement === 'cloture_periode');
+  if (estCloture && !document.getElementById('regle-portee').value) {
+    _afficherErreurRegle('Choisissez une portée (par collaborateur ou pour toute la période).'); return;
+  }
   const jVide = (joursStr === ''), sVide = (sens === '');
   if (jVide !== sVide) { _afficherErreurRegle('Pour une échéance, renseignez le nombre de jours ET le sens, ou laissez les deux vides.'); return; }
   let echeance_jours = null;
@@ -1354,8 +1404,6 @@ async function sauverRegle() {
     admin_token: ADMIN_TOKEN,
     action: _regleEnEdition ? 'modifier' : 'creer',
     mouvement,
-    type_contrat: document.getElementById('regle-type').value || null,
-    avec_suite: condVal === '' ? null : (condVal === 'true'),
     objet,
     tiers,
     echeance_jours,
@@ -1364,6 +1412,17 @@ async function sauverRegle() {
     ordre: Number(document.getElementById('regle-ordre').value) || 0,
     actif: document.getElementById('regle-actif').checked,
   };
+  if (estCloture) {
+    body.type_periode = document.getElementById('regle-type-periode').value || null;
+    body.portee = document.getElementById('regle-portee').value;
+    body.type_contrat = null;
+    body.avec_suite = null;
+  } else {
+    body.type_contrat = document.getElementById('regle-type').value || null;
+    body.avec_suite = condVal === '' ? null : (condVal === 'true');
+    body.type_periode = null;
+    body.portee = null;
+  }
   if (_regleEnEdition) body.id = _regleEnEdition;
 
   const btn = document.getElementById('btn-sauver-regle'); btn.disabled = true;
@@ -1402,6 +1461,7 @@ let _tachesData = [];
 let _tachesStatut = 'a_faire';        // 'a_faire' | 'faite' | 'sans_objet' | 'toutes'
 let _tachesCollab = '';               // filtre collaborateur (client) ; '' = tous
 let _tachesTri = 'echeance';          // 'echeance' | 'collab' | 'tache'
+let _tachesPortee = 'toutes';         // 'toutes' | 'indiv' | 'periode' (filtre client sur collab_id)
 let _tachesSel = new Set();           // ids (string) des tâches cochées pour la validation groupée
 let _tachesSelectsPrets = false;
 const ORDRE_TIERS_TACHES = ['MSA','SILAE','GESTIONNAIRE_PAIE','EMPLOYE','FRANCE_TRAVAIL','AUTRE'];
@@ -1434,9 +1494,23 @@ function _initTachesSelects() {
 
 function setTachesStatut(v, btn) {
   _tachesStatut = v;
-  document.querySelectorAll('#vue-taches .filter-group .filter-btn').forEach(b => b.classList.remove('active'));
+  btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   chargerTaches();
+}
+
+// Switch Individuelles / Période / Toutes — filtre PUREMENT client (pas de refetch).
+function setTachesPortee(v, btn) {
+  _tachesPortee = v;
+  btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  // "Période" : pas de collaborateur → grise le menu et vide sa sélection.
+  const selCollab = document.getElementById('taches-f-collab');
+  if (selCollab) {
+    if (v === 'periode') { selCollab.value = ''; _tachesCollab = ''; selCollab.disabled = true; selCollab.style.opacity = '.5'; }
+    else { selCollab.disabled = false; selCollab.style.opacity = ''; }
+  }
+  filtrerTaches();
 }
 
 async function chargerTaches() {
@@ -1497,6 +1571,8 @@ function filtrerTaches() {
   _tachesCollab = document.getElementById('taches-f-collab').value;
   _tachesTri = document.getElementById('taches-f-tri').value;
   let taches = _tachesData;
+  if (_tachesPortee === 'indiv') taches = taches.filter(t => t.collab_id != null);
+  else if (_tachesPortee === 'periode') taches = taches.filter(t => t.collab_id == null);
   if (_tachesCollab) taches = taches.filter(t => String(t.collab_id) === _tachesCollab);
   renderTaches(taches);
 }
@@ -1599,6 +1675,8 @@ function _ligneTache(t) {
     sans_objet: { bg: 'var(--fond)',      bord: 'var(--texte3)' },
   };
   const cs = CARTE_STATUT[t.statut] || CARTE_STATUT.a_faire;
+  const estPeriode = (t.collab_id == null);   // tâche "de période", sans personne associée
+  const titre = estPeriode ? (t.nom_periode || 'Période') : (t.nom_complet || '—');
   const structType = [esc(t.structure || ''), (t.type_contrat ? esc(labelType(t.type_contrat)) : '')].filter(Boolean).join(' · ');
   const ech = t.date_echeance ? _jjmm(t.date_echeance) : '—';
 
@@ -1629,7 +1707,8 @@ function _ligneTache(t) {
           + '<button class="token-link" onclick="copierEmail(this)" data-lien="' + escAttr(t.email) + '" title="Copier l\'email" style="padding:3px 6px;display:inline-flex;align-items:center">' + SVG_COPIE + '</button>'
           + '</span>';
   }
-  const pieces = [tel, matr, nss, email].filter(Boolean);
+  // Tâche de période : pas de coordonnées (tél/matricule/n° sécu/email sont null).
+  const pieces = estPeriode ? [] : [tel, matr, nss, email].filter(Boolean);
   const coord = pieces.length
     ? '<span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">' + pieces.join('') + '</span>'
     : '';
@@ -1656,7 +1735,7 @@ function _ligneTache(t) {
     // Ligne 1 : identité + objet + échéance + raccourci portail + info-bulle
     + '<div style="display:flex;align-items:center;gap:10px">'
     +   check
-    +   '<span style="font-weight:600;white-space:nowrap">' + esc(t.nom_complet || '—') + '</span>'
+    +   '<span style="font-weight:600;white-space:nowrap">' + esc(titre) + '</span>'
     +   (structType ? '<span style="font-size:12px;color:var(--texte2);white-space:nowrap">' + structType + '</span>' : '')
     +   '<span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escAttr(t.objet || '') + '">' + esc(t.objet || '') + '</span>'
     +   '<span style="display:inline-flex;align-items:center;gap:8px;white-space:nowrap;margin-left:auto">'
