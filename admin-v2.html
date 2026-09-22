@@ -1245,6 +1245,8 @@ const labelMouvement = v => _labelDe(REGLE_MOUVEMENTS, v);
 const labelType      = v => _labelDe(REGLE_TYPES, v);
 const labelCondition = v => _labelDe(REGLE_CONDITIONS, v);
 const labelTiers     = v => _labelDe(REGLE_TIERS, v);
+const labelTypePeriode = v => _labelDe(REGLE_TYPE_PERIODE, v);   // null → "Toutes"
+const labelPortee    = v => _labelDe(REGLE_PORTEE, v);
 const _escRegle = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 function labelEcheance(jours, sens) {
   if (jours == null || sens == null) return '—';
@@ -1301,10 +1303,14 @@ function renderRegles(regles) {
     const badge = r.actif
       ? '<span class="badge badge-actif">Oui</span>'
       : '<span class="badge badge-inactif">Non</span>';
+    // Pour une règle de clôture, les 2 colonnes portent type_periode / portee (pas type_contrat / avec_suite).
+    const estCloture = r.mouvement === 'cloture_periode';
+    const colType = estCloture ? labelTypePeriode(r.type_periode) : labelType(r.type_contrat);
+    const colCond = estCloture ? labelPortee(r.portee) : labelCondition(r.avec_suite);
     return '<tr' + attenue + '>' +
       '<td>' + labelMouvement(r.mouvement) + '</td>' +
-      '<td>' + labelType(r.type_contrat) + '</td>' +
-      '<td>' + labelCondition(r.avec_suite) + '</td>' +
+      '<td>' + colType + '</td>' +
+      '<td>' + colCond + '</td>' +
       '<td><strong>' + _escRegle(r.objet) + '</strong></td>' +
       '<td>' + labelTiers(r.tiers) + '</td>' +
       '<td>' + labelEcheance(r.echeance_jours, r.echeance_sens) + '</td>' +
