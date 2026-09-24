@@ -67,6 +67,25 @@ Deno.serve(async (req) => {
     if (aErr) return json({ ok: false, error: "Erreur base (auth admin)" }, 500);
     if (!adminNom) return json({ ok: false, error: "Admin non autorisé" }, 401);
 
+    const action = (p?.action ?? "").toString().trim();
+
+    // Création d'une tâche MANUELLE (action explicite). Garde le traitement ci-dessous intact.
+    if (action === "creer_manuelle") {
+      const objet = (p?.objet ?? "").toString().trim();
+      const tiers = (p?.tiers ?? "").toString().trim();
+      if (!objet) return json({ ok: false, error: "objet requis" }, 400);
+      if (!tiers) return json({ ok: false, error: "tiers requis" }, 400);
+      const { data, error } = await supabase.rpc("journal_tache_creer", {
+        p_objet: objet,
+        p_tiers: tiers,
+        p_collab_id: (p?.collab_id ?? null) || null,
+        p_remarque: (p?.remarque ?? null) || null,
+        p_date_echeance: (p?.date_echeance ?? null) || null,
+      });
+      if (error) return json({ ok: false, error: error.message || "Échec de la création de la tâche" }, 500);
+      return json({ ok: true, id: data });
+    }
+
     // Prénom de l'admin. La table `admins` n'a QUE `nom` (pas de `prenom`) et
     // verifier_admin renvoie déjà cette valeur → on la réutilise (option A).
     const prenom = adminNom;

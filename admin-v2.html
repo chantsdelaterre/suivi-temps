@@ -222,7 +222,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <span class="card-title">Tâches administratives</span>
             <div style="color:var(--texte2);font-size:13px;line-height:1.5;margin-top:4px">Tâches déclenchées par les mouvements de contrat (création, modification, fin, rupture), triées par échéance.</div>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="ajouterTacheStub()">+ Ajouter une tâche</button>
+          <button class="btn btn-primary btn-sm" onclick="ouvrirModalTache()">+ Ajouter une tâche</button>
         </div>
         <div class="filter-bar">
           <div class="filter-group">
@@ -792,6 +792,45 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="fermerModal('modal-regle')">Annuler</button>
       <button class="btn btn-primary" id="btn-sauver-regle" onclick="sauverRegle()">Créer la règle</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE AJOUT DE TÂCHE MANUELLE (onglet Tâches) -->
+<div class="modal-overlay" id="modal-tache">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Nouvelle tâche</span>
+      <button class="modal-close" onclick="fermerModal('modal-tache')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1 / -1">
+          <label for="tache-collab">Collaborateur</label>
+          <select id="tache-collab"></select>
+        </div>
+        <div class="form-group" style="grid-column:1 / -1">
+          <label for="tache-objet">Objet * — ce qu'il faut faire</label>
+          <input type="text" id="tache-objet">
+        </div>
+        <div class="form-group">
+          <label for="tache-tiers">Tiers *</label>
+          <select id="tache-tiers"></select>
+        </div>
+        <div class="form-group">
+          <label for="tache-echeance">Échéance</label>
+          <input type="date" id="tache-echeance">
+        </div>
+        <div class="form-group" style="grid-column:1 / -1">
+          <label for="tache-remarque">Remarque (facultatif)</label>
+          <textarea id="tache-remarque" rows="2" style="resize:vertical"></textarea>
+        </div>
+      </div>
+      <div id="modal-tache-error" style="display:none;margin-top:12px" class="error-banner"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fermerModal('modal-tache')">Annuler</button>
+      <button class="btn btn-primary" id="btn-sauver-tache" onclick="sauverTacheManuelle()">Créer la tâche</button>
     </div>
   </div>
 </div>
@@ -1681,8 +1720,12 @@ function _ligneTache(t) {
     sans_objet: { bg: 'var(--fond)',      bord: 'var(--texte3)' },
   };
   const cs = CARTE_STATUT[t.statut] || CARTE_STATUT.a_faire;
-  const estPeriode = (t.collab_id == null);   // tâche "de période", sans personne associée
-  const titre = estPeriode ? (t.nom_periode || 'Période') : (t.nom_complet || '—');
+  // Titre : collab -> nom ; sinon période -> nom_periode ; sinon (tâche manuelle générale) -> libellé générique.
+  const sansCollab = (t.collab_id == null);
+  let titre;
+  if (!sansCollab) titre = t.nom_complet || '—';
+  else if (t.periode_id != null) titre = t.nom_periode || 'Période';
+  else titre = 'Tâche manuelle';
   const structType = [esc(t.structure || ''), (t.type_contrat ? esc(labelType(t.type_contrat)) : '')].filter(Boolean).join(' · ');
   const ech = t.date_echeance ? _jjmm(t.date_echeance) : '—';
 
@@ -1714,7 +1757,7 @@ function _ligneTache(t) {
           + '</span>';
   }
   // Tâche de période : pas de coordonnées (tél/matricule/n° sécu/email sont null).
-  const pieces = estPeriode ? [] : [tel, matr, nss, email].filter(Boolean);
+  const pieces = sansCollab ? [] : [tel, matr, nss, email].filter(Boolean);
   const coord = pieces.length
     ? '<span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">' + pieces.join('') + '</span>'
     : '';
@@ -1780,8 +1823,52 @@ async function annulerTache(btn) {
   _postTache(Number(btn.dataset.id), 'a_faire', btn.dataset.remarque || null);
 }
 
-// Stub : bouton visible, aucun comportement (câblage dans une itération suivante).
-function ajouterTacheStub() { /* TODO : formulaire d'ajout de tâche manuelle */ }
+function ouvrirModalTache() {
+  const esc = _escRegle, escAttr = s => esc(s).replace(/"/g, '&quot;');
+  // Collaborateurs (liste déjà chargée au login) + option "aucun / tâche générale".
+  const collabs = (collabsData || []).slice().sort((a, b) => String(a.nomAffiche || '').localeCompare(String(b.nomAffiche || '')));
+  document.getElementById('tache-collab').innerHTML =
+    '<option value="">Aucun / tâche générale</option>' +
+    collabs.map(c => '<option value="' + escAttr(c.collabId) + '">' + esc(c.nomAffiche || ((c.prenom || '') + ' ' + (c.nom || '')).trim()) + '</option>').join('');
+  document.getElementById('tache-tiers').innerHTML =
+    '<option value="">— Choisir —</option>' + REGLE_TIERS.map(o => '<option value="' + o.v + '">' + o.label + '</option>').join('');
+  document.getElementById('tache-collab').value = '';
+  document.getElementById('tache-objet').value = '';
+  document.getElementById('tache-tiers').value = '';
+  document.getElementById('tache-echeance').value = '';
+  document.getElementById('tache-remarque').value = '';
+  const err = document.getElementById('modal-tache-error'); err.style.display = 'none'; err.innerHTML = '';
+  const btn = document.getElementById('btn-sauver-tache'); btn.disabled = false;
+  document.getElementById('modal-tache').classList.add('open');
+}
+
+async function sauverTacheManuelle() {
+  const err = document.getElementById('modal-tache-error');
+  const showErr = (h, t) => { err.innerHTML = '<div>' + _escRegle(h) + '</div>' + (t ? '<div style="font-size:11px;opacity:.6;margin-top:4px">' + _escRegle(t) + '</div>' : ''); err.style.display = 'block'; };
+  const objet = (document.getElementById('tache-objet').value || '').trim();
+  const tiers = document.getElementById('tache-tiers').value;
+  if (!objet) { showErr('L\'objet est obligatoire (ce qu\'il faut faire).'); return; }
+  if (!tiers) { showErr('Choisissez un tiers.'); return; }
+  const body = {
+    admin_token: ADMIN_TOKEN,
+    action: 'creer_manuelle',
+    objet,
+    tiers,
+    collab_id: document.getElementById('tache-collab').value || null,
+    remarque: (document.getElementById('tache-remarque').value || '').trim() || null,
+    date_echeance: document.getElementById('tache-echeance').value || null,
+  };
+  const btn = document.getElementById('btn-sauver-tache'); btn.disabled = true;
+  const { data, error } = await sb.functions.invoke('journal-taches', { body });
+  btn.disabled = false;
+  if (error) {
+    let detail = ''; try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+    showErr('Création impossible, vérifiez les champs.', detail); return;
+  }
+  if (!data || data.ok !== true) { showErr('Création impossible, vérifiez les champs.', data && data.error); return; }
+  fermerModal('modal-tache');
+  chargerTaches();
+}
 
 function copierLien(lien) {
   navigator.clipboard.writeText(lien).then(() => {
