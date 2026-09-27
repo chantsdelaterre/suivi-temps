@@ -491,7 +491,10 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
       <div class="card" id="paie-card" style="display:none">
         <div class="card-header">
           <span class="card-title">Récapitulatif par collaborateur</span>
-          <span id="paie-validation-count" style="font-size:13px;font-weight:600"></span>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span id="paie-validation-count" style="font-size:13px;font-weight:600"></span>
+            <button class="btn btn-secondary btn-sm" onclick="ouvrirSyntheseEvp()">Synthèse EVP</button>
+          </div>
         </div>
         <div style="padding:12px 24px;border-bottom:1px solid #e8f0f8;display:flex;gap:6px;align-items:center">
           <button class="filter-btn active" onclick="setFiltrePaie('',this)">Toutes</button>
@@ -831,6 +834,31 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="fermerModal('modal-tache')">Annuler</button>
       <button class="btn btn-primary" id="btn-sauver-tache" onclick="sauverTacheManuelle()">Créer la tâche</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE SYNTHÈSE EVP (onglet Paie) -->
+<div class="modal-overlay" id="modal-evp">
+  <div class="modal modal-lg" style="max-width:760px;width:95vw">
+    <div class="modal-header">
+      <span class="modal-title" id="evp-titre">Synthèse EVP</span>
+      <button class="modal-close" onclick="fermerModal('modal-evp')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="evp-entete" style="margin-bottom:12px">
+        <div id="evp-print-titre" style="font-weight:700;font-size:16px"></div>
+        <div id="evp-soustitre" style="color:var(--texte2);font-size:13px;margin-top:2px"></div>
+      </div>
+      <div class="filter-group" style="margin-bottom:12px">
+        <button class="filter-btn active" id="evp-filtre-tous" onclick="setEvpFiltre('tous', this)">Tous</button>
+        <button class="filter-btn" id="evp-filtre-evp" onclick="setEvpFiltre('evp', this)">EVP seuls</button>
+      </div>
+      <div id="evp-contenu"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="imprimerEvp()">🖨️ Imprimer</button>
+      <button class="btn btn-secondary" onclick="fermerModal('modal-evp')">Fermer</button>
     </div>
   </div>
 </div>
@@ -2932,6 +2960,118 @@ function renderPaie(recap, periodeId) {
   renderPaieFiltered();
 }
 
+// ─── Synthèse EVP (Edge `evp-synthese`) ───
+let _evpData = [];               // lignes brutes de l'appel evp_synthese en cours
+let _evpFiltre = 'tous';         // 'tous' | 'evp' (filtre client)
+
+async function _ouvrirEvp(periodeId, structure) {
+  if (!periodeId) return;
+  const box = document.getElementById('evp-contenu');
+  const p = (periodesData || []).find(x => x.periodeId === periodeId);
+  document.getElementById('evp-print-titre').textContent = 'Synthèse EVP — ' + (p ? p.nomPeriode : periodeId);
+  document.getElementById('evp-soustitre').textContent = 'Structure : ' + (structure ? structure : 'Toutes structures');
+  _evpFiltre = 'tous';
+  document.getElementById('evp-filtre-tous').classList.add('active');
+  document.getElementById('evp-filtre-evp').classList.remove('active');
+  box.innerHTML = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
+  document.getElementById('modal-evp').classList.add('open');
+  const { data, error } = await sb.functions.invoke('evp-synthese', {
+    body: { admin_token: ADMIN_TOKEN, periode_id: periodeId, structure: structure || null }
+  });
+  if (error) {
+    let detail = ''; try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+    box.innerHTML = '<div style="text-align:center;color:var(--rouge);padding:40px">Erreur : ' + _escRegle(detail || 'chargement impossible') + '</div>';
+    return;
+  }
+  if (!data || data.ok !== true) {
+    box.innerHTML = '<div style="text-align:center;color:var(--rouge);padding:40px">' + _escRegle((data && data.error) || 'Erreur de chargement') + '</div>';
+    return;
+  }
+  _evpData = Array.isArray(data.lignes) ? data.lignes : [];
+  renderSyntheseEvp();
+}
+
+function setEvpFiltre(v, btn) {
+  _evpFiltre = v;
+  btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderSyntheseEvp();
+}
+
+// Impression via fenêtre dédiée (patron imprimerJournal) : aucun token au pied de page.
+// Reprend le contenu ACTUELLEMENT affiché (respecte le filtre EVP seuls / Tous).
+function imprimerEvp() {
+  const esc = _escRegle;
+  const titre = document.getElementById('evp-print-titre').textContent || 'Synthèse EVP';
+  const soustitre = document.getElementById('evp-soustitre').textContent || '';
+  const contenu = document.getElementById('evp-contenu').innerHTML;
+  const doc = '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>' + esc(titre) + '</title>'
+    + '<style>:root{--texte:#0f1f33;--texte2:#4a5e75;--texte3:#8a9db5;}*{box-sizing:border-box}'
+    + 'body{font-family:system-ui,-apple-system,"DM Sans",sans-serif;color:var(--texte);margin:0;padding:14mm;font-size:13px;line-height:1.5}'
+    + 'h1{font-size:18px;margin:0 0 2px}.sous{color:var(--texte2);font-size:13px;margin-bottom:14px}'
+    + '@media print{body{padding:0}@page{margin:12mm}}</style></head><body>'
+    + '<h1>' + esc(titre) + '</h1><div class="sous">' + esc(soustitre) + '</div>'
+    + contenu
+    + '<' + 'script>window.onload=function(){window.print();}<' + '/script></body></html>';
+  const w = window.open('', '_blank');
+  if (!w) { alert('Autorise les fenêtres pop-up pour imprimer la synthèse EVP.'); return; }
+  w.document.open();
+  w.document.write(doc);
+  w.document.close();
+}
+
+// « À traiter » : période + filtre structure de #paie-card.
+function ouvrirSyntheseEvp() {
+  if (!paieCurrentPeriode) return;
+  _ouvrirEvp(paieCurrentPeriode, filtrePaieStructure || null);
+}
+
+// « Clôturées » : période choisie dans #arch-f-periode + filtre structure #arch-f-structure.
+function ouvrirSyntheseEvpArchives() {
+  const pid = (document.getElementById('arch-f-periode') || {}).value || '';
+  if (!pid) { alert('Choisissez une période dans le filtre « Toutes périodes » pour générer la synthèse EVP.'); return; }
+  _ouvrirEvp(pid, (document.getElementById('arch-f-structure') || {}).value || null);
+}
+
+function renderSyntheseEvp() {
+  const lignes = _evpData || [];
+  const box = document.getElementById('evp-contenu');
+  if (!lignes.length) { box.innerHTML = '<div style="text-align:center;color:var(--texte3);padding:40px">Aucun collaborateur pour cette période.</div>'; return; }
+  const esc = _escRegle;
+  // Heures : virgule française, 2 décimales max, sans zéros inutiles (175 -> "175", 107.75 -> "107,75").
+  const fmtHeures = n => Number((Number(n) || 0).toFixed(2)).toString().replace('.', ',');
+  // Groupement par collab_id en préservant l'ordre d'arrivée (le SQL ordonne déjà).
+  const ordre = [], groupes = {};
+  for (const l of lignes) {
+    if (!groupes[l.collab_id]) { groupes[l.collab_id] = []; ordre.push(l.collab_id); }
+    groupes[l.collab_id].push(l);
+  }
+  const ORDRE_TYPE = { AT: 0, CP: 1, CS: 2 };
+  let html = '';
+  for (const cid of ordre) {
+    const g = groupes[cid], p = g[0];
+    if (_evpFiltre === 'evp' && !g.some(l => l.type_jour)) continue;   // EVP seuls : masque les collabs sans absence
+    const idParts = [];
+    if (p.matricule_silae) idParts.push('Matricule ' + esc(p.matricule_silae));
+    if (p.numero_securite_sociale) idParts.push('N° sécu ' + esc(_formatNSS(p.numero_securite_sociale)));
+    const idTxt = idParts.length ? ' <span style="color:var(--texte3);font-weight:400;font-size:12px">(' + idParts.join(' · ') + ')</span>' : '';
+    const plages = g.filter(l => l.type_jour).sort((a, b) =>
+      ((ORDRE_TYPE[a.type_jour] ?? 9) - (ORDRE_TYPE[b.type_jour] ?? 9)) ||
+      String(a.date_debut || '').localeCompare(String(b.date_debut || '')));
+    let bloc = '<div style="border:1px solid #e8f0f8;border-radius:10px;padding:10px 14px;margin-bottom:10px;background:#fff">';
+    bloc += '<div style="font-weight:600">' + esc(p.nom_complet || '—') + idTxt + '</div>';
+    for (const l of plages) {
+      const nb = (l.nb_jours != null) ? ' (' + l.nb_jours + 'j)' : '';
+      bloc += '<div style="font-size:13px;color:var(--texte2);margin-top:3px">' + esc(l.type_jour) + ' du ' + _jjmm(l.date_debut) + ' au ' + _jjmm(l.date_fin) + nb + '</div>';
+    }
+    const jt = (p.nb_jours_travailles != null) ? p.nb_jours_travailles : 0;
+    bloc += '<div style="font-size:13px;font-weight:600;margin-top:6px">' + jt + ' jours travaillés · ' + fmtHeures(p.nb_heures_total) + ' heures</div>';
+    bloc += '</div>';
+    html += bloc;
+  }
+  box.innerHTML = html || '<div style="text-align:center;color:var(--texte3);padding:40px">Aucun collaborateur avec absence pour ce filtre.</div>';
+}
+
 function setFiltrePaie(val, btn) {
   filtrePaieStructure = val;
   document.querySelectorAll('#paie-card .filter-btn').forEach(b => b.classList.remove('active'));
@@ -3803,6 +3943,7 @@ async function chargerArchivesCloturees() {
     + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:14px">'
     +   '<button class="btn btn-primary btn-sm" id="arch-btn-print" onclick="imprimerRihSelection()" disabled>🖨️ Imprimer les relevés sélectionnés</button>'
     +   '<span id="arch-sel-count" style="font-size:13px;color:var(--texte2)">0 relevé sélectionné</span>'
+    +   '<button class="btn btn-secondary btn-sm" onclick="ouvrirSyntheseEvpArchives()" style="margin-left:auto">Synthèse EVP</button>'
     + '</div>'
     + '<div class="table-wrap"><table><thead><tr>'
     + '<th style="width:32px;text-align:center"><input type="checkbox" id="arch-check-all" aria-label="Tout sélectionner" onchange="basculerToutesArchives(this.checked)"></th>'

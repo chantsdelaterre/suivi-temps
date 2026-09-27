@@ -425,6 +425,9 @@ verify_jwt = false
 [functions.journal-taches]
 verify_jwt = false
 
+[functions.evp-synthese]
+verify_jwt = false
+
 [functions.collaborateurs-liste]
 verify_jwt = false
 
