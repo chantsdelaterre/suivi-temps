@@ -56,8 +56,9 @@ create table public.journal_taches (
   constraint journal_taches_auto_unique unique (contrat_id, mouvement, regle_id),
 
   -- Listes fermées (mêmes valeurs que journal_regles).
+  -- Valeurs alignées sur la base au 28/09/2026 (ajouts : 'cloture_periode', 'activation').
   constraint journal_taches_mouvement_chk
-    check (mouvement is null or mouvement in ('creation','modification','fin','rupture')),
+    check (mouvement is null or mouvement in ('creation','modification','fin','rupture','cloture_periode','activation')),
   constraint journal_taches_tiers_chk
     check (tiers in ('MSA','SILAE','GESTIONNAIRE_PAIE','EMPLOYE','FRANCE_TRAVAIL','AUTRE')),
   constraint journal_taches_statut_chk
