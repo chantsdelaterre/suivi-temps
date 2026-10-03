@@ -1269,10 +1269,11 @@ function fermerEquipeDetail() {
 // techniques. Ils remplissent les <select> de la modale ET traduisent le tableau.
 const REGLE_MOUVEMENTS = [
   { v: 'creation',     label: 'Création de contrat' },
-  { v: 'modification', label: 'Modification' },
+  { v: 'modification', label: 'Modification contrat' },
   { v: 'fin',          label: 'Fin de contrat' },
   { v: 'rupture',      label: 'Rupture anticipée' },
   { v: 'cloture_periode', label: 'Clôture de période' },
+  { v: 'activation',   label: 'Activation collaborateur' },   // tâche codée en dur (synchroniser_activite), PAS une règle
 ];
 const REGLE_TYPES = [
   { v: '',     label: 'Tous' },   // '' <-> null en base
@@ -1326,7 +1327,8 @@ let _reglesSelectsPrets = false;
 function _initReglesSelects() {
   if (_reglesSelectsPrets) return;
   const opt = o => '<option value="' + o.v + '">' + o.label + '</option>';
-  document.getElementById('regle-mouvement').innerHTML = '<option value="">— Choisir —</option>' + REGLE_MOUVEMENTS.map(opt).join('');
+  // 'activation' exclu du formulaire de règles : mouvement codé en dur (synchroniser_activite), non piloté par le moteur.
+  document.getElementById('regle-mouvement').innerHTML = '<option value="">— Choisir —</option>' + REGLE_MOUVEMENTS.filter(o => o.v !== 'activation').map(opt).join('');
   document.getElementById('regle-type').innerHTML      = REGLE_TYPES.map(opt).join('');
   document.getElementById('regle-condition').innerHTML = REGLE_CONDITIONS.map(opt).join('');
   document.getElementById('regle-tiers').innerHTML     = '<option value="">— Choisir —</option>' + REGLE_TIERS.map(opt).join('');
@@ -4435,7 +4437,7 @@ async function chargerContrats() {
     }
     contratsData = data.contrats;
     contratsIncoherences = (typeof data.incoherences === 'number') ? data.incoherences : null;   // état global, indépendant du filtre
-    contratsSansRenouv = (contratsData || []).filter(c => c.etat === 'fin_proche').length;        // GLOBAL (non filtré), calculé au front
+    contratsSansRenouv = (contratsData || []).filter(c => c.etat === 'fin_proche' || c.etat === 'echu_sans_suite').length;   // GLOBAL (non filtré) ; fin ≤ 10 j sans suite OU échu < 7 j sans suite
   } catch (e) {
     contratsData = [];
     if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--rouge);padding:32px">Erreur de chargement</td></tr>';
@@ -4465,6 +4467,7 @@ function contratEtatBadge(c) {
                               ? '<span class="badge badge-attente">sans date de fin</span>'
                               : '<span class="badge badge-actif">en cours</span>';   // CDI sans fin = normal
     case 'fin_proche': return '<span class="badge badge-attente">fin dans ' + (c.jours_avant_fin != null ? c.jours_avant_fin : '?') + ' j</span>';
+    case 'echu_sans_suite': return '<span class="badge badge-attente">échu — à renouveler</span>';
     case 'a_venir':    return '<span class="badge badge-gelee">à venir</span>';
     case 'termine':    return '<span class="badge badge-inactif">terminé</span>';
     case 'en_cours':   return '<span class="badge badge-actif">en cours</span>';
@@ -4572,7 +4575,7 @@ function _contratPasseFiltres(c, recherche, fStruct, fType) {
   if (fStruct && c.structure !== fStruct) return false;
   if (fType && c.type_contrat !== fType) return false;
   if (filtreContratsIncoherences && c.etat !== 'echu_actif') return false;   // vue « Voir » (drapeau dédié)
-  if (filtreContratsFinProche && c.etat !== 'fin_proche') return false;      // vue « Voir » sans renouvellement : Fin <= 10 j et sans suite
+  if (filtreContratsFinProche && !(c.etat === 'fin_proche' || c.etat === 'echu_sans_suite')) return false;   // « Voir » sans renouvellement : fin ≤ 10 j sans suite OU échu < 7 j sans suite
   return true;
 }
 
