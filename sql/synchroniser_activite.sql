@@ -1,6 +1,6 @@
 -- =============================================================================
 -- synchroniser_activite.sql
--- Date       : 2026-09-14 (créée) · 2026-09-28 (ajout tâche « envoyer lien »)
+-- Date       : 2026-10-07 · 2026-09-14 (créée) · 2026-09-28 (ajout tâche « envoyer lien »)
 -- But        : Synchronise actif/statut des collaborateurs d'après les contrats
 --              (historique_contrats). Actif s'il existe un contrat couvrant
 --              aujourd'hui ; désactivé sinon (tolérance J-1 sur date_fin,
@@ -13,11 +13,15 @@
 --   À chaque TRANSITION inactif->actif (l'UPDATE d'activation ne matche que
 --   actif=false), on crée une tâche journal_taches marquée mouvement='activation',
 --   tiers='EMPLOYE', statut='a_faire'. Garde-fou d'idempotence : on ne crée PAS si
---   une tâche 'activation' est DÉJÀ à faire pour ce collab (évite les doublons ;
---   permet de re-créer après une réactivation si l'ancienne a été 'faite').
+--   une tâche 'activation' est DÉJÀ à faire pour ce collab (évite les doublons).
 --   Prérequis : le CHECK journal_taches_mouvement_chk doit autoriser 'activation'.
 --   Réalisé via une CTE modifiante (UPDATE ... RETURNING -> INSERT ... WHERE NOT EXISTS)
 --   pour capturer les collabs réellement activés dans la même requête.
+--
+-- 07/10/2026 : la tâche « Envoyer le lien de l'appli » n'est créée qu'à la toute
+--   première activation d'une personne (aucun contrat déjà terminé). Avant, elle se
+--   recréait à chaque réactivation (renouvellement tardif, retour), alors que le
+--   garde-fou ne regardait que les tâches encore à faire.
 -- Déploiement : MANUEL, copier-coller dans le SQL Editor de Supabase.
 --              (ce fichier n'est qu'une copie de référence versionnée du dépôt)
 -- Droits      : service_role uniquement. ⚠️ Sans le GRANT ci-dessous, l'appel
@@ -60,6 +64,12 @@ begin
       where t.collab_id = a.collab_id
         and t.mouvement = 'activation'
         and t.statut = 'a_faire'
+    )
+    and not exists (                 -- 1re activation seulement : aucun contrat déjà terminé
+      select 1 from historique_contrats p
+      where p.collab_id = a.collab_id
+        and p.date_fin is not null
+        and p.date_fin < v_today
     )
     returning 1
   )
