@@ -1150,21 +1150,23 @@ function renderCollabsFiltered(collabs) {
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" onclick="ouvrirModalCollabData('${collabJson}')">✏️</button>
         <button class="btn btn-secondary btn-sm" onclick="copierMessage('${collabJson}')" title="Copier le message d'invitation">📨</button>
+        ${_telWhatsApp(c.telephone) ? `<button class="btn btn-secondary btn-sm" onclick="envoyerWhatsApp(this)" data-collab="${c.collabId}" title="Envoyer le message d'invitation par WhatsApp">💬</button>` : ''}
       </td>
     </tr>`;
   }).join('');
 }
 
-function copierMessage(encoded) {
-  const c = JSON.parse(decodeURIComponent(encoded));
-  const prenom = (c.prenom || c.nomAffiche.split(' ')[0] || '');
+// Texte du message d'invitation, PARTAGÉ par « Copier le message » et l'envoi
+// WhatsApp : un seul texte à maintenir, deux canaux d'envoi.
+function messageInvitation(c) {
+  const prenom = (c.prenom || (c.nomAffiche || '').split(' ')[0] || '');
   const lien = c.lien || '';
   const token = c.token || '';
-  const msg = `Bonjour ${prenom},
+  return `Bonjour ${prenom},
 
 Voici ton accès à l'appli de suivi des heures Chants de la Terre.
 
-👉 Clique sur ce lien : ${lien}
+→ Clique sur ce lien : ${lien}
 
 À la première ouverture, entre ton code d'accès : ${token}
 
@@ -1175,12 +1177,50 @@ Ensuite installe l'appli sur ton téléphone :
 En cas de problème, contacte ton responsable.
 
 Chants de la Terre`;
+}
+
+function copierMessage(encoded) {
+  const c = JSON.parse(decodeURIComponent(encoded));
+  const msg = messageInvitation(c);
   navigator.clipboard.writeText(msg).then(() => {
     const t = document.getElementById('toast');
     t.textContent = '✓ Message copié !';
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 2500);
   });
+}
+
+// Numéro au format international SANS « + », pour WhatsApp. Le préfixe est testé
+// AVANT de retirer les séparateurs, sinon le « + » serait perdu.
+// Retourne '' si le numéro est inexploitable → aucun bouton WhatsApp.
+function _telWhatsApp(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (s.startsWith('+'))  return s.slice(1).replace(/\D/g, '');
+  if (s.startsWith('00')) return s.replace(/\D/g, '').slice(2);
+  const d = s.replace(/\D/g, '');
+  if (/^0\d{9}$/.test(d)) return '33' + d.slice(1);   // 0612345678 → 33612345678
+  return '';
+}
+
+// Ouvre WhatsApp avec le message d'invitation prérempli. Ne coche aucune tâche :
+// c'est la personne qui envoie qui la cochera ensuite.
+// Prénom, token et lien sont résolus AU CLIC dans collabsData — au rendu, le cache
+// peut être vide (chargerCollabs et chargerTaches partent en parallèle au login).
+// Le bouton ne porte que le collab_id : ni token ni lien dans le DOM ni en console.
+function envoyerWhatsApp(btn) {
+  const c = (collabsData || []).find(x => x.collabId === btn.dataset.collab);
+  const num = c ? _telWhatsApp(c.telephone) : '';
+  const erreur = !c ? 'Collaborateurs pas encore chargés'
+               : !c.token || !c.lien ? 'Pas de code d’accès pour ce collaborateur'
+               : !num ? 'Numéro de téléphone inexploitable' : '';
+  const t = document.getElementById('toast');
+  if (erreur) {
+    t.textContent = '⚠ ' + erreur;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+    return;
+  }
+  window.open('https://web.whatsapp.com/send?phone=' + num + '&text=' + encodeURIComponent(messageInvitation(c)), '_blank', 'noopener');
 }
 
 async function chargerVueEquipes() {
@@ -1786,8 +1826,18 @@ function _ligneTache(t) {
           + '<button class="token-link" onclick="copierEmail(this)" data-lien="' + escAttr(t.email) + '" title="Copier l\'email" style="padding:3px 6px;display:inline-flex;align-items:center">' + SVG_COPIE + '</button>'
           + '</span>';
   }
+  // Envoi WhatsApp du lien d'accès : UNIQUEMENT sur la tâche d'activation, et
+  // seulement si le numéro est exploitable. Le test sur `mouvement` fonctionne que
+  // la ligne porte ou non la colonne (repli sur tiers + objet, texte écrit par
+  // synchroniser_activite). Le bouton n'écrit rien : il ne coche pas la tâche.
+  const estActivation = t.mouvement === 'activation'
+    || (t.tiers === 'EMPLOYE' && t.objet === "Envoyer le lien de l'appli");
+  const wa = (!sansCollab && estActivation && _telWhatsApp(t.telephone))
+    ? '<button class="btn btn-secondary btn-sm" onclick="envoyerWhatsApp(this)" data-collab="' + escAttr(t.collab_id) + '" title="Envoyer le message d\'invitation par WhatsApp" style="padding:2px 8px">💬 WhatsApp</button>'
+    : '';
+
   // Tâche de période : pas de coordonnées (tél/matricule/n° sécu/email sont null).
-  const pieces = sansCollab ? [] : [tel, matr, nss, email].filter(Boolean);
+  const pieces = sansCollab ? [] : [tel, matr, nss, email, wa].filter(Boolean);
   const coord = pieces.length
     ? '<span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">' + pieces.join('') + '</span>'
     : '';
