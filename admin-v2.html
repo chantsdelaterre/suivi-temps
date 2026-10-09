@@ -776,6 +776,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <input type="number" id="regle-echeance-jours" min="0" placeholder="jours" style="width:90px">
             <select id="regle-sens" style="flex:1"></select>
           </div>
+          <div id="aide-regle-echeance" style="display:none;font-size:12px;color:var(--texte3);margin-top:4px">Calculée à partir du jour de l'activation de la personne.</div>
         </div>
         <div class="form-group" style="grid-column:1 / -1">
           <label for="regle-note">Note (facultatif)</label>
@@ -1313,7 +1314,7 @@ const REGLE_MOUVEMENTS = [
   { v: 'fin',          label: 'Fin de contrat' },
   { v: 'rupture',      label: 'Rupture anticipée' },
   { v: 'cloture_periode', label: 'Clôture de période' },
-  { v: 'activation',   label: 'Activation collaborateur' },   // tâche codée en dur (synchroniser_activite), PAS une règle
+  { v: 'activation',   label: "À l'entrée dans l'entreprise (1er contrat)" },   // déclenché par synchroniser_activite à la 1re activation
 ];
 const REGLE_TYPES = [
   { v: '',     label: 'Tous' },   // '' <-> null en base
@@ -1367,8 +1368,9 @@ let _reglesSelectsPrets = false;
 function _initReglesSelects() {
   if (_reglesSelectsPrets) return;
   const opt = o => '<option value="' + o.v + '">' + o.label + '</option>';
-  // 'activation' exclu du formulaire de règles : mouvement codé en dur (synchroniser_activite), non piloté par le moteur.
-  document.getElementById('regle-mouvement').innerHTML = '<option value="">— Choisir —</option>' + REGLE_MOUVEMENTS.filter(o => o.v !== 'activation').map(opt).join('');
+  // Tous les mouvements sont proposés, 'activation' compris : depuis le 09/10/2026
+  // synchroniser_activite lit journal_regles et crée une tâche par règle d'activation.
+  document.getElementById('regle-mouvement').innerHTML = '<option value="">— Choisir —</option>' + REGLE_MOUVEMENTS.map(opt).join('');
   document.getElementById('regle-type').innerHTML      = REGLE_TYPES.map(opt).join('');
   document.getElementById('regle-condition').innerHTML = REGLE_CONDITIONS.map(opt).join('');
   document.getElementById('regle-tiers').innerHTML     = '<option value="">— Choisir —</option>' + REGLE_TIERS.map(opt).join('');
@@ -1378,14 +1380,20 @@ function _initReglesSelects() {
   _reglesSelectsPrets = true;
 }
 
-// Bascule la forme du formulaire selon le mouvement :
-// cloture_periode => Type de période + Portée ; sinon => Type de contrat + Condition.
+// Bascule la forme du formulaire selon le mouvement — trois formes :
+//   cloture_periode => Type de période + Portée
+//   activation      => Type de contrat seul (avec_suite n'a pas de sens : rien ne précède)
+//   les autres      => Type de contrat + Condition
 function _majFormeRegle() {
-  const cloture = document.getElementById('regle-mouvement').value === 'cloture_periode';
+  const mv = document.getElementById('regle-mouvement').value;
+  const cloture = (mv === 'cloture_periode');
+  const activation = (mv === 'activation');
   document.getElementById('grp-regle-type').style.display         = cloture ? 'none' : '';
-  document.getElementById('grp-regle-condition').style.display    = cloture ? 'none' : '';
+  document.getElementById('grp-regle-condition').style.display    = (cloture || activation) ? 'none' : '';
   document.getElementById('grp-regle-type-periode').style.display = cloture ? '' : 'none';
   document.getElementById('grp-regle-portee').style.display       = cloture ? '' : 'none';
+  const aide = document.getElementById('aide-regle-echeance');
+  if (aide) aide.style.display = activation ? '' : 'none';
 }
 
 async function chargerRegles() {
@@ -1502,6 +1510,7 @@ async function sauverRegle() {
   if (!objet)     { _afficherErreurRegle('L\'objet est obligatoire (ce qu\'il faut faire).'); return; }
   if (!tiers)     { _afficherErreurRegle('Choisissez un tiers.'); return; }
   const estCloture = (mouvement === 'cloture_periode');
+  const estActivation = (mouvement === 'activation');
   if (estCloture && !document.getElementById('regle-portee').value) {
     _afficherErreurRegle('Choisissez une portée (par collaborateur ou pour toute la période).'); return;
   }
@@ -1534,7 +1543,8 @@ async function sauverRegle() {
     body.avec_suite = null;
   } else {
     body.type_contrat = document.getElementById('regle-type').value || null;
-    body.avec_suite = condVal === '' ? null : (condVal === 'true');
+    // activation : champ Condition masqué → avec_suite forcé à null (rien ne précède un 1er contrat).
+    body.avec_suite = estActivation ? null : (condVal === '' ? null : (condVal === 'true'));
     body.type_periode = null;
     body.portee = null;
   }

@@ -36,8 +36,9 @@ create table public.journal_regles (
   modifie_par    text    null,
 
   -- Listes fermées.
+  -- Valeurs alignées sur la base au 09/10/2026 (ajouts : 'cloture_periode', 'activation').
   constraint journal_regles_mouvement_chk
-    check (mouvement in ('creation','modification','fin','rupture')),
+    check (mouvement in ('creation','modification','fin','rupture','cloture_periode','activation')),
   constraint journal_regles_type_contrat_chk
     check (type_contrat is null or type_contrat in ('TESA','CDI','CDD')),
   constraint journal_regles_tiers_chk
