@@ -4167,6 +4167,7 @@ tbody td.date{white-space:nowrap;font-weight:500;}
 tbody td.type{font-size:10px;}
 tbody td.tot{font-weight:700;font-variant-numeric:tabular-nums;}
 tbody td.sem{color:var(--txt2);font-variant-numeric:tabular-nums;}
+tbody td.sem-fin{font-weight:700;}
 tbody tr.sam td{background:var(--sam);}
 tbody tr.dim td{background:var(--dim);}
 .badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;letter-spacing:.3px;}
@@ -4212,7 +4213,7 @@ function construirePageReleve(nomAffiche, structure, periode, det) {
     : t==='CS' ? '<span class="badge b-cs">CS</span>' : 'travaillée';
   const cell = v => v ? '<td class="creneau">'+v+'</td>' : '<td class="vide">—</td>';
   let weekKey = null, weekCumul = 0, totalGlobal = 0;
-  const rows = det.map(d => {
+  const rows = det.map((d, i, arr) => {
     const dt = toDate(d.date_jour), wk = keyLundi(dt);
     if (wk !== weekKey) { weekKey = wk; weekCumul = 0; }
     const h = Number(d.heures_valide) || 0;
@@ -4233,7 +4234,7 @@ function construirePageReleve(nomAffiche, structure, periode, det) {
       + cell(c2v)
       + (showC3 ? cell(c3v) : '')
       + '<td class="tot">'+fmtH(h)+'</td>'
-      + '<td class="sem">'+fmtH(weekCumul)+'</td>'
+      + '<td class="sem' + (((i === arr.length - 1) || keyLundi(toDate(arr[i+1].date_jour)) !== wk) ? ' sem-fin' : '') + '">'+fmtH(weekCumul)+'</td>'
       + '</tr>';
   }).join('');
   const auj = new Date();
