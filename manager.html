@@ -94,6 +94,7 @@ input:focus { border-color: var(--bleu-clair); }
 .modal-body { padding: 24px; max-height: 72vh; overflow-y: auto; overflow-x: auto; }
 .modal-footer { padding: 16px 24px; border-top: 1px solid #e8f0f8; display: flex; justify-content: flex-end; }
 .save-msg { font-size: 12px; margin-top: 3px; display: none; }
+#saisies-body .cumul-fin { font-weight: 700; }
 </style>
 </head>
 <body>
@@ -294,16 +295,28 @@ function renderSaisies(jours, collabId) {
   const keyLocal = dt => String(dt.getFullYear()) + String(dt.getMonth()+1).padStart(2,'0') + String(dt.getDate()).padStart(2,'0');
   const toDate = s => { const p=(s||'').split('/'); return p.length===3 ? new Date(p[2], p[1]-1, p[0]) : new Date(s); };
   // Cumul hebdo progressif (lundi → jour inclus), par jourId, somme par plage de clés
-  const meta = joursVus.map(j => { const d = toDate(j.dateJour); return { j, d, key: isNaN(d) ? null : keyLocal(d) }; });
-  const cumulById = {};
-  meta.forEach(({ j, d, key }) => {
-    if (!key || isNaN(d)) { cumulById[j.jourId] = null; return; }
+  const meta = joursVus.map(j => {
+    const d = toDate(j.dateJour);
+    if (isNaN(d)) return { j, d, key: null, lundiKey: null };
     const dow = d.getDay() === 0 ? 6 : d.getDay() - 1;
     const lundi = new Date(d); lundi.setDate(d.getDate() - dow);
-    const lundiKey = keyLocal(lundi);
+    return { j, d, key: keyLocal(d), lundiKey: keyLocal(lundi) };
+  });
+  const cumulById = {};
+  // Dernier jour (date la plus tardive) de chaque semaine affichée : regroupement par
+  // lundiKey, indépendant de l'ordre réel de joursVus (fourni par la RPC, non garanti).
+  const derniereCleParSemaine = {};
+  meta.forEach(({ key, lundiKey }) => {
+    if (!lundiKey) return;
+    if (!derniereCleParSemaine[lundiKey] || key > derniereCleParSemaine[lundiKey]) derniereCleParSemaine[lundiKey] = key;
+  });
+  const finById = {};
+  meta.forEach(({ j, key, lundiKey }) => {
+    if (!key || !lundiKey) { cumulById[j.jourId] = null; finById[j.jourId] = false; return; }
     let cumul = 0;
     meta.forEach(m => { if (m.key && m.key >= lundiKey && m.key <= key) cumul += Number(m.j.totalHeures) || 0; });
     cumulById[j.jourId] = cumul;
+    finById[j.jourId] = (key === derniereCleParSemaine[lundiKey]);
   });
   // Remap des types (vocabulaire Supabase) — badges cohérents
   const TYPE_INFO = {
@@ -334,7 +347,7 @@ function renderSaisies(jours, collabId) {
       + td(cren(j.c2Debut,j.c2Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
       + td(cren(j.c3Debut,j.c3Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
       + td('<span style="font-family:monospace;font-weight:600;color:var(--bleu)">'+totalTxt+'</span>')
-      + td('<span style="font-family:monospace;color:var(--texte2)">'+cumulTxt+'</span>')
+      + td('<span class="'+(finById[j.jourId]?'cumul-fin':'')+'" style="font-family:monospace;color:var(--texte2)">'+cumulTxt+'</span>')
       + td('<span style="font-size:12px;color:var(--texte2)">'+(j.commentaire||'—').replace(/</g,'&lt;')+'</span>')
       + '<td style="padding:6px 10px;border-bottom:1px solid #f0f4f8">'
       + '<div style="display:flex;align-items:center;gap:6px">'

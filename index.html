@@ -466,6 +466,10 @@
         margin-top: 2px;
     }
 
+    .cumul-fin {
+        font-weight: 700;
+    }
+
     .loader {
         display: flex;
         flex-direction: column;
@@ -1444,6 +1448,20 @@ tbody td.modif{font-size:9px;color:var(--txt2);white-space:nowrap;}
             : 'Période en cours';
         if (periode && periode.dateDebut && periode.dateFin)
             document.getElementById('hdr-periode').textContent = labelPeriode;
+        // Dernier jour (date la plus tardive) de chaque semaine affichée : regroupement par
+        // clé lundi, indépendant de l'ordre d'affichage (passes est trié du plus récent au
+        // plus ancien) — c'est cette ligne, et elle seule, qui porte le total hebdomadaire
+        // complet, même règle que le RIH imprimé.
+        const dernierJourSemaine = {};
+        for (const j of passes) {
+            const p0=(j.dateJour||'').split('/');
+            const d0 = p0.length===3 ? new Date(p0[2],p0[1]-1,p0[0]) : new Date(j.dateJour);
+            const dj0 = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate());
+            const dow0 = dj0.getDay() === 0 ? 6 : dj0.getDay() - 1;
+            const lundi0 = new Date(dj0); lundi0.setDate(dj0.getDate() - dow0);
+            const lk0 = keyLocal(lundi0), jk0 = keyLocal(dj0);
+            if (!dernierJourSemaine[lk0] || jk0 > dernierJourSemaine[lk0]) dernierJourSemaine[lk0] = jk0;
+        }
         let html = '<div class="block"><div class="block-label">Mes jours de la période</div>';
         for (const j of passes) {
             const _p=(j.dateJour||'').split('/');
@@ -1455,6 +1473,7 @@ tbody td.modif{font-size:9px;color:var(--txt2);white-space:nowrap;}
             lundiJ.setDate(djour.getDate() - dowJ);
             const lundiKey = keyLocal(lundiJ);
             const jourKey = keyLocal(djour);
+            const semFin = (jourKey === dernierJourSemaine[lundiKey]);
             let cumulHebdo = 0;
             for (const s of sorted) {
                 const k = parseDMY(s.dateJour);
@@ -1474,7 +1493,7 @@ tbody td.modif{font-size:9px;color:var(--txt2);white-space:nowrap;}
                 statutHtml = '<span style="font-size:13px;color:var(--texte2);font-weight:500;">' + typeIcon[t] + ' ' + typeLabel[t] + '</span>';
             else
                 statutHtml = '<span style="font-family:monospace;font-size:16px;font-weight:500;color:var(--texte2);">' + Number(j.totalHeures).toFixed(2) + 'h</span>';
-            const hebdoHtml = '<div style="font-size:11px;color:var(--texte3);margin-top:2px;">sem. ' + cumulHebdo.toFixed(2).replace('.', ',') + ' h</div>';
+            const hebdoHtml = '<div class="'+(semFin?'cumul-fin':'')+'" style="font-size:11px;color:var(--texte3);margin-top:2px;">sem. ' + cumulHebdo.toFixed(2).replace('.', ',') + ' h</div>';
             html += '<div class="jour-item" onclick="ouvrirJourPasse(\'' + j.jourId + '\', ' + modifiable + ')">';
             html += '<span class="jour-dot ' + (saisi ? (nonTravaillee ? 'dot-special' : 'dot-ok') : 'dot-vide') + '"></span>';
             html += '<div class="jour-info"><div class="jour-nom">' + JOURS[d.getDay()] + (isToday ? ' <span style="font-size:11px;background:#e8f2e8;color:var(--vert);border-radius:8px;padding:1px 6px;">Auj.</span>' : '') + (modifiable && !isToday ? ' <span style="font-size:11px;color:var(--texte3);">✏️</span>' : '') + '</div>';

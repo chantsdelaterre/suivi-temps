@@ -73,6 +73,7 @@ td { padding: 12px 14px; border-bottom: 1px solid #f0f4f8; vertical-align: middl
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: #fafcff; }
 #saisies-body tr:hover td { background: transparent; }
+#saisies-body .cumul-fin, #table-saisies-paie .cumul-fin { font-weight: 700; }
 .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 12px; font-weight: 500; }
 .badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; }
 .badge-actif { background: var(--vert-pale); color: var(--vert); }
@@ -3210,16 +3211,29 @@ function renderSaisies(jours, collabId) {
   const toDate = s => { const p=(s||'').split('/'); return p.length===3 ? new Date(p[2], p[1]-1, p[0]) : new Date(s); };
   // Cumul hebdo PROGRESSIF à la volée (lundi → jour inclus), par jourId.
   // Somme par plage de clés [lundiKey, jourKey] : indépendant de l'ordre de tri.
-  const meta = jours.map(j => { const d = toDate(j.dateJour); return { j, d, key: isNaN(d) ? null : keyLocal(d) }; });
-  const cumulById = {};
-  meta.forEach(({ j, d, key }) => {
-    if (!key || isNaN(d)) { cumulById[j.jourId] = null; return; }
+  const meta = jours.map(j => {
+    const d = toDate(j.dateJour);
+    if (isNaN(d)) return { j, d, key: null, lundiKey: null };
     const dow = d.getDay() === 0 ? 6 : d.getDay() - 1;
     const lundi = new Date(d); lundi.setDate(d.getDate() - dow);
-    const lundiKey = keyLocal(lundi);
+    return { j, d, key: keyLocal(d), lundiKey: keyLocal(lundi) };
+  });
+  const cumulById = {};
+  // Dernier jour (date la plus tardive) de chaque semaine affichée : regroupement par
+  // lundiKey, indépendant de l'ordre de tri des lignes (ici date_jour DESC). C'est cette
+  // ligne, et elle seule, qui porte le total hebdomadaire complet — même règle que le RIH.
+  const derniereCleParSemaine = {};
+  meta.forEach(({ key, lundiKey }) => {
+    if (!lundiKey) return;
+    if (!derniereCleParSemaine[lundiKey] || key > derniereCleParSemaine[lundiKey]) derniereCleParSemaine[lundiKey] = key;
+  });
+  const finById = {};
+  meta.forEach(({ j, key, lundiKey }) => {
+    if (!key || !lundiKey) { cumulById[j.jourId] = null; finById[j.jourId] = false; return; }
     let cumul = 0;
     meta.forEach(m => { if (m.key && m.key >= lundiKey && m.key <= key) cumul += Number(m.j.totalHeures) || 0; });
     cumulById[j.jourId] = cumul;
+    finById[j.jourId] = (key === derniereCleParSemaine[lundiKey]);
   });
   // Remap des types (vocabulaire Supabase) + badges cohérents admin
   const TYPE_INFO = {
@@ -3247,7 +3261,7 @@ function renderSaisies(jours, collabId) {
       + td(cren(j.c2Debut,j.c2Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
       + td(cren(j.c3Debut,j.c3Fin), 'font-family:monospace;font-size:12px;white-space:nowrap')
       + td('<span style="font-family:monospace;font-weight:600;color:var(--bleu)">'+totalTxt+'</span>')
-      + td('<span style="font-family:monospace;color:var(--texte2)">'+cumulTxt+'</span>')
+      + td('<span class="'+(finById[j.jourId]?'cumul-fin':'')+'" style="font-family:monospace;color:var(--texte2)">'+cumulTxt+'</span>')
       + td('<span style="font-size:12px;color:var(--texte2)">'+(j.commentaire||'—').replace(/</g,'&lt;')+'</span>')
       + (function(){
           const nbm = Number(j.nbModifications) || 0;
@@ -3513,13 +3527,20 @@ function buildTableSaisies(jours, filtre, collabId) {
         const JOURS_P = ['Dim.','Lun.','Mar.','Mer.','Jeu.','Ven.','Sam.'];
         const fmtDP = s => { const p=(s||'').split('/'); if(p.length!==3) return s; const d=new Date(p[2],p[1]-1,p[0]); return JOURS_P[d.getDay()]+' '+p[0]+'/'+p[1]; };
         const getISOMon = s => { const p=(s||'').split('/'); if(p.length!==3) return ''; const d=new Date(p[2],p[1]-1,p[0]); const dow=d.getDay()===0?6:d.getDay()-1; const l=new Date(d); l.setDate(d.getDate()-dow); return String(l.getFullYear())+'-'+String(l.getMonth()+1).padStart(2,'0')+'-'+String(l.getDate()).padStart(2,'0'); };
+        const cleJour = s => { const p=(s||'').split('/'); return p.length===3 ? p[2]+p[1]+p[0] : ''; };
         const cumSemP = {};
-        const sortedForCum = [...filtered].sort((a,b) => { const pa=(a.dateJour||'').split('/'),pb=(b.dateJour||'').split('/'); return (pa[2]+pa[1]+pa[0]).localeCompare(pb[2]+pb[1]+pb[0]); });
+        const sortedForCum = [...filtered].sort((a,b) => cleJour(a.dateJour).localeCompare(cleJour(b.dateJour)));
         sortedForCum.forEach(jj => { const l=getISOMon(jj.dateJour); if(!cumSemP[l]) cumSemP[l]=0; cumSemP[l]+=(Number(jj.totalHeures)||0); jj._semProg=cumSemP[l]; });
+        // Dernier jour (date la plus tardive) de chaque semaine affichée — regroupement par
+        // clé lundi, indépendant de l'ordre réel de `filtered` : même règle que le RIH, qui
+        // porte le total hebdomadaire complet sur cette seule ligne.
+        const dernCleParSemaineP = {};
+        sortedForCum.forEach(jj => { const l=getISOMon(jj.dateJour); const k=cleJour(jj.dateJour); if(!dernCleParSemaineP[l] || k > dernCleParSemaineP[l]) dernCleParSemaineP[l] = k; });
         return filtered.map((j, idx) => {
         const jourId = (j.jourId||'').replace(/'/g,'');
         const tot = j.totalHeures!=null&&j.totalHeures!==''?Number(j.totalHeures).toFixed(2)+'h':'—';
         const semTot = j._semProg!=null ? Number(j._semProg).toFixed(2).replace('.',',')+' h' : '—';
+        const semFin = cleJour(j.dateJour) === dernCleParSemaineP[getISOMon(j.dateJour)];
         const typeSelect = modeEdit
           ? '<select id="jp'+idx+'-type" onchange="majTotalPaie('+idx+')" style="font-size:12px;padding:3px 6px;border-radius:6px;border:1.5px solid #dce6f0">'
             + types.map(t => '<option value="'+t+'"'+(j.typeJour===t?' selected':'')+'>'+t+'</option>').join('')
@@ -3549,7 +3570,7 @@ function buildTableSaisies(jours, filtre, collabId) {
           + td(aprem,'white-space:nowrap')
           + td(cren3,'white-space:nowrap')
           + td(totalCell)
-          + td('<span style="font-size:11px;color:var(--texte3)">'+semTot+'</span>')
+          + td('<span class="'+(semFin?'cumul-fin':'')+'" style="font-size:11px;color:var(--texte3)">'+semTot+'</span>')
           + td(modeEdit
               ? '<input type="text" id="jp'+idx+'-comm" value="'+(j.commentaire||'').replace(/"/g,"&quot;")+'" placeholder="Commentaire…" style="width:140px;font-size:12px;padding:3px 6px">'
               : '<span style="font-size:12px;color:var(--texte2)">'+((j.commentaire||'').replace(/</g,'&lt;')||'—')+'</span>')
