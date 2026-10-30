@@ -1141,3 +1141,41 @@ Le quota de trois modifications n'est pas touché : seul
 
 ⚠️ `NOTE_saisie_au_fil_de_la_journee.md` est PÉRIMÉE — elle décrit la
 version serveur qui n'a pas été retenue.
+
+## Table `personne` — étape 1 (appliquée le 30/10/2026)
+
+> Créée pour l'appli **planning** (dépôt `chantsdelaterre/planning`, migration
+> `migrations/0004_personne.sql`, qui fait foi). Supersède la « dette assumée » de la
+> section « Une fiche = une personne + UN employeur » : le `personne_id` existe désormais.
+
+- **`public.personne`** = un être humain (`personne_id`, `prenom`, `nom`, `externe`,
+  `fiche_principale`). **`collaborateurs.personne_id`** (NOT NULL) = la fiche est un emploi
+  de cette personne. Une fiche reste « une personne + un employeur » : paie, contrats,
+  jours, matricule **inchangés**.
+- Les deux cas réels sont regroupés : Alice HAGER (COLL028 SARL + COLL035 SAS) et
+  Eric BOEHM (COLL032 SAS + COLL043 SARL).
+- **Déclencheurs sur `collaborateurs`** (ne pas supprimer) :
+  - `personne_pour_nouvelle_fiche` (BEFORE INSERT) : crée la personne si `personne_id` est
+    vide. C'est ce qui permet à `creer_collaborateur_avec_contrat` de continuer à marcher
+    sans changement. Le contrôle `fiche_principale` est **différé** à la fin de la
+    transaction (la personne naît avant la fiche).
+  - `personne_suit_nom_fiche` (AFTER UPDATE de prénom/nom) : répercute le nom sur la
+    personne **seulement** si elle n'a qu'une fiche.
+- **Créer une 2e fiche pour une personne existante** (nouvel employeur) : renseigner
+  `personne_id` à la création au lieu de laisser le déclencheur créer une nouvelle personne.
+  Aucun écran ne le propose encore → à faire en SQL, ou chantier admin à ouvrir.
+- Droits : `anon` et `authenticated` n'ont **rien** sur `personne` ; RLS activée ;
+  `service_role` lit et écrit ; le rôle `planning_proprietaire` ne fait que lire.
+- `collaborateurs_liste()` (`returns setof collaborateurs`) renvoie désormais aussi
+  `personne_id` : champ en plus, ignoré par l'admin.
+- **Étape 2, non faite** (chantier Suivi des temps à part) : un seul jeton par personne
+  et saisie unifiée pour les personnes à deux fiches. Méthode habituelle : Edge compatible,
+  front, quelques jours d'usage réel, puis bascule.
+
+### Ce que le planning lit dans cette base
+
+Schéma `planning` (rôle propriétaire `planning_proprietaire`, sans connexion). Il **lit**
+seulement : `structures` (code, nom légal), quelques colonnes de `collaborateurs` (jamais
+jeton, e-mail, téléphone, matricule, NSS), de `historique_contrats` (jamais le taux) et de
+`jours` — via des politiques RLS `planning_lecture`. Sauvegardes avant migration sensible :
+schéma `planning_sauvegardes` (non exposé).
