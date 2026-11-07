@@ -19,8 +19,9 @@ préparation de paie pour une exploitation agricole (~55 collaborateurs,
   `chantsdelaterre/suivi-temps`. Trois fichiers : `index.html` (collab),
   `admin-v2.html` (admin), `manager.html` (responsable).
 - Agent local : Claude Code (CC) dans `~/suivi-temps`.
-- Ancien système (Google Apps Script + Sheets, branche `main`) : prod de
-  secours pour rollback uniquement. **Ne pas utiliser.**
+- Ancien système (Google Apps Script + Sheets) : **n'est plus un filet de
+  secours.** La branche `main` qui le portait a été retirée le 07/11/2026 ;
+  l'historique dort sur `archive-gas-2026-05-25`. **Ne pas utiliser.**
 
 **Méthode (règle du 17/07)**
 - Conception dans le chat → accord → prompt à CC qui exécute localement →

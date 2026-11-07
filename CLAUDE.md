@@ -3,7 +3,13 @@
 Règles de travail pour ce projet.
 
 ## Git & branches
-- **Ne JAMAIS pousser (push) sur la branche `main`.** Travailler uniquement sur la branche `supabase`.
+- **Travailler uniquement sur la branche `supabase`.** C'est la branche par défaut
+  du dépôt et celle que GitHub Pages sert.
+- ⚠️ **`main` n'existe plus depuis le 07/11/2026** (retirée : elle portait l'ancienne
+  prod Apps Script, inutile depuis fin mai). L'ancienne règle « ne jamais pousser sur
+  `main` » n'a donc plus d'objet. L'historique est conservé sur la branche
+  **`archive-gas-2026-05-25`** — à ne jamais servir ni fusionner, elle n'est là que
+  pour mémoire.
 - Toujours tester en local avant de proposer un push.
 
 ## Stockage des données (Supabase)
@@ -1073,18 +1079,19 @@ Sauvegarde des décisions et mises en garde qui n'existaient QUE dans des sectio
 supprimées ce jour (144, 191, 228, 335, 397, 461, 522, 581, 656). Reformulées,
 origine citée.
 
-### Déploiement & ROLLBACK de la prod (origine : ancienne section 228)
-⚠️ **Filet de sécurité de la prod — à préserver intégralement.**
+### Déploiement de la prod (origine : ancienne section 228, révisé le 07/11/2026)
 - **GitHub Pages sert la branche `supabase`** (mode « Deploy from a branch »,
   dossier `/ (root)`). C'est l'appli que les collègues utilisent.
 - Site live : **https://chantsdelaterre.github.io/suivi-temps/**
-- **`main` n'est PAS servie** : c'est la **branche de ROLLBACK**. Elle porte la
-  prod GAS/Sheets **intacte**.
-- **Pour revenir en arrière (rollback)** : **Settings → Pages → Build and
-  deployment**, changer la branche servie de `supabase` à **`main`**, puis
-  **Save**. Retour immédiat à la prod GAS/Sheets, sans toucher au code.
-- **Règle** : **jamais de commit/push sur `main`** ; le changement de branche
-  servie par Pages **revient à Guillaume**.
+- ⚠️ **Le filet « retour à GAS/Sheets » est RETIRÉ.** La branche `main` qui portait
+  l'ancienne prod Apps Script a été supprimée le 07/11/2026 : elle n'avait plus
+  d'utilité après cinq mois et demi de Supabase en production, et son nom laissait
+  croire qu'elle était la branche principale — ce qui a réellement induit en erreur.
+  L'historique est conservé sur **`archive-gas-2026-05-25`**, pour mémoire
+  seulement : **ne pas la servir, ne pas la fusionner.**
+- **Le retour arrière, aujourd'hui, c'est le git de `supabase`** : revenir au commit
+  précédent, pas changer de branche. Et pour les données, **PITR** sur le projet
+  Supabase.
 
 ### Date d'effet d'un contrat, rétroactive (origine : ancienne section 581)
 - Date d'effet **présente ou future** : cas normal, autorisé.

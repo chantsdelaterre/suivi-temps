@@ -58,7 +58,8 @@
 - [x] **`admin.html` (ancien backoffice GAS) toujours servi par GitHub
   Pages** → double backoffice accessible. **Fait (8d2046a)** — supprimé de la
   branche `supabase`. Vérifié en ligne : `/suivi-temps/admin.html` renvoie 404.
-  Reste intact sur `main`, branche de rollback non servie.
+  Reste intact sur `archive-gas-2026-05-25` (anciennement `main`, branche de
+  rollback retirée le 07/11/2026 — voir CLAUDE.md § Git & branches).
 
 ### 1.3 Nettoyage
 
