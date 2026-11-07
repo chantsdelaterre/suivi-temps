@@ -214,7 +214,7 @@ qui parle à une API stable ne pourrit pas vite.
 - **UX activation programmée** : poser une `date_activation` future
   devrait basculer en `en_attente` (sinon reste `inactif` et ne
   s'active jamais — piège récurrent).
-- **Jours fériés** (demande Pauline) : architecture décidée, document
+- **Jours fériés** (demande de la gestionnaire de paie) : architecture décidée, document
   d'amorçage v3 produit. Sortent du calcul automatique ; l'admin décide
   ligne par ligne ce qui est payé et à quel taux.
 - **Onglet Paramètres** : admins, textes, jours spéciaux, mapping

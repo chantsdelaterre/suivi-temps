@@ -48,7 +48,7 @@
   sur 5 jours). Les anciens s'éteindront au fil des fins de contrat.
 
 - [~] **Token admin en clair dans l'URL, sans expiration.** **Rotation faite
-  le 15/08** pour les trois administrateurs (Guillaume, Elsa, Pauline) via
+  le 15/08** pour les trois administrateurs via
   `update admins set token = encode(gen_random_bytes(10),'hex')` — invalide ce
   qui traînait dans les captures et historiques.
   ⚠️ N'apporte **NI expiration NI traçabilité** — le vrai correctif reste le
@@ -134,7 +134,7 @@ Tous → **Fait (45bac86)** sauf mention contraire :
 ## 2 · CHANTIERS OUVERTS
 
 - [ ] **Jours fériés & journées de solidarité** — conçu, amorçage v2 prêt.
-  **Bloqué** : capture du formulaire MSA + 3 réponses de Pauline
+  **Bloqué** : capture du formulaire MSA + 3 réponses de la gestionnaire de paie
   (majoration sur fériés travaillés, articulation des 15 %, seuil
   d'ancienneté).
   *Décision actée : la règle ne doit JAMAIS être codée en dur — une note de
@@ -186,7 +186,7 @@ Tous → **Fait (45bac86)** sauf mention contraire :
   `return_message` ne journalise que « 1 row », pas le contenu. Trente nuits
   consécutives « réussies » ne prouvent rien.
   Contenu à prévoir, au-delà du rapport technique :
-  · **fins de contrat à J-5** (« Havva KUCUK, fin de contrat le 18/08 »)
+  · **fins de contrat à J-5** (« COLL0xx, fin de contrat le 18/08 »)
   · **contrats échus, collaborateur encore actif** — le cas Jonas, qui aurait
     crié six semaines au lieu de générer 40 jours morts
   · **clôtures anticipées en attente** — la RPC `candidats_cloture_anticipee()`

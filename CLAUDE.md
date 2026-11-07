@@ -79,6 +79,12 @@ La saisie d'un jour par un collaborateur est possible **si et seulement si les 4
 **Workflow Edge :** CC code + commit les fonctions ; Guillaume déploie au Terminal (`supabase functions deploy <nom>` → Supabase, PAS GitHub). `verify_jwt = false` figé par fonction dans `supabase/config.toml`. Preuve de branchement = onglet Network (fonction en 200).
 
 ## Méthode de travail
+- ⚠️ **Ce dépôt est PUBLIC. Jamais de nom de salarié dans la documentation.**
+  On désigne une personne par son code `COLLxxx`, ou par son rôle (« la
+  gestionnaire de paie »), ou par rien (« trois collaborateurs »). Les noms
+  présents jusqu'au 07/11/2026 ont été remplacés ce jour-là. Les fichiers de
+  paie et les exports sont déjà couverts par le `.gitignore` — **ne jamais l'y
+  retirer**. Le sens d'une note ne tient jamais au nom : il tient au cas.
 - **Éditions chirurgicales uniquement** : ne jamais réécrire un fichier entier.
 - **Une seule modification à la fois** : on discute, on valide, ensuite on code.
 - **`BACKLOG.md` est remplacé par `FEUILLE_DE_ROUTE.md` depuis le 12/08/2026** —
@@ -237,7 +243,7 @@ une copie par client). Détail complet : NOTE_Mes_Heures_Pro_commercialisation.m
 - ~~Poser une `date_activation` sur un collab `inactif` ne l'activait PAS ; seul le
   cron `activer_collabs_en_attente` basculait les collabs `en_attente` → `actif`.
   Un `inactif` avec `date_activation` restait inactif (pas de génération de jours).
-  Cas réel : Sati GUNDUZ (COLL019), jour du 01/07 rattrapé à la main.~~
+  Cas réel : COLL019, jour du 01/07 rattrapé à la main.~~
 - ~~Il fallait le statut `en_attente` pour que le cron active au jour dit, OU
   activer à la main (`actif=true, statut=actif`).~~
 - ~~UI associée : select `f-statut` dans la modale, filtre « En attente », boutons
@@ -259,10 +265,9 @@ une copie par client). Détail complet : NOTE_Mes_Heures_Pro_commercialisation.m
 **Reste à faire :**
 - Un **bouton admin « générer le jour manquant »** pour le **rattrapage RÉTROACTIF**.
   Les automatisations ci-dessus couvrent la création du jour **courant**, PAS les jours
-  passés d'un contrat **saisi en retard**. Cas réel : les jours du 14/09 de David PROT,
-  Séverine HERMELINE et Dominique DANIEAU (contrats saisis en cours de journée) ont dû
-  être insérés **à la main en SQL**. Le cas se reproduira à chaque contrat saisi avec
-  retard.
+  passés d'un contrat **saisi en retard**. Cas réel : les jours du 14/09 de **trois
+  collaborateurs** (contrats saisis en cours de journée) ont dû être insérés **à la
+  main en SQL**. Le cas se reproduira à chaque contrat saisi avec retard.
 
 ## Fonctionnalités livrées (07/07/2026)
 
@@ -308,7 +313,7 @@ une copie par client). Détail complet : NOTE_Mes_Heures_Pro_commercialisation.m
 ### Une fiche = une personne + UN employeur
 
 Un collaborateur qui travaille dans 2 structures a 2 fiches (cas réels :
-Eric BOEHM = SAS + 6 Saveurs, Alice HAGER = TESA SAS + CDI SARL). Ce
+COLL032/COLL043 = SAS + 6 Saveurs, COLL028/COLL035 = TESA SAS + CDI SARL). Ce
 n'est PAS un bricolage : en paie française, 1 contrat dans 1 structure
 = 1 matricule Silae, 1 DPAE, 1 bulletin. Le modèle épouse le réel.
 
@@ -1159,8 +1164,8 @@ version serveur qui n'a pas été retenue.
   `fiche_principale`). **`collaborateurs.personne_id`** (NOT NULL) = la fiche est un emploi
   de cette personne. Une fiche reste « une personne + un employeur » : paie, contrats,
   jours, matricule **inchangés**.
-- Les deux cas réels sont regroupés : Alice HAGER (COLL028 SARL + COLL035 SAS) et
-  Eric BOEHM (COLL032 SAS + COLL043 SARL).
+- Les deux cas réels sont regroupés : COLL028 (SARL) avec COLL035 (SAS), et
+  COLL032 (SAS) avec COLL043 (SARL).
 - **Déclencheurs sur `collaborateurs`** (ne pas supprimer) :
   - `personne_pour_nouvelle_fiche` (BEFORE INSERT) : crée la personne si `personne_id` est
     vide. C'est ce qui permet à `creer_collaborateur_avec_contrat` de continuer à marcher

@@ -214,7 +214,7 @@ question du taux se règle avant la saisie, pas dans l'appli.
 
 ---
 
-## 6. Questions ouvertes — pour Pauline / le gestionnaire de paie
+## 6. Questions ouvertes — pour le gestionnaire de paie
 
 1. **Quels champs le formulaire MSA attend-il pour un jour férié ?** (Voir §5 —
    la capture d'écran répond en partie.)
@@ -253,7 +253,7 @@ question du taux se règle avant la saisie, pas dans l'appli.
   saurait plus lequel fait foi.
 - **Onglet Aide** : doublonne avec `CLAUDE.md` et `PROCEDURES_md`. Lit-elle un
   fichier du dépôt, ou assume-t-on deux textes distincts (l'un pour Guillaume et
-  Claude, l'autre pour Pauline et Elsa) ?
+  Claude, l'autre pour les gestionnaires de paie) ?
 - **Piste pour plus tard** : la condition de présence le dernier jour travaillé
   avant et le premier après est **le seul élément dérivable** de toute la règle —
   l'appli a toutes les saisies. Hors périmètre (définir « dernier jour
