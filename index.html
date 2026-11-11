@@ -696,6 +696,7 @@
         <div class="header-company" id="hdr-company">Chants de la Terre</div>
         <div class="header-name" id="hdr-name">…</div>
         <a id="btn-mon-equipe" href="#" onclick="this.textContent='⏳ Chargement...';this.style.opacity='.6';setTimeout(()=>location.href=this.dataset.href,300);return false;" style="display:none;margin-top:10px;align-items:center;gap:6px;background:rgba(255,255,255,.15);border-radius:20px;padding:5px 12px;font-size:13px;color:white;text-decoration:none;">👥 Mon équipe</a>
+        <a id="btn-emploi-du-temps" href="#" onclick="this.textContent='⏳ Chargement...';this.style.opacity='.6';setTimeout(()=>location.href=this.dataset.href,300);return false;" style="display:none;margin-top:10px;align-items:center;gap:6px;background:rgba(255,255,255,.15);border-radius:20px;padding:5px 12px;font-size:13px;color:white;text-decoration:none;">📅 Mon emploi du temps</a>
         <div class="header-date" id="hdr-date">…</div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;"><div class="header-badge" id="hdr-periode">…</div><button onclick="toggleThemePicker()" style="background:rgba(255,255,255,.15);border:none;border-radius:50%;width:26px;height:26px;font-size:13px;cursor:pointer;color:white;display:flex;align-items:center;justify-content:center;flex-shrink:0;" aria-label="Changer de thème">🎨</button></div>
         <div id="theme-picker" style="display:none;position:absolute;bottom:12px;right:12px;background:white;border-radius:12px;padding:8px 12px;box-shadow:0 4px 20px rgba(0,0,0,.2);align-items:center;gap:10px;z-index:100;">
@@ -887,6 +888,12 @@
             document.getElementById('hdr-name').textContent = collab.nom_affiche || (collab.prenom + ' ' + collab.nom);
             const SOC = { SCEA: 'Chants de la Terre', SAS: 'Chants de la Terre', SARL: 'Les 6 Saveurs' };
             document.getElementById('hdr-company').textContent = SOC[collab.structure] || 'Chants de la Terre';
+            // Emploi du temps (appli planning) : bouton visible dès qu'une séance est prévue pour la
+            // personne ou qu'elle est responsable d'un atelier (indicateur calculé par collab_session).
+            if (collab.emploi_du_temps) {
+              const btnEdt = document.getElementById('btn-emploi-du-temps');
+              if (btnEdt) { btnEdt.style.display = 'flex'; btnEdt.dataset.href = '../planning/?id=' + encodeURIComponent(COLLAB_ID); }
+            }
             // Récupérer le jour du jour
             const today = new Date();
             const todayISO = today.toISOString().slice(0, 10);
