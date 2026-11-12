@@ -2207,11 +2207,17 @@ async function chargerContratActuel(collabId) {
       coul = finDans10 ? 'var(--orange)' : 'var(--vert)';
       libelle = df ? ('Du ' + fmtDate(dd) + ' — se termine le ' + fmtDate(df)) : ('Depuis le ' + fmtDate(dd));
     }
+    if (r.rupture_anticipee) libelle += ' · rupture anticipée';
     // Fin de contrat : famille LONGUE (≠ TESA) en cours. Sans date de fin → "Fin de contrat" (cloturer) ;
     // avec date de fin → "Modifier la date de fin" (modifier-contrat). TESA : sa date de fin se saisit au crayon.
     const estLong = r.type_contrat !== 'TESA';
     const finBtn = (estPresent && estLong)
       ? '<button type="button" class="btn btn-danger btn-sm" onclick="afficherChampFinContrat('+r.id+')" style="flex:0 0 auto;background:#fff;border:1px solid #f1cfc8">' + (r.date_fin ? 'Modifier la date de fin' : 'Fin de contrat') + '</button>'
+      : '';
+    // Rupture anticipée (rétablie le 12/11/2026, perdue le 23/08 avec la modale de l'onglet Contrats) :
+    // contrat EN COURS, AVEC date de fin, pas déjà marqué. Raccourcit date_fin + pose le drapeau.
+    const ruptureBtn = (estPresent && df && !r.rupture_anticipee)
+      ? '<button type="button" class="btn btn-danger btn-sm" onclick="afficherChampRupture('+r.id+')" style="flex:0 0 auto;background:#fff;border:1px solid #f1cfc8">Rupture anticipée</button>'
       : '';
     // Crayon d'édition UNIQUEMENT sur les lignes NON terminées (en cours + à venir)
     const editBtn = estTermine ? ''
@@ -2234,6 +2240,7 @@ async function chargerContratActuel(collabId) {
          + suppBtn
          + renouvelerBtn
          + finBtn
+         + ruptureBtn
          + '</div>';
   }).join('');
   // "+ Nouvel événement" centré en bas (placeholder — geste réel à l'étape suivante).
@@ -2257,6 +2264,56 @@ function afficherChampFinContrat(id) {
     + '<button type="button" class="btn btn-danger btn-sm" onclick="confirmerFinContrat()">' + libelleBtn + '</button>'
     + '<button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById(\'contrat-fin-zone\').innerHTML=\'\'">Annuler</button>'
     + '</div>';
+}
+
+// Rupture anticipée (décision du 21-22/08/2026, voir CLAUDE.md « La rupture anticipée ») :
+// on RACCOURCIT date_fin et on pose rupture_anticipee = true. Pas de nouvelle ligne.
+// La date initialement prévue est perdue (assumé : le drapeau porte l'information).
+// Les jours au-delà ne sont PAS supprimés (pas de purge : saisies réelles, orphelins paie_detail).
+let _ruptureRow = null;
+function afficherChampRupture(id) {
+  const r = (window._contratsRows || []).find(x => String(x.id) === String(id));
+  if (!r) { alert('Ligne de contrat introuvable — rechargez la fiche.'); return; }
+  _ruptureRow = r;
+  const dd = String(r.date_debut).slice(0, 10), df = String(r.date_fin).slice(0, 10);
+  const veille = (() => { const p = df.split('-').map(Number); const d = new Date(p[0], p[1] - 1, p[2] - 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();
+  document.getElementById('contrat-fin-zone').innerHTML =
+    '<div style="display:flex;flex-direction:column;gap:6px">'
+    + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+    + '<label style="font-size:13px;color:var(--texte2)" for="contrat-date-rupture">Arrêt réel le :</label>'
+    + '<input type="date" id="contrat-date-rupture" min="' + dd + '" max="' + veille + '" style="font-size:13px;padding:5px 8px;border-radius:8px;border:1.5px solid #dce6f0">'
+    + '<button type="button" class="btn btn-danger btn-sm" onclick="confirmerRupture()">Confirmer la rupture</button>'
+    + '<button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById(\'contrat-fin-zone\').innerHTML=\'\'">Annuler</button>'
+    + '</div>'
+    + '<div style="font-size:12px;color:var(--orange)">Fin prévue le ' + fmtDate(df) + '. Cette date ne sera pas conservée : le contrat portera la mention « rupture anticipée ».</div>'
+    + '</div>';
+}
+async function confirmerRupture() {
+  const r = _ruptureRow;
+  const msg = document.getElementById('contrat-msg');
+  const showMsg = (txt, ok) => { if (msg) { msg.textContent = txt; msg.style.color = ok ? 'var(--vert)' : 'var(--rouge)'; msg.style.display = 'block'; } };
+  if (!r) { showMsg('Ligne introuvable — rechargez la fiche.', false); return; }
+  const dateFin = (document.getElementById('contrat-date-rupture') || {}).value || '';
+  const dd = String(r.date_debut).slice(0, 10), df = String(r.date_fin).slice(0, 10);
+  if (!dateFin) { showMsg('Date d\'arrêt requise.', false); return; }
+  if (dateFin < dd) { showMsg('La date d\'arrêt ne peut pas précéder le début du contrat.', false); return; }
+  if (dateFin >= df) { showMsg('La date d\'arrêt doit être avant la fin prévue (' + fmtDate(df) + ').', false); return; }
+  // Toutes les colonnes renvoyées À L'IDENTIQUE (la RPC écrase ce qu'on lui donne) ; seules date_fin et le drapeau changent.
+  const { data, error } = await sb.functions.invoke('modifier-contrat', {
+    body: { admin_token: ADMIN_TOKEN, id: r.id, date_debut: r.date_debut, date_fin: dateFin,
+            structure: r.structure, type_contrat: r.type_contrat, type_periode: r.type_periode,
+            heures_hebdo: r.heures_hebdo, matricule_silae: r.matricule_silae ?? null, taux_horaire: r.taux_horaire ?? null,
+            rupture_anticipee: true }
+  });
+  if (error) {
+    let detail = 'erreur';
+    try { const b = await error.context.json(); if (b?.error) detail = b.error; } catch (_) {}
+    showMsg('Échec : ' + detail, false); return;
+  }
+  if (!data || data.ok !== true) { showMsg('Échec : ' + ((data && data.error) || 'inconnu'), false); return; }
+  _contratsDirty = true; await chargerContratActuel(collabEnEdition.collabId);   // vide la zone message : on l'affiche APRÈS
+  showMsg('✓ Rupture anticipée enregistrée au ' + fmtDate(dateFin) + '.', true);
 }
 
 // Clôture la ligne de contrat ouverte (RPC transactionnelle), puis rafraîchit l'affichage.

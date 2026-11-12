@@ -730,6 +730,14 @@ orphelins dans `paie_detail` (append-only).
 > À rouvrir quand l'annualisation arrivera : l'écart entre prévu et
 > réalisé est précisément ce qu'un compteur veut mesurer.
 
+⚠️ **Le geste a été perdu du 23/08 au 12/11/2026.** Codé le 22/08 dans la
+modale d'action de l'onglet Contrats, il a disparu avec elle le 23/08 (écriture
+déplacée dans la fiche) sans être recréé. Aucun contrat n'a donc jamais porté le
+drapeau en prod. **Rétabli le 12/11/2026 dans la fiche** : bouton « Rupture
+anticipée » sur un contrat en cours avec date de fin et pas déjà marqué ; date
+d'arrêt entre le début et la veille de la fin prévue ; envoi par `modifier-contrat`
+avec toutes les colonnes à l'identique + `rupture_anticipee: true`.
+
 ### Les états et les seuils
 
 `contrats_liste(p_historique)` calcule l'état en SQL. Vue par défaut =
