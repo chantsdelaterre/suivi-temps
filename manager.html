@@ -270,7 +270,17 @@ async function charger30j() {
   });
 
   // Rendu — identique à l'existant (non touché)
-  const sorted = [...equipeCollabs].sort((a, b) => a.nomAffiche.localeCompare(b.nomAffiche));
+  // Liste au format « NOM Prénom », triée sur le NOM (même règle que admin-v2.html : nomListe).
+  const nomListe = s => {
+    const mots = String(s == null ? '' : s).trim().split(/\s+/).filter(Boolean);
+    if (mots.length < 2) return mots.join(' ');
+    let i = mots.length;
+    while (i > 1 && /\p{L}/u.test(mots[i - 1]) && mots[i - 1] === mots[i - 1].toUpperCase()) i--;
+    if (i === mots.length) i = 1;
+    return mots.slice(i).join(' ') + ' ' + mots.slice(0, i).join(' ');
+  };
+  const sorted = [...equipeCollabs].map(c => ({ ...c, nomAffiche: nomListe(c.nomAffiche) }))
+    .sort((a, b) => a.nomAffiche.localeCompare(b.nomAffiche, 'fr', { sensitivity: 'base' }));
   document.getElementById('recap-tbody').innerHTML = sorted.length === 0
     ? '<tr><td colspan="5" style="text-align:center;color:var(--texte3);padding:32px">Aucun collaborateur dans cette équipe.</td></tr>'
     : sorted.map(c => '<tr><td><strong>'+c.nomAffiche+'</strong></td><td><button class="btn btn-warning btn-sm" onclick="ouvrirSaisies(&quot;'+c.collabId+'&quot;, this)">Voir</button></td><td style="text-align:right">'+(c.heuresHebdo?c.heuresHebdo+'h':'—')+'</td><td style="font-size:13px;color:var(--texte2)">'+(c.derniereSaisie||'—')+'</td><td style="text-align:right"><span style="font-family:monospace;font-weight:500">'+Number(c.totalHeures).toFixed(2)+'h</span></td></tr>').join('');
