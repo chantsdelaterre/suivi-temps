@@ -98,14 +98,26 @@ La saisie d'un jour par un collaborateur est possible **si et seulement si les 4
   ne faut pas changer, méthode).
 
 ### Mode d'emploi admin (depuis le 12/11/2026)
-- Le guide des administrateurs est un **Claude Doc** (privé, partagé avec le bureau) :
-  « Suivi des temps — Mode d'emploi admin ». Il décrit l'écran **tel que le code le fait**,
+- Le guide des administrateurs vit **dans le dépôt** : `aide/guide-admin.md` (texte) et
+  `aide/img/` (captures). Il s'affiche dans l'onglet **❓ Aide** d'`admin-v2.html`
+  (rendu par `marked`, version figée). Il décrit l'écran **tel que le code le fait**,
   vérifié dans `admin-v2.html` et en base, pas tel que ce fichier le prévoit.
+  ~~Claude Doc « Suivi des temps — Mode d'emploi admin »~~ : version du 12/11, remplacée.
 - **Toute pull request qui change un comportement ou un libellé visible de `admin-v2.html`
   met aussi à jour le guide** : la fiche concernée et, si l'écran a changé, sa capture.
   Sinon le guide est faux en deux mois.
 - Les captures utilisent **uniquement des données fictives** (client Supabase simulé dans
   un navigateur de test), jamais l'écran de prod : pas de nom, matricule ni taux réel.
+- Le guide est dans un dépôt PUBLIC : pas de nom de personne, on écrit « le référent de
+  l'appli », « la gestionnaire de paie ».
+- **Notes des admins** : bouton « 💬 Annoter » sous chaque titre → table
+  `aide_annotations`, via l'Edge `aide-annotations` (actions `liste`, `ajouter`,
+  `traiter`, `retirer` ; auteur = nom renvoyé par `verifier_admin`). Une note est
+  rattachée au **texte du titre** : renommer un titre la rend « orpheline » (affichée en
+  haut de l'onglet). Deux natures : **correction** (à reprendre dans le guide, puis
+  marquer traitée) et **pratique** (usage du bureau, reste affichée). Avant de reprendre
+  le guide, lire les corrections ouvertes :
+  `select section, texte, auteur from aide_annotations where nature='correction' and not traitee and not retiree;`
 
 ### Accès direct de Claude à Supabase (depuis le 12/11/2026)
 - ⚠️ **Le projet Supabase est partagé** avec d'autres applis (schémas `cantine`,
