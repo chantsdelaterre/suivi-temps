@@ -282,20 +282,22 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
             <button class="filter-btn" onclick="setFilter('contrat','CDD',this)">CDD</button>
           </div>
           <span class="filter-count" id="filter-count"></span>
+          <button class="btn btn-secondary btn-sm" id="btn-ecrire-coches" onclick="ecrireAuxCoches()" disabled title="Ouvre un mail avec les adresses cochées en copie cachée (Cci)">✉️ Écrire</button>
+          <button class="btn btn-secondary btn-sm" id="btn-copier-adresses" onclick="copierAdressesCoches()" disabled title="Copie les adresses cochées, à coller dans le champ Cci">Copier les adresses</button>
           <button class="btn btn-secondary btn-sm" onclick="exporterCollabsPdf()">Exporter en PDF</button>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
+                <th style="width:28px;text-align:center"><input type="checkbox" id="coche-tous-collabs" onchange="cocherTousCollabs(this.checked)" title="Tout cocher (lignes affichées)"></th>
                 <th class="sortable sort-asc" onclick="trierCollabs('nom',this)">Nom</th>
                 <th class="sortable" onclick="trierCollabs('structure',this)" style="white-space:nowrap;text-align:center">Struct.</th>
                 <th style="text-align:center">Contrat / Période</th>
                 <th style="text-align:center">H/sem</th>
                 <th class="sortable" onclick="trierCollabs('statut',this)" style="text-align:center">Statut</th>
                 <th style="text-align:center">Équipe</th>
-                <th style="text-align:center">Matricule Silae</th>
-                <th>Lien</th>
+                <th>Email</th>
                 <th style="text-align:center">Téléphone</th>
                 <th>Actions</th>
               </tr>
@@ -576,7 +578,11 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
       <div style="background:#f7fafd;border:1px solid #e8f0f8;border-radius:10px;padding:14px;margin-bottom:14px">
         <!-- En-tête cliquable (mode édition) : nom + chevron, déplie/replie le formulaire d'identité -->
         <div id="identite-entete" style="display:none;cursor:pointer;align-items:center;gap:8px;justify-content:space-between" onclick="toggleIdentite()">
-          <span id="identite-entete-nom" style="font-weight:600;font-size:15px;color:var(--texte)">—</span>
+          <span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span id="identite-entete-nom" style="font-weight:600;font-size:15px;color:var(--texte)">—</span>
+            <span id="identite-entete-matricule" style="font-size:13px;color:var(--texte2)"></span>
+            <button type="button" class="token-link" id="btn-lien-page-collab" style="font-family:inherit" onclick="event.stopPropagation(); copierLienPageCollab()" title="Copier le lien d'accès à la page de saisie de ce collaborateur">📋 Lien page collab.</button>
+          </span>
           <span id="identite-chevron" style="font-size:13px;color:var(--texte3)">▸</span>
         </div>
         <div id="identite-corps">
@@ -1111,7 +1117,84 @@ function filtrerCollabs() {
   const count = document.getElementById('filter-count');
   if (count) count.textContent = result.length + ' / ' + collabsData.length + ' collaborateur' + (collabsData.length > 1 ? 's' : '');
   _collabsFiltres = result;   // export PDF : exactement la liste affichée
+  _collabsCoches.clear();     // changer un filtre décoche tout : on n'écrit jamais à quelqu'un qu'on ne voit pas
   renderCollabsFiltered(result);
+  majSelectionMail();
+}
+
+// ── Envoi de mail groupé (onglet Collaborateurs) ──────────────────────────────
+// mailto: + Cci, ouvert dans la messagerie du poste. Pas d'envoi serveur (Resend écarté
+// le 12/11/2026 : trop lourd pour un besoin ponctuel).
+// ⚠️ Séparateur « ; » : seul reconnu par Outlook classique sur Windows (la virgule de la
+// norme ne l'est pas toujours). À re-tester sur les postes du bureau si on le change.
+// ⚠️ Outlook tronque SANS MESSAGE un lien mailto trop long (~2000 caractères) : au-delà
+// de MAILTO_MAX, on n'ouvre rien et on copie les adresses à la place.
+const MAILTO_A   = 'rh@chantsdelaterre.fr';   // destinataire visible : réponses au bureau, copie dans rh@
+const MAILTO_MAX = 1800;
+const _collabsCoches = new Set();             // collabIds cochés, parmi les lignes affichées
+
+const _escMail = s => _escRegle(s).replace(/"/g, '&quot;');
+
+function cocherCollab(collabId, coche) {
+  if (coche) _collabsCoches.add(collabId); else _collabsCoches.delete(collabId);
+  majSelectionMail();
+}
+
+function cocherTousCollabs(coche) {
+  _collabsCoches.clear();
+  if (coche) (_collabsFiltres || []).forEach(c => _collabsCoches.add(c.collabId));
+  document.querySelectorAll('#collabs-tbody input.coche-collab').forEach(cb => { cb.checked = coche; });
+  majSelectionMail();
+}
+
+// Adresses des collabs cochés + nombre de cochés sans adresse.
+function _adressesCochees() {
+  const coches = (collabsData || []).filter(c => _collabsCoches.has(c.collabId));
+  const adresses = coches.map(c => (c.email || '').trim()).filter(Boolean);
+  return { adresses: [...new Set(adresses)], sansAdresse: coches.length - coches.filter(c => (c.email || '').trim()).length };
+}
+
+function majSelectionMail() {
+  const n = _collabsCoches.size;
+  const bEcrire = document.getElementById('btn-ecrire-coches');
+  const bCopier = document.getElementById('btn-copier-adresses');
+  if (bEcrire) { bEcrire.disabled = n === 0; bEcrire.textContent = n ? '✉️ Écrire (' + n + ')' : '✉️ Écrire'; }
+  if (bCopier) bCopier.disabled = n === 0;
+  const tous = document.getElementById('coche-tous-collabs');
+  if (tous) {
+    const total = (_collabsFiltres || []).length;
+    tous.checked = total > 0 && n === total;
+    tous.indeterminate = n > 0 && n < total;
+  }
+}
+
+function _toastMail(texte, ms) {
+  const t = document.getElementById('toast');
+  t.textContent = texte;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), ms || 3000);
+}
+
+function _suffixeSansAdresse(n) {
+  return n ? ' — ' + n + ' sans adresse mail, ignoré' + (n > 1 ? 's' : '') : '';
+}
+
+function copierAdressesCoches(raison) {
+  const { adresses, sansAdresse } = _adressesCochees();
+  if (!adresses.length) { _toastMail('⚠ Aucune adresse mail parmi les collaborateurs cochés'); return; }
+  navigator.clipboard.writeText(adresses.join('; ')).then(() => {
+    _toastMail((raison ? raison + ' ' : '') + '✓ ' + adresses.length + ' adresse' + (adresses.length > 1 ? 's' : '')
+      + ' copiée' + (adresses.length > 1 ? 's' : '') + ', à coller dans Cci' + _suffixeSansAdresse(sansAdresse), raison ? 6000 : 3500);
+  });
+}
+
+function ecrireAuxCoches() {
+  const { adresses, sansAdresse } = _adressesCochees();
+  if (!adresses.length) { _toastMail('⚠ Aucune adresse mail parmi les collaborateurs cochés'); return; }
+  const url = 'mailto:' + MAILTO_A + '?bcc=' + adresses.map(a => encodeURIComponent(a).replace(/%40/g, '@')).join(';');
+  if (url.length > MAILTO_MAX) { copierAdressesCoches('Trop d’adresses pour ouvrir le mail directement.'); return; }
+  window.location.href = url;
+  if (sansAdresse) _toastMail('✉️ Mail ouvert' + _suffixeSansAdresse(sansAdresse), 5000);
 }
 
 function renderCollabs(collabs) {
@@ -1140,14 +1223,14 @@ function renderCollabsFiltered(collabs) {
     const badgeLabel = c.statut === 'actif' ? 'Actif' : c.statut === 'inactif' ? 'Inactif' : 'En attente';
     const collabJson = encodeURIComponent(JSON.stringify(c));
     return `<tr>
+      <td style="text-align:center"><input type="checkbox" class="coche-collab" ${_collabsCoches.has(c.collabId) ? 'checked' : ''} onchange="cocherCollab('${c.collabId}', this.checked)"></td>
       <td><strong>${c.nomAffiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim()}</strong></td>
       <td style="text-align:center">${c.structure||'—'}</td>
       <td style="text-align:center">${c.typeContrat||'—'}${c.typePeriode ? ' · <span style="font-size:13px;color:var(--texte2)">' + (c.typePeriode==='decalee'?'déc.':'civ.') + '</span>' : ''}</td>
       <td style="text-align:center">${c.heuresHebdo ? c.heuresHebdo+'h' : '—'}</td>
       <td style="white-space:nowrap;text-align:center"><span class="badge ${badgeClass}">${badgeLabel}</span></td>
       <td style="font-size:13px;color:var(--texte2);text-align:center">${nomEquipe(c.equipeId)}</td>
-      <td style="font-size:13px;color:var(--texte2);text-align:center">${c.matriculeSilae||'—'}</td>
-      <td>${c.lien ? `<button class="token-link" onclick="copierLien('${c.lien}')" title="${c.lien}">📋 ${c.token}</button>` : '—'}</td>
+      <td style="font-size:13px">${c.email ? `<a href="mailto:${_escMail(c.email)}" title="Écrire à ${_escMail(c.email)}" style="color:var(--bleu-clair);text-decoration:none">${_escMail(c.email)}</a>` : '<span style="color:var(--texte3)">—</span>'}</td>
       <td style="font-size:13px;color:var(--texte2);text-align:center">${c.telephone||'—'}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" onclick="ouvrirModalCollabData('${collabJson}')">✏️</button>
@@ -1964,9 +2047,16 @@ async function sauverTacheManuelle() {
 function copierLien(lien) {
   navigator.clipboard.writeText(lien).then(() => {
     const t = document.getElementById('toast');
+    t.textContent = '✓ Lien copié !';
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 2000);
   });
+}
+
+// Bouton « Lien page collab. » de la fiche : lien résolu AU CLIC depuis la fiche ouverte
+// (jamais écrit dans le DOM).
+function copierLienPageCollab() {
+  if (collabEnEdition && collabEnEdition.lien) copierLien(collabEnEdition.lien);
 }
 
 // Bloc identité repliable de la fiche. Replié en édition (en-tête = nom cliquable), déplié en création.
@@ -2047,6 +2137,8 @@ function ouvrirModalCollabData(encoded) {
   document.getElementById('form-titre-identite').style.display = 'block';
   document.getElementById('zone-contrat').style.display = 'block';
   document.getElementById('identite-entete-nom').textContent = ((c.prenom || '') + ' ' + (c.nom || '')).trim() || (c.nomAffiche || '—');
+  document.getElementById('identite-entete-matricule').textContent = c.matriculeSilae ? 'Mat. ' + c.matriculeSilae : 'Mat. —';
+  document.getElementById('btn-lien-page-collab').style.display = c.lien ? '' : 'none';
   document.getElementById('identite-entete').style.display = 'flex';   // en-tête cliquable
   setIdentitePliee(true);                                              // bloc identité REPLIÉ par défaut
   chargerContratActuel(c.collabId);
