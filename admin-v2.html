@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 <style>
 :root {
   --bleu:       #1e3a5f;
@@ -161,6 +162,42 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
 .loader { display: flex; align-items: center; justify-content: center; padding: 48px; gap: 12px; color: var(--texte3); }
 .spinner { width: 24px; height: 24px; border: 2px solid #dce6f0; border-top-color: var(--bleu); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* Onglet Aide */
+.aide-wrap { display: grid; grid-template-columns: 240px 1fr; gap: 20px; align-items: start; }
+.aide-toc { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; font-size: 13px; padding: 16px; }
+.aide-toc a { display: block; color: var(--texte2); text-decoration: none; padding: 3px 0; line-height: 1.35; }
+.aide-toc a:hover { color: var(--bleu); }
+.aide-toc a.n3 { padding-left: 12px; font-size: 12px; }
+.aide-toc .nb { color: var(--orange); font-weight: 600; }
+.aide-barre { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #e6ecf3; font-size: 13px; color: var(--texte2); }
+.aide-doc { padding: 8px 28px 28px; line-height: 1.6; font-size: 14px; color: var(--texte); max-width: 900px; }
+.aide-doc h1 { font-size: 24px; margin: 16px 0 8px; }
+.aide-doc h2 { font-size: 20px; margin: 32px 0 6px; padding-top: 8px; border-top: 1px solid #e6ecf3; color: var(--bleu); }
+.aide-doc h3 { font-size: 16px; margin: 22px 0 4px; }
+.aide-doc table { border-collapse: collapse; margin: 10px 0; width: 100%; font-size: 13px; }
+.aide-doc th, .aide-doc td { border: 1px solid #dce6f0; padding: 6px 10px; text-align: left; vertical-align: top; }
+.aide-doc th { background: var(--bleu-pale); }
+.aide-doc img { max-width: 100%; border: 1px solid #dce6f0; border-radius: 8px; margin: 8px 0; }
+.aide-doc ul, .aide-doc ol { padding-left: 22px; }
+.aide-doc p { margin: 8px 0; }
+.aide-doc li { margin: 2px 0; }
+.aide-barre label, .aide-form label { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 400; color: var(--texte2); display: inline; }
+.aide-notes { margin: 2px 0 10px; }
+.aide-btn-annoter { background: none; border: none; color: var(--texte3); font-size: 12px; cursor: pointer; padding: 2px 0; font-family: inherit; }
+.aide-btn-annoter:hover { color: var(--bleu); }
+.aide-note { border-left: 3px solid var(--bleu-clair); background: var(--bleu-pale); border-radius: 0 8px 8px 0; padding: 8px 12px; margin: 6px 0; font-size: 13px; }
+.aide-note.correction { border-left-color: var(--orange); background: var(--orange-pale); }
+.aide-note.traitee { opacity: .6; }
+.aide-note .meta { font-size: 11px; color: var(--texte2); margin-bottom: 3px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.aide-note .badge { font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.aide-note .txt { white-space: pre-wrap; }
+.aide-note .act { margin-left: auto; display: flex; gap: 6px; }
+.aide-note .act button { background: none; border: 1px solid #c5d3e3; border-radius: 6px; font-size: 11px; padding: 1px 7px; cursor: pointer; font-family: inherit; color: var(--texte2); }
+.aide-form { background: var(--fond); border-radius: 8px; padding: 10px 12px; margin: 6px 0; font-size: 13px; }
+.aide-form textarea { width: 100%; min-height: 70px; margin: 6px 0; font-family: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid #c5d3e3; border-radius: 6px; box-sizing: border-box; }
+.aide-orphelines { margin: 12px 28px 0; padding: 10px 14px; border: 1px dashed var(--orange); border-radius: 8px; font-size: 13px; }
+@media (max-width: 900px) { .aide-wrap { grid-template-columns: 1fr; } .aide-toc { position: static; max-height: none; } }
+@media print { .aide-btn-annoter, .aide-form, .aide-barre, .aide-toc { display: none !important; } }
 .vue { display: none; }
 .vue.active { display: block; }
 .error-banner { background: #fdecea; border: 1px solid #f5c6c2; border-radius: 10px; padding: 14px 18px; color: var(--rouge); font-size: 14px; margin-bottom: 20px; }
@@ -213,6 +250,7 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
     <div class="tab" onclick="showTab('recap', this)">📊 Récap</div>
     <div class="tab" onclick="showTab('paie', this)">💶 Paie</div>
     <div class="tab" onclick="showTab('parametres', this)">⚙️ Paramètres</div>
+    <div class="tab" onclick="showTab('aide', this)">❓ Aide</div>
   </div>
   <div class="main">
     <!-- TAB TÂCHES (écran par défaut) -->
@@ -566,6 +604,20 @@ th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--bleu); }
       </div>
       <!-- Sections à venir (jours fériés, textes, admins) : ajouter une .card ici, rien d'autre à toucher. -->
     </div><!-- /vue-parametres -->
+    <!-- TAB AIDE : guide = aide/guide-admin.md ; notes = Edge aide-annotations -->
+    <div class="vue" id="vue-aide">
+      <div class="aide-wrap">
+        <nav class="card aide-toc" id="aide-toc"></nav>
+        <div class="card">
+          <div class="aide-barre">
+            <span id="aide-compteur"></span>
+            <label style="margin-left:auto;cursor:pointer"><input type="checkbox" id="aide-voir-traitees" onchange="aideToggleTraitees(this.checked)"> Afficher les notes traitées</label>
+          </div>
+          <div id="aide-orphelines"></div>
+          <div class="aide-doc" id="aide-doc"><div class="loader"><div class="spinner"></div>Chargement…</div></div>
+        </div>
+      </div>
+    </div><!-- /vue-aide -->
   </div>
 </div>
 <div class="modal-overlay" id="modal-collab">
@@ -1009,6 +1061,155 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.modal, .modal-lg').forEach(rendreModalDeplacable);
 });
 
+
+// ════════════════════════════════════════════════════════════════════
+// ONGLET AIDE — guide admin (aide/guide-admin.md) + notes des admins.
+// Une note est rattachée au TEXTE d'un titre (h1/h2/h3). Si le titre
+// change, la note devient « orpheline » et s'affiche en haut.
+// ════════════════════════════════════════════════════════════════════
+const AIDE = { md: null, notes: [], voirTraitees: false, sections: [] };
+const _escAide = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+async function chargerAide() {
+  const doc = document.getElementById('aide-doc');
+  if (AIDE.md == null) {
+    try {
+      const r = await fetch('aide/guide-admin.md', { cache: 'no-cache' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      AIDE.md = await r.text();
+    } catch (e) {
+      doc.innerHTML = '<div class="error-banner">Impossible de charger le guide (' + _escAide(e.message) + ').</div>';
+      return;
+    }
+    if (typeof marked === 'undefined') {
+      doc.innerHTML = '<div class="error-banner">Bibliothèque d\'affichage indisponible (réseau ?). Rechargez la page.</div>';
+      return;
+    }
+    _aideRendreGuide();
+  }
+  await _aideChargerNotes();
+}
+
+function _aideRendreGuide() {
+  const doc = document.getElementById('aide-doc');
+  doc.innerHTML = marked.parse(AIDE.md);
+  AIDE.sections = [];
+  let n = 0;
+  doc.querySelectorAll('h1, h2, h3').forEach(h => {
+    const titre = h.textContent.trim();
+    h.id = 'aide-s' + (n++);
+    AIDE.sections.push({ titre, id: h.id, niveau: h.tagName });
+    const zone = document.createElement('div');
+    zone.className = 'aide-notes';
+    zone.dataset.section = titre;
+    h.insertAdjacentElement('afterend', zone);
+  });
+  doc.querySelectorAll('img').forEach(i => i.loading = 'lazy');
+}
+
+async function _aideChargerNotes() {
+  const { data, error } = await sb.functions.invoke('aide-annotations', { body: { admin_token: ADMIN_TOKEN, action: 'liste' } });
+  if (error || !data || !data.ok) {
+    document.getElementById('aide-compteur').textContent = '⚠️ Notes indisponibles' + (data && data.error ? ' : ' + data.error : '');
+    AIDE.notes = [];
+  } else {
+    AIDE.notes = data.annotations || [];
+  }
+  _aideRendreNotes();
+}
+
+function aideToggleTraitees(v) { AIDE.voirTraitees = v; _aideRendreNotes(); }
+
+function _aideVisible(a) { return AIDE.voirTraitees || !a.traitee; }
+
+function _aideNoteHtml(a) {
+  const d = a.cree_le ? new Date(a.cree_le).toLocaleDateString('fr-FR') : '';
+  const lbl = a.nature === 'correction' ? 'Correction' : 'Pratique';
+  let act = '';
+  if (a.nature === 'correction' && !a.traitee) act += '<button onclick="aideTraiter(' + a.id + ')">✓ Traitée</button>';
+  act += '<button onclick="aideRetirer(' + a.id + ')">Retirer</button>';
+  const tr = a.traitee ? ' · traitée' + (a.traitee_par ? ' par ' + _escAide(a.traitee_par) : '')
+    + (a.traitee_le ? ' le ' + new Date(a.traitee_le).toLocaleDateString('fr-FR') : '') : '';
+  return '<div class="aide-note ' + (a.nature === 'correction' ? 'correction' : 'pratique') + (a.traitee ? ' traitee' : '') + '">'
+    + '<div class="meta"><span class="badge">' + lbl + '</span><span>' + _escAide(a.auteur) + ' · ' + d + tr + '</span>'
+    + '<span class="act">' + act + '</span></div>'
+    + '<div class="txt">' + _escAide(a.texte) + '</div></div>';
+}
+
+function _aideRendreNotes() {
+  const titres = new Set(AIDE.sections.map(s => s.titre));
+  const parSection = {};
+  AIDE.notes.forEach(a => { (parSection[a.section] = parSection[a.section] || []).push(a); });
+
+  document.querySelectorAll('#aide-doc .aide-notes').forEach(z => {
+    const sec = z.dataset.section;
+    const liste = (parSection[sec] || []).filter(_aideVisible);
+    z.innerHTML = liste.map(_aideNoteHtml).join('')
+      + '<button class="aide-btn-annoter" data-section="' + _escAide(sec) + '" onclick="aideOuvrirForm(this)">💬 Annoter</button>';
+  });
+
+  const orph = AIDE.notes.filter(a => !titres.has(a.section) && _aideVisible(a));
+  document.getElementById('aide-orphelines').innerHTML = orph.length
+    ? '<div class="aide-orphelines"><b>Notes dont le titre a changé</b> (rattachées à une section qui n\'existe plus) :'
+      + orph.map(a => '<div style="margin-top:6px"><i>' + _escAide(a.section) + '</i>' + _aideNoteHtml(a) + '</div>').join('') + '</div>'
+    : '';
+
+  const ouvertes = AIDE.notes.filter(a => a.nature === 'correction' && !a.traitee).length;
+  const pratiques = AIDE.notes.filter(a => a.nature === 'pratique').length;
+  const traitees = AIDE.notes.filter(a => a.traitee).length;
+  document.getElementById('aide-compteur').innerHTML =
+    (ouvertes ? '<b style="color:var(--orange)">' + ouvertes + ' correction' + (ouvertes > 1 ? 's' : '') + ' à reprendre</b>' : 'Aucune correction en attente')
+    + ' · ' + pratiques + ' note' + (pratiques > 1 ? 's' : '') + ' de pratique'
+    + (traitees && !AIDE.voirTraitees ? ' · ' + traitees + ' traitée' + (traitees > 1 ? 's' : '') + ' masquée' + (traitees > 1 ? 's' : '') : '');
+
+  document.getElementById('aide-toc').innerHTML = '<div style="font-weight:600;margin-bottom:6px">Sommaire</div>'
+    + AIDE.sections.filter(s => s.niveau !== 'H1').map(s => {
+        const nb = (parSection[s.titre] || []).filter(a => _aideVisible(a)).length;
+        return '<a href="#" class="' + (s.niveau === 'H3' ? 'n3' : '') + '" onclick="document.getElementById(\'' + s.id + '\').scrollIntoView({behavior:\'smooth\'});return false;">'
+          + _escAide(s.titre) + (nb ? ' <span class="nb">💬' + nb + '</span>' : '') + '</a>';
+      }).join('');
+}
+
+function aideOuvrirForm(btn) {
+  const zone = btn.parentElement;
+  if (zone.querySelector('.aide-form')) return;
+  btn.style.display = 'none';
+  const f = document.createElement('div');
+  f.className = 'aide-form';
+  f.innerHTML = '<label style="margin-right:14px"><input type="radio" name="aide-nat" value="correction" checked> Correction <span style="color:var(--texte3)">(le guide est faux ou incomplet)</span></label>'
+    + '<label><input type="radio" name="aide-nat" value="pratique"> Pratique <span style="color:var(--texte3)">(astuce, usage du bureau)</span></label>'
+    + '<textarea maxlength="2000" placeholder="Votre note…"></textarea>'
+    + '<div style="display:flex;gap:8px;align-items:center"><button class="btn btn-primary btn-sm">Enregistrer</button>'
+    + '<button class="btn btn-secondary btn-sm">Annuler</button><span class="aide-form-msg" style="color:var(--rouge)"></span></div>';
+  zone.insertBefore(f, btn);
+  const [bOk, bAnn] = f.querySelectorAll('button');
+  bAnn.onclick = () => { f.remove(); btn.style.display = ''; };
+  bOk.onclick = () => aideEnregistrer(f, btn.dataset.section);
+  f.querySelector('textarea').focus();
+}
+
+async function aideEnregistrer(f, section) {
+  const texte = f.querySelector('textarea').value.trim();
+  const nature = f.querySelector('input[name="aide-nat"]:checked').value;
+  const msg = f.querySelector('.aide-form-msg');
+  if (!texte) { msg.textContent = 'La note est vide.'; return; }
+  const bOk = f.querySelector('button'); bOk.disabled = true;
+  const { data, error } = await sb.functions.invoke('aide-annotations', { body: { admin_token: ADMIN_TOKEN, action: 'ajouter', section, nature, texte } });
+  if (error || !data || !data.ok) { bOk.disabled = false; msg.textContent = 'Échec : ' + ((data && data.error) || (error && error.message) || 'erreur inconnue'); return; }
+  AIDE.notes.push(data.annotation);
+  _aideRendreNotes();
+}
+
+async function _aideMaj(action, id) {
+  const { data, error } = await sb.functions.invoke('aide-annotations', { body: { admin_token: ADMIN_TOKEN, action, id } });
+  if (error || !data || !data.ok) { alert('Échec : ' + ((data && data.error) || (error && error.message) || 'erreur inconnue')); return; }
+  if (action === 'retirer') AIDE.notes = AIDE.notes.filter(a => a.id !== id);
+  else AIDE.notes = AIDE.notes.map(a => a.id === id ? data.annotation : a);
+  _aideRendreNotes();
+}
+function aideTraiter(id) { _aideMaj('traiter', id); }
+function aideRetirer(id) { if (confirm('Retirer cette note ? Elle ne sera plus affichée.')) _aideMaj('retirer', id); }
+
 function showTab(nom, el) {
   document.querySelectorAll('.vue').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -1021,6 +1222,7 @@ function showTab(nom, el) {
   if (nom === 'contrats') chargerContrats();
   if (nom === 'parametres') chargerRegles();
   if (nom === 'taches') chargerTaches();
+  if (nom === 'aide') chargerAide();
 }
 
 async function chargerEquipes() {
