@@ -119,6 +119,16 @@ La saisie d'un jour par un collaborateur est possible **si et seulement si les 4
   le guide, lire les corrections ouvertes :
   `select section, texte, auteur from aide_annotations where nature='correction' and not traitee and not retiree;`
 
+### Noms dans les listes (depuis le 12/11/2026)
+- Toutes les **listes** de collaborateurs (admin et `manager.html`) affichent
+  **« NOM Prénom »** et sont **triées sur le NOM** : helpers `nomListe`, `nomCollab`,
+  `cmpNom` (noms bruts) et `cmpListe` (noms déjà au format liste) dans `admin-v2.html`.
+- ⚠️ **En base, `nom_affiche` / `nom_complet` restent « Prénom NOM »** : ils sont recopiés
+  dans `recap_paie` et lus par les relevés, l'espace collaborateur et le planning. On ne
+  convertit **qu'à l'affichage**, jamais dans une donnée qui repart vers la base.
+- Restent en « Prénom NOM » : l'en-tête de la fiche, le relevé d'heures (document signé),
+  les messages d'invitation.
+
 ### Accès direct de Claude à Supabase (depuis le 12/11/2026)
 - ⚠️ **Le projet Supabase est partagé** avec d'autres applis (schémas `cantine`,
   `carnet`, `planning`, `production`). Suivi des temps = le schéma `public` et les

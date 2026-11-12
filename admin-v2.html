@@ -1067,6 +1067,28 @@ document.addEventListener('DOMContentLoaded', () => {
 // Une note est rattachée au TEXTE d'un titre (h1/h2/h3). Si le titre
 // change, la note devient « orpheline » et s'affiche en haut.
 // ════════════════════════════════════════════════════════════════════
+// ── Noms dans les LISTES : « NOM Prénom », triés sur le NOM ──────────────────
+// nom_affiche / nom_complet valent « Prénom NOM » en base (NOM toujours en
+// majuscules) et RESTENT ainsi (relevés, recap_paie, saisie). On ne change que
+// l'affichage et le tri des listes. NOM = les mots finaux tout en majuscules ;
+// le premier mot reste toujours le prénom.
+function nomListe(s) {
+  const mots = String(s == null ? '' : s).trim().split(/\s+/).filter(Boolean);
+  if (mots.length < 2) return mots.join(' ');
+  let i = mots.length;
+  while (i > 1 && /\p{L}/u.test(mots[i - 1]) && mots[i - 1] === mots[i - 1].toUpperCase()) i--;
+  if (i === mots.length) i = 1;   // aucun NOM en majuscules : 1er mot = prénom
+  return mots.slice(i).join(' ') + ' ' + mots.slice(0, i).join(' ');
+}
+function nomCollab(c) {
+  return nomListe((c && (c.nomAffiche || ((c.prenom || '') + ' ' + (c.nom || '')).trim())) || '');
+}
+// cmpListe : compare deux noms DÉJÀ au format liste ; cmpNom : deux noms bruts (« Prénom NOM »).
+function cmpListe(a, b) {
+  return String(a || '').localeCompare(String(b || ''), 'fr', { sensitivity: 'base' });
+}
+function cmpNom(a, b) { return cmpListe(nomListe(a), nomListe(b)); }
+
 const AIDE = { md: null, notes: [], voirTraitees: false, sections: [] };
 const _escAide = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -1309,7 +1331,7 @@ function trierCollabs(col, th) {
 function filtrerCollabs() {
   const recherche = (document.getElementById('search-collab')?.value || '').toLowerCase();
   let result = collabsData.filter(c => {
-    const nom = ((c.prenom||'') + ' ' + (c.nom||'') + ' ' + (c.nomAffiche||'')).toLowerCase();
+    const nom = ((c.prenom||'') + ' ' + (c.nom||'') + ' ' + (c.nomAffiche||'') + ' ' + nomCollab(c)).toLowerCase();
     if (recherche && !nom.includes(recherche)) return false;
     if (filtreStatut && c.statut !== filtreStatut) return false;
     if (filtreStructure && c.structure !== filtreStructure) return false;
@@ -1317,6 +1339,10 @@ function filtrerCollabs() {
     return true;
   });
   result.sort((a, b) => {
+    if (triColonne === 'nom' || triColonne === 'nomAffiche') {
+      const r = cmpListe(nomCollab(a), nomCollab(b));
+      return triDesc ? -r : r;
+    }
     const va = (a[triColonne]||'').toLowerCase();
     const vb = (b[triColonne]||'').toLowerCase();
     return triDesc ? vb.localeCompare(va) : va.localeCompare(vb);
@@ -1411,9 +1437,9 @@ function renderCollabs(collabs) {
   const dl = document.getElementById('collab-noms');
   if (dl) {
     const noms = (collabsData || [])
-      .map(c => c.nomAffiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim())
+      .map(nomCollab)
       .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b));
+      .sort(cmpListe);
     dl.innerHTML = noms.map(n => '<option value="' + String(n).replace(/"/g, '&quot;') + '"></option>').join('');
   }
   filtrerCollabs();
@@ -1431,7 +1457,7 @@ function renderCollabsFiltered(collabs) {
     const collabJson = encodeURIComponent(JSON.stringify(c));
     return `<tr>
       <td style="text-align:center"><input type="checkbox" class="coche-collab" ${_collabsCoches.has(c.collabId) ? 'checked' : ''} onchange="cocherCollab('${c.collabId}', this.checked)"></td>
-      <td><strong>${c.nomAffiche || ((c.prenom||'') + ' ' + (c.nom||'')).trim()}</strong></td>
+      <td><strong>${nomCollab(c)}</strong></td>
       <td style="text-align:center">${c.structure||'—'}</td>
       <td style="text-align:center">${c.typeContrat||'—'}${c.typePeriode ? ' · <span style="font-size:13px;color:var(--texte2)">' + (c.typePeriode==='decalee'?'déc.':'civ.') + '</span>' : ''}</td>
       <td style="text-align:center">${c.heuresHebdo ? c.heuresHebdo+'h' : '—'}</td>
@@ -1578,11 +1604,12 @@ function voirCollabsEquipe(btn) {
   const nomEquipe = btn.dataset.equipeNom;
   document.getElementById('equipe-detail').style.display = 'block';
   document.getElementById('equipe-detail-titre').textContent = 'Équipe ' + nomEquipe;
-  const collabs = (window._equipes_collabs || []).filter(c => c.equipeId === equipeId);
+  const collabs = (window._equipes_collabs || []).filter(c => c.equipeId === equipeId)
+    .sort((a, b) => cmpNom(a.nomAffiche, b.nomAffiche));
   document.getElementById('equipe-collabs-tbody').innerHTML = collabs.length === 0
     ? '<tr><td colspan="4" style="text-align:center;color:var(--texte3);padding:24px">Aucun collab dans cette équipe.</td></tr>'
     : collabs.map(c => '<tr>' +
-        '<td><strong>' + c.nomAffiche + '</strong></td>' +
+        '<td><strong>' + nomListe(c.nomAffiche) + '</strong></td>' +
         '<td>' + (c.typeContrat||'—') + '</td>' +
         '<td>' + (c.heuresHebdo ? c.heuresHebdo + 'h' : '—') + '</td>' +
         '<td><span class="badge ' + (c.statut==='actif'?'badge-actif':c.statut==='inactif'?'badge-inactif':'badge-attente') + '">' + (c.statut==='actif'?'Actif':c.statut==='inactif'?'Inactif':'En attente') + '</span></td>' +
@@ -1973,9 +2000,9 @@ function _majCollabSelect() {
   const map = new Map();
   for (const t of _tachesData) {
     const id = t.collab_id != null ? String(t.collab_id) : '';
-    if (id && !map.has(id)) map.set(id, t.nom_complet || id);
+    if (id && !map.has(id)) map.set(id, nomListe(t.nom_complet) || id);
   }
-  const items = [...map.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  const items = [...map.entries()].sort((a, b) => cmpListe(a[1], b[1]));
   const escAttr = s => _escRegle(s).replace(/"/g, '&quot;');
   sel.innerHTML = '<option value="">Tous</option>' + items.map(([id, nom]) => '<option value="' + escAttr(id) + '">' + _escRegle(nom) + '</option>').join('');
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
@@ -1995,7 +2022,7 @@ function filtrerTaches() {
 
 // Comparateur intra-groupe selon le tri choisi (échéance : nulls en dernier).
 function _comparateurTri(tri) {
-  const nom = t => String(t.nom_complet || '');
+  const nom = t => nomListe(t.nom_complet);
   const dk = t => t.date_echeance ? String(t.date_echeance) : '9999-99-99';
   if (tri === 'collab') return (a, b) => nom(a).localeCompare(nom(b)) || dk(a).localeCompare(dk(b));
   if (tri === 'tache')  return (a, b) => String(a.objet || '').localeCompare(String(b.objet || '')) || nom(a).localeCompare(nom(b));
@@ -2094,7 +2121,7 @@ function _ligneTache(t) {
   // Titre : collab -> nom ; sinon période -> nom_periode ; sinon (tâche manuelle générale) -> libellé générique.
   const sansCollab = (t.collab_id == null);
   let titre;
-  if (!sansCollab) titre = t.nom_complet || '—';
+  if (!sansCollab) titre = nomListe(t.nom_complet) || '—';
   else if (t.periode_id != null) titre = t.nom_periode || 'Période';
   else titre = 'Tâche manuelle';
   const structType = [esc(t.structure || ''), (t.type_contrat ? esc(labelType(t.type_contrat)) : '')].filter(Boolean).join(' · ');
@@ -2207,10 +2234,10 @@ async function annulerTache(btn) {
 function ouvrirModalTache() {
   const esc = _escRegle, escAttr = s => esc(s).replace(/"/g, '&quot;');
   // Collaborateurs (liste déjà chargée au login) + option "aucun / tâche générale".
-  const collabs = (collabsData || []).slice().sort((a, b) => String(a.nomAffiche || '').localeCompare(String(b.nomAffiche || '')));
+  const collabs = (collabsData || []).slice().sort((a, b) => cmpListe(nomCollab(a), nomCollab(b)));
   document.getElementById('tache-collab').innerHTML =
     '<option value="">Aucun / tâche générale</option>' +
-    collabs.map(c => '<option value="' + escAttr(c.collabId) + '">' + esc(c.nomAffiche || ((c.prenom || '') + ' ' + (c.nom || '')).trim()) + '</option>').join('');
+    collabs.map(c => '<option value="' + escAttr(c.collabId) + '">' + esc(nomCollab(c)) + '</option>').join('');
   document.getElementById('tache-tiers').innerHTML =
     '<option value="">— Choisir —</option>' + REGLE_TIERS.map(o => '<option value="' + o.v + '">' + o.label + '</option>').join('');
   document.getElementById('tache-collab').value = '';
@@ -3207,7 +3234,7 @@ async function calculerPaieDepuisPaieDetail(periodeId) {
       note_admin:         rec.note_admin || null,
       date_fin_validation: rec.date_fin_validation || null
     };
-  }).sort((a, b) => (a.nomAffiche||'').localeCompare(b.nomAffiche||''));
+  }).sort((a, b) => cmpNom(a.nomAffiche, b.nomAffiche));
 }
 
 // MOTEUR DE PAIE — PHASE 3, ÉTAPE A : IMPORT/FIGEMENT dans paie_detail (PREMIÈRE ÉCRITURE).
@@ -3432,7 +3459,7 @@ function imprimerEvp() {
     const abs = plages.map(l => esc(l.type_jour) + ' ' + _jjmm(l.date_debut).slice(0, 5)
       + (l.date_fin && l.date_fin !== l.date_debut ? '–' + _jjmm(l.date_fin).slice(0, 5) : '')
       + (l.nb_jours != null ? ' (' + l.nb_jours + 'j)' : '')).join(', ');
-    return '<tr><td><b>' + esc(p.nom_complet || '—') + '</b>' + (id ? '<div class="id">' + id + '</div>' : '') + '</td>'
+    return '<tr><td><b>' + esc(nomListe(p.nom_complet) || '—') + '</b>' + (id ? '<div class="id">' + id + '</div>' : '') + '</td>'
       + '<td class="n">' + jt + '</td><td class="n">' + _evpFmtHeures(h) + '</td><td>' + (abs || '—') + '</td></tr>';
   }).join('');
   const note = _evpNoteVides(vides);
@@ -3481,6 +3508,7 @@ function _evpGroupes() {
     if (!groupes[l.collab_id]) { groupes[l.collab_id] = []; ordre.push(l.collab_id); }
     groupes[l.collab_id].push(l);
   }
+  ordre.sort((a, b) => cmpNom(groupes[a][0].nom_complet, groupes[b][0].nom_complet));
   const ORDRE_TYPE = { AT: 0, CP: 1, CS: 2 };
   const res = []; let vides = 0;
   for (const cid of ordre) {
@@ -3513,7 +3541,7 @@ function renderSyntheseEvp() {
     if (p.numero_securite_sociale) idParts.push('N° sécu ' + esc(_formatNSS(p.numero_securite_sociale)));
     const idTxt = idParts.length ? ' <span style="color:var(--texte3);font-weight:400;font-size:12px">(' + idParts.join(' · ') + ')</span>' : '';
     let bloc = '<div style="border:1px solid #e8f0f8;border-radius:10px;padding:10px 14px;margin-bottom:10px;background:#fff">';
-    bloc += '<div style="font-weight:600">' + esc(p.nom_complet || '—') + idTxt + '</div>';
+    bloc += '<div style="font-weight:600">' + esc(nomListe(p.nom_complet) || '—') + idTxt + '</div>';
     for (const l of plages) {
       const nb = (l.nb_jours != null) ? ' (' + l.nb_jours + 'j)' : '';
       bloc += '<div style="font-size:13px;color:var(--texte2);margin-top:3px">' + esc(l.type_jour) + ' du ' + _jjmm(l.date_debut) + ' au ' + _jjmm(l.date_fin) + nb + '</div>';
@@ -3540,13 +3568,13 @@ function renderPaieFiltered() {
   const filtered = filtrePaieStructure ? recap.filter(r => r.structure === filtrePaieStructure) : recap;
   const count = document.getElementById('paie-filter-count');
   if (count) count.textContent = filtered.length + ' / ' + recap.length + ' collaborateur' + (recap.length > 1 ? 's' : '');
-  const sorted = [...filtered].sort((a,b) => (a.nomAffiche||'').localeCompare(b.nomAffiche||''));
+  const sorted = [...filtered].sort((a,b) => cmpNom(a.nomAffiche, b.nomAffiche));
   document.getElementById('paie-tbody').innerHTML = sorted.length === 0
     ? '<tr><td colspan="12" style="text-align:center;color:var(--texte3);padding:32px">Aucun collaborateur</td></tr>'
     : sorted.map(r => {
       const collabEnc = encodeURIComponent(r.collabId);
       return `<tr>
-        <td><strong>${r.nomAffiche||'—'}</strong></td>
+        <td><strong>${nomListe(r.nomAffiche)||'—'}</strong></td>
         <td style="text-align:center">${r.structure||'—'}</td>
         <td style="text-align:center">${r.type_contrat||'—'}</td>
         <td style="text-align:center">${r.heures_hebdo?r.heures_hebdo+'h':'—'}</td>
@@ -4133,10 +4161,10 @@ async function chargerCandidatsCloture() {
 function renderBlocCandidatsCloture(cands) {
   _candidatsCloture = cands || [];   // gardés en mémoire : le bouton retrouve l'entrée par (collab, période)
   if (!cands || !cands.length) return '';
-  const lignes = cands.map(c =>
+  const lignes = cands.slice().sort((a, b) => cmpNom(a.nom_affiche, b.nom_affiche)).map(c =>
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 14px;border:1.5px solid #e8f0f8;border-radius:10px;margin-bottom:8px;background:#fff">'
     + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-      + '<strong>' + c.nom_affiche + '</strong>'
+      + '<strong>' + nomListe(c.nom_affiche) + '</strong>'
       + '<span style="color:var(--texte2)">· ' + c.structure + '</span>'
       + '<span style="color:var(--texte2)">· fin de contrat le ' + fmtDate(c.date_fin_contrat) + '</span>'
       + '<span style="color:var(--texte2)">· ' + c.nom_periode + '</span>'
@@ -4400,11 +4428,11 @@ async function chargerArchivesCloturees() {
     };
   }).sort((a, b) =>
     (b.dateDebut || '').localeCompare(a.dateDebut || '') ||
-    (a.nomAffiche || '').localeCompare(b.nomAffiche || '')
+    cmpNom(a.nomAffiche, b.nomAffiche)
   );
   // Options de filtres (collabs & périodes présents dans les archives)
-  const collabsOpts = [...new Map(archivesRecap.map(r => [r.collabId, r.nomAffiche])).entries()]
-    .sort((a, b) => a[1].localeCompare(b[1]));
+  const collabsOpts = [...new Map(archivesRecap.map(r => [r.collabId, nomListe(r.nomAffiche)])).entries()]
+    .sort((a, b) => cmpListe(a[1], b[1]));
   const periodesOpts = [...new Map(archivesRecap.map(r => [r.periodeId, r.nomPeriode])).entries()];
   const selStyle = 'font-size:13px;padding:6px 10px;border-radius:8px;border:1.5px solid #dce6f0';
   entete.innerHTML =
@@ -4452,7 +4480,7 @@ function renderArchivesFiltered() {
       return '<tr>'
         + '<td style="text-align:center"><input type="checkbox" class="arch-check" data-collab="'+r.collabId+'" data-periode="'+r.periodeId+'" onchange="majSelectionArchives()"></td>'
         + '<td>'+r.nomPeriode + (r.date_fin_validation ? '<div style="font-size:11px;color:var(--texte2)">Clôture partielle anticipée au ' + fmtDate(r.date_fin_validation) + '</div>' : '') + '</td>'
-        + '<td><strong>'+r.nomAffiche+'</strong></td>'
+        + '<td><strong>'+nomListe(r.nomAffiche)+'</strong></td>'
         + '<td style="text-align:center">'+r.structure+'</td>'
         + '<td style="text-align:center"><span style="font-family:monospace;font-weight:600">'+r.heures_travaillees.toFixed(2)+'h</span></td>'
         + '<td style="text-align:center">'+fmtHJ(r.heures_at, r.nb_at)+'</td>'
@@ -4537,7 +4565,7 @@ async function imprimerRihSelection() {
     };
   }).sort((a, b) =>
     (a.structure || '').localeCompare(b.structure || '') ||
-    (a.nomAffiche || '').localeCompare(b.nomAffiche || ''));
+    cmpNom(a.nomAffiche, b.nomAffiche));
 
   // 6-7) Assemblage : une page par relevé, dans une seule enveloppe, puis écriture dans la fenêtre déjà ouverte.
   const pages = ordre.map(x => construirePageReleve(x.nomAffiche, x.structure, x.periode, x.det)).join('');
@@ -4716,7 +4744,7 @@ function exporterCollabsPdf() {
   const dateJour = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
   const n = liste.length;
   const rows = liste.map(c => {
-    const nom = c.nomAffiche || ((c.prenom || '') + ' ' + (c.nom || '')).trim() || '—';
+    const nom = nomCollab(c) || '—';
     return '<tr>'
       + '<td class="nom">' + esc(nom) + '</td>'
       + '<td>' + esc(c.structure || '—') + '</td>'
@@ -4843,7 +4871,7 @@ function trierRecap(col, th) {
 function filtrerRecap() {
   const recherche = (document.getElementById('search-recap')?.value || '').toLowerCase();
   let result = recapData.filter(c => {
-    const nom = ((c.prenom||'') + ' ' + (c.nom||'') + ' ' + (c.nomAffiche||'')).toLowerCase();
+    const nom = ((c.prenom||'') + ' ' + (c.nom||'') + ' ' + (c.nomAffiche||'') + ' ' + nomCollab(c)).toLowerCase();
     if (recherche && !nom.includes(recherche)) return false;
     if (filtreRecapStructure && c.structure !== filtreRecapStructure) return false;
     if (filtreRecapContrat && c.typeContrat !== filtreRecapContrat) return false;
@@ -4858,6 +4886,10 @@ function filtrerRecap() {
       if (!va) return 1;
       if (!vb) return -1;
       return triDescRecap ? vb.localeCompare(va) : va.localeCompare(vb);
+    }
+    if (col === 'nomAffiche') {
+      const r = cmpListe(nomCollab(a), nomCollab(b));
+      return triDescRecap ? -r : r;
     }
     const va = (a[col]||'').toString().toLowerCase();
     const vb = (b[col]||'').toString().toLowerCase();
@@ -4874,7 +4906,7 @@ function renderRecapFiltered(list) {
     ? '<tr><td colspan="7" style="text-align:center;color:var(--texte3);padding:32px">Aucun résultat</td></tr>'
     : result.map(c => `
       <tr>
-        <td><strong>${c.nomAffiche || ((c.prenom||'')+' '+(c.nom||'')).trim()}</strong></td>
+        <td><strong>${nomCollab(c)}</strong></td>
         <td style="text-align:center">${c.structure || '—'}</td>
         <td style="text-align:center">${c.typeContrat || '—'}</td>
         <td style="text-align:center">${c.heuresHebdo ? c.heuresHebdo + 'h' : '—'}</td>
@@ -4921,7 +4953,7 @@ async function chargerContrats() {
   // Datalist : noms DISTINCTS triés (aide à la saisie ; le filtre reste une sous-chaîne sur nom_complet).
   const dl = document.getElementById('contrats-noms');
   if (dl) {
-    const noms = [...new Set((contratsData || []).map(c => c.nom_complet).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const noms = [...new Set((contratsData || []).map(c => nomListe(c.nom_complet)).filter(Boolean))].sort(cmpListe);
     dl.innerHTML = noms.map(n => '<option value="' + String(n).replace(/"/g, '&quot;') + '"></option>').join('');
   }
   filtrerContrats();
@@ -5048,7 +5080,7 @@ async function voirIncoherences() {
 // Prédicat par-contrat PARTAGÉ par les deux modes. En cours = filtre les contrats ;
 // Historique groupé = une personne est retenue si AU MOINS UN de ses contrats le passe.
 function _contratPasseFiltres(c, recherche, fStruct, fType) {
-  if (recherche && !((c.nom_complet || '').toLowerCase().includes(recherche))) return false;
+  if (recherche && !(((c.nom_complet || '') + ' ' + nomListe(c.nom_complet)).toLowerCase().includes(recherche))) return false;
   if (fStruct && c.structure !== fStruct) return false;
   if (fType && c.type_contrat !== fType) return false;
   if (filtreContratsFinProche && !(c.etat === 'fin_proche' || c.etat === 'echu_sans_suite')) return false;   // « Voir » sans renouvellement : fin ≤ 10 j sans suite OU échu < 7 j sans suite
@@ -5098,7 +5130,7 @@ function filtrerContrats() {
     if (anoA !== anoB) return anoA ? -1 : 1;
     const sA = (STRUCT_ORDRE[a.structure] ?? 99), sB = (STRUCT_ORDRE[b.structure] ?? 99);
     if (sA !== sB) return sA - sB;
-    return (a.nom_complet || '').localeCompare(b.nom_complet || '');
+    return cmpNom(a.nom_complet, b.nom_complet);
   });
   const count = document.getElementById('contrats-filter-count');
   if (count) {
@@ -5157,7 +5189,7 @@ function _grouperContratsParCollab(recherche, fStruct, fType) {
     const tries = contrats.slice().sort(cmp);
     personnes.push({
       collabId,
-      nomComplet: tries[0].nom_complet || '—',
+      nomComplet: nomListe(tries[0].nom_complet) || '—',
       tete: tries[0],
       autres: tries.slice(1),
       nbContrats: tries.length,
@@ -5166,7 +5198,7 @@ function _grouperContratsParCollab(recherche, fStruct, fType) {
   }
   personnes.sort((p, q) => {
     if (p.aAnomalie !== q.aAnomalie) return p.aAnomalie ? -1 : 1;   // anomalie d'abord (règle #5)
-    return (p.nomComplet || '').localeCompare(q.nomComplet || '');  // puis nom
+    return cmpListe(p.nomComplet, q.nomComplet);  // puis nom
   });
   return personnes;
 }
@@ -5197,14 +5229,14 @@ function renderContratsFiltered(list) {
       }
       const cochable = (c.type_contrat === 'TESA' && c.date_fin != null && c.a_une_suite === false && (c.est_courant === true || finRecente));
       const cellCheck = cochable
-        ? '<input type="checkbox" class="contrat-check" data-id="' + c.id + '" data-nom="' + String(c.nom_complet || '').replace(/"/g, '&quot;') + '" onchange="majSelectionContrats()">'
+        ? '<input type="checkbox" class="contrat-check" data-id="' + c.id + '" data-nom="' + String(nomListe(c.nom_complet)).replace(/"/g, '&quot;') + '" onchange="majSelectionContrats()">'
         : '';
       // ⚠️ DUPLICATION ASSUMÉE : les 7 cellules Structure→État existent aussi dans renderContratsGroupe
       //    (cellulesContrat). Toute modif de colonne ICI doit être reportée LÀ-BAS, et inversement.
       return `
       <tr>
         <td style="text-align:center">${cellCheck}</td>
-        <td><strong>${c.nom_complet || '—'}</strong></td>
+        <td><strong>${nomListe(c.nom_complet) || '—'}</strong></td>
         <td style="text-align:center">${c.structure || '—'}</td>
         <td style="text-align:center">${c.type_contrat || '—'}</td>
         <td style="text-align:center;white-space:nowrap">${fmtDate(c.date_debut)}</td>
@@ -5366,14 +5398,14 @@ function composerTexteJournal(mvts) {
     const key = (m.collab_id != null ? String(m.collab_id) : (m.nom_complet || '—'));
     if (!groupes[s]) groupes[s] = {};
     if (!groupes[s][d]) groupes[s][d] = {};
-    if (!groupes[s][d][key]) groupes[s][d][key] = { nom: m.nom_complet || '—', matricule: m.matricule_silae || null, items: [] };
+    if (!groupes[s][d][key]) groupes[s][d][key] = { nom: nomListe(m.nom_complet) || '—', matricule: m.matricule_silae || null, items: [] };
     groupes[s][d][key].items.push(m);
   }
   for (const s of Object.keys(groupes)) {
     lignes.push(s);
     for (const d of Object.keys(groupes[s])) {
       lignes.push('  ' + d);
-      for (const key of Object.keys(groupes[s][d])) {
+      for (const key of Object.keys(groupes[s][d]).sort((a, b) => cmpListe(groupes[s][d][a].nom, groupes[s][d][b].nom))) {
         const col = groupes[s][d][key];
         lignes.push('    ' + col.nom + (col.matricule ? ' — ' + col.matricule : ''));   // matricule SEULEMENT s'il existe
         for (const m of col.items) {
@@ -5416,7 +5448,7 @@ function rendreHtmlJournal(mvts) {
     const key = (m.collab_id != null ? String(m.collab_id) : (m.nom_complet || '—'));
     if (!groupes[s]) groupes[s] = {};
     if (!groupes[s][d]) groupes[s][d] = {};
-    if (!groupes[s][d][key]) groupes[s][d][key] = { nom: m.nom_complet || '—', matricule: m.matricule_silae || null, items: [] };
+    if (!groupes[s][d][key]) groupes[s][d][key] = { nom: nomListe(m.nom_complet) || '—', matricule: m.matricule_silae || null, items: [] };
     groupes[s][d][key].items.push(m);
   }
   let html = '<div style="font-size:16px;font-weight:700;padding-bottom:8px;border-bottom:2px solid var(--texte2);margin-bottom:2px">JOURNAL DES DÉCLARATIONS — depuis le ' + (esc(_jjmm(mvts[0] && mvts[0].borne)) || '—') + '</div>';
@@ -5424,7 +5456,7 @@ function rendreHtmlJournal(mvts) {
     html += '<div style="font-weight:700;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #e0e8f0;padding-bottom:3px;margin-top:22px">' + esc(s) + '</div>';
     for (const d of Object.keys(groupes[s])) {
       html += '<div style="font-weight:700;font-size:12px;color:var(--texte2);padding-left:16px;margin-top:9px">' + esc(d) + '</div>';
-      for (const key of Object.keys(groupes[s][d])) {
+      for (const key of Object.keys(groupes[s][d]).sort((a, b) => cmpListe(groupes[s][d][a].nom, groupes[s][d][b].nom))) {
         const col = groupes[s][d][key];
         html += '<div style="font-weight:600;padding-left:30px;margin-top:13px">' + esc(col.nom)
               + (col.matricule ? ' <span style="color:var(--texte3);font-weight:400">— ' + esc(col.matricule) + '</span>' : '') + '</div>';
