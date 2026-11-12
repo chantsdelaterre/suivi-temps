@@ -97,6 +97,16 @@ La saisie d'un jour par un collaborateur est possible **si et seulement si les 4
   document de suivi unique (correctifs, chantiers ouverts, évolutions, ce qu'il
   ne faut pas changer, méthode).
 
+### Mode d'emploi admin (depuis le 12/11/2026)
+- Le guide des administrateurs est un **Claude Doc** (privé, partagé avec le bureau) :
+  « Suivi des temps — Mode d'emploi admin ». Il décrit l'écran **tel que le code le fait**,
+  vérifié dans `admin-v2.html` et en base, pas tel que ce fichier le prévoit.
+- **Toute pull request qui change un comportement ou un libellé visible de `admin-v2.html`
+  met aussi à jour le guide** : la fiche concernée et, si l'écran a changé, sa capture.
+  Sinon le guide est faux en deux mois.
+- Les captures utilisent **uniquement des données fictives** (client Supabase simulé dans
+  un navigateur de test), jamais l'écran de prod : pas de nom, matricule ni taux réel.
+
 ### Accès direct de Claude à Supabase (depuis le 12/11/2026)
 - ⚠️ **Le projet Supabase est partagé** avec d'autres applis (schémas `cantine`,
   `carnet`, `planning`, `production`). Suivi des temps = le schéma `public` et les
