@@ -3,14 +3,20 @@
 Règles de travail pour ce projet.
 
 ## Git & branches
-- **Travailler uniquement sur la branche `supabase`.** C'est la branche par défaut
-  du dépôt et celle que GitHub Pages sert.
+- **`supabase` = la production.** C'est la branche par défaut du dépôt et celle
+  que GitHub Pages sert. **On n'y pousse jamais directement** : elle est protégée
+  depuis le 12/11/2026 (pull request obligatoire, admins compris).
+- Claude travaille sur une branche `claude/<sujet>` et ouvre une pull request.
+  **Guillaume relit le diff et merge : le merge est le déploiement.**
+- CC en local suit le même circuit (branche + pull request). En urgence seulement :
+  désactiver la protection le temps d'un push, puis la remettre.
 - ⚠️ **`main` n'existe plus depuis le 07/11/2026** (retirée : elle portait l'ancienne
   prod Apps Script, inutile depuis fin mai). L'ancienne règle « ne jamais pousser sur
   `main` » n'a donc plus d'objet. L'historique est conservé sur la branche
   **`archive-gas-2026-05-25`** — à ne jamais servir ni fusionner, elle n'est là que
   pour mémoire.
-- Toujours tester en local avant de proposer un push.
+- Toujours tester en local avant de proposer un push. Ce qui touche la saisie ou la
+  paie est testé en local (CC sur la branche de la pull request) **avant le merge**.
 
 ## Stockage des données (Supabase)
 - Les heures sont **toujours stockées en texte `HH:mm`** dans Supabase, **jamais** comme objet `Date`.
@@ -76,7 +82,7 @@ La saisie d'un jour par un collaborateur est possible **si et seulement si les 4
 
 **Sécurité base** (voir `sql/coupure_ecriture_anon.sql`, appliqué en base le 16/07/2026) : écriture `anon` révoquée sur toutes les tables (SELECT conservé) ; RPC écrivantes et fonctions cron verrouillées en `service_role`/`postgres`. `verifier_admin` reste exécutable par anon (login).
 
-**Workflow Edge :** CC code + commit les fonctions ; Guillaume déploie au Terminal (`supabase functions deploy <nom>` → Supabase, PAS GitHub). `verify_jwt = false` figé par fonction dans `supabase/config.toml`. Preuve de branchement = onglet Network (fonction en 200).
+**Workflow Edge :** CC code + commit les fonctions ; Guillaume déploie au Terminal (`supabase functions deploy <nom>` → Supabase, PAS GitHub), ou Claude via le connecteur Supabase après accord explicite (depuis le 12/11/2026). `verify_jwt = false` figé par fonction dans `supabase/config.toml`. Preuve de branchement = onglet Network (fonction en 200).
 
 ## Méthode de travail
 - ⚠️ **Ce dépôt est PUBLIC. Jamais de nom de salarié dans la documentation.**
@@ -90,6 +96,22 @@ La saisie d'un jour par un collaborateur est possible **si et seulement si les 4
 - **`BACKLOG.md` est remplacé par `FEUILLE_DE_ROUTE.md` depuis le 12/08/2026** —
   document de suivi unique (correctifs, chantiers ouverts, évolutions, ce qu'il
   ne faut pas changer, méthode).
+
+### Accès direct de Claude à Supabase (depuis le 12/11/2026)
+- ⚠️ **Le projet Supabase est partagé** avec d'autres applis (schémas `cantine`,
+  `carnet`, `planning`, `production`). Suivi des temps = le schéma `public` et les
+  Edge Functions présentes dans `supabase/functions/` de ce dépôt. **Rien d'autre.**
+- **Lectures** : libres.
+- **Structure** (fonctions, tables, droits) : SQL montré, accord explicite, puis
+  migration appliquée **et** fichier ajouté dans `supabase/migrations/` par la même
+  pull request. `REVOKE EXECUTE FROM public` systématique.
+- **Données** : test à blanc d'abord (nombre de lignes, `nom_affiche`), accord
+  explicite, puis **une seule** écriture. Périodes clôturées et
+  `historique_contrats` (append-only) intouchables.
+- **Edge Functions** : avant tout déploiement, vérifier que la version en ligne est
+  identique à celle du dépôt. Ordre Edge avant front (voir LOT 1, point 4).
+- Les messages de commit et les descriptions de pull request suivent la même règle
+  que la documentation : **aucun nom de salarié** (dépôt public).
 
 ## Architecture de la paie (cadré le 06/06/2026)
 
