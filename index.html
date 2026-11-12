@@ -820,7 +820,12 @@
     setTheme(_savedTheme);
     const SUPABASE_URL = 'https://oldkmapumqnibdcniecd.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_sMySTPpkgaiUtnban8uCtw_HQFxmsgv';
-    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  // Suivi des temps n'utilise PAS Supabase Auth. Sans ces options, le client reprendrait la session
+  // d'une autre appli servie sur chantsdelaterre.github.io (même origine = même localStorage) et
+  // enverrait le rôle 'authenticated', qui n'a aucun droit sur nos tables → 403 sur les lectures directes.
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'suivi-temps-sans-session' }
+});
     const JOURS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
     const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
     const HOURS = Array.from({
