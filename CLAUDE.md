@@ -741,11 +741,32 @@ n'est pas une anomalie.
 
 ### Le compteur d'incohérences
 
-`contrats_incoherences()` compte les contrats échus dont le
-collaborateur est encore actif, hors ruptures anticipées.
+~~`contrats_incoherences()` compte les contrats échus dont le
+collaborateur est encore actif, hors ruptures anticipées.~~ —
+**règle remplacée le 12/11/2026** (migration
+`20261112155305_suivi_temps_contrats_incoherences_regle_cron.sql`).
+
+`contrats_incoherences()` compte les **personnes** actives que
+`synchroniser_activite()` aurait dû désactiver : aucun contrat sans fin,
+terminé depuis moins d'un jour, ni **à venir**. Même règle que le cron,
+donc le compteur vaut 0 en temps normal : **s'il s'affiche, le cron
+quotidien n'a probablement pas tourné.**
+
+⚠️ Deux défauts corrigés ce jour-là :
+- l'ancienne règle ignorait les contrats à venir et signalait à tort un
+  TESA entre deux contrats (le cron le garde actif **volontairement**) ;
+  elle comptait aussi une fois par ancien contrat, pas par personne ;
+- « Voir » filtrait sur l'état `echu_actif`, qui **n'existe plus** dans
+  `contrats_liste` depuis l'ajout de `echu_sans_suite` : la liste était
+  toujours vide. « Voir » applique désormais la même règle, côté front
+  (`_personneIncoherente`).
+
+⚠️ La règle vit à **trois endroits** : `synchroniser_activite()`,
+`contrats_incoherences()` et `_personneIncoherente` (`admin-v2.html`).
+Toute modification de l'un se reporte sur les deux autres.
 
 Affiché seulement s'il est > 0 ; « Voir » bascule en historique
-complet, remet les autres filtres à zéro et n'affiche que ces lignes.
+complet, remet les autres filtres à zéro et n'affiche que ces personnes.
 
 ⚠️ Un compteur qui ne bouge pas cesse d'être lu. C'est pourquoi les
 29 TESA sans date de fin n'y sont **pas** comptés : c'est un retard de

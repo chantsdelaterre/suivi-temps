@@ -4589,7 +4589,7 @@ function renderRecapFiltered(list) {
 // (historique=false) = contrats courants + échus dont le collab est encore actif.
 let contratsData = [];
 let filtreContratsFinProche = false;    // drapeau dédié « Voir » sans renouvellement (etat 'fin_proche') ; remis à zéro par tout autre filtre
-let filtreContratsIncoherences = false; // drapeau DÉDIÉ à « Voir » (echu_actif) ; remis à zéro dès qu'un autre filtre bouge
+let filtreContratsIncoherences = false; // drapeau DÉDIÉ à « Voir » incohérences (_personneIncoherente) ; remis à zéro dès qu'un autre filtre bouge
 let filtreContratsStructure = '';   // '' | SCEA | SAS | SARL
 let filtreContratsType = 'TESA';    // défaut TESA (99 % des cas d'usage) — sinon '' | CDI | CDD
 let filtreContratsHistorique = false; // false = En cours (défaut) ; true = Historique complet (relance l'Edge)
@@ -4730,7 +4730,9 @@ function majBoutonsFiltresContrats() {
   _syncGroupeContrats('historique', filtreContratsHistorique ? 'true' : 'false');
 }
 
-// « Voir » : bascule en Historique complet + RAZ des autres filtres + n'affiche que les echu_actif.
+// « Voir » : bascule en Historique complet + RAZ des autres filtres + n'affiche que les personnes
+// incohérentes (_personneIncoherente). ⚠️ L'état 'echu_actif' n'existe plus dans contrats_liste :
+// ne pas filtrer sur lui (c'était la cause d'une liste toujours vide, corrigée le 12/11/2026).
 async function voirIncoherences() {
   filtreContratsStructure = '';
   filtreContratsType = '';
@@ -4739,7 +4741,7 @@ async function voirIncoherences() {
   filtreContratsIncoherences = true;   // drapeau dédié (pas via un handler → ne se remet pas à zéro tout seul)
   filtreContratsHistorique = true;
   majBoutonsFiltresContrats();
-  await chargerContrats();   // recharge en historique ; filtrerContrats (echu_actif) s'applique ensuite
+  await chargerContrats();   // recharge en historique ; filtrerContrats (_personneIncoherente) s'applique ensuite
 }
 
 // Prédicat par-contrat PARTAGÉ par les deux modes. En cours = filtre les contrats ;
@@ -4748,7 +4750,6 @@ function _contratPasseFiltres(c, recherche, fStruct, fType) {
   if (recherche && !((c.nom_complet || '').toLowerCase().includes(recherche))) return false;
   if (fStruct && c.structure !== fStruct) return false;
   if (fType && c.type_contrat !== fType) return false;
-  if (filtreContratsIncoherences && c.etat !== 'echu_actif') return false;   // vue « Voir » (drapeau dédié)
   if (filtreContratsFinProche && !(c.etat === 'fin_proche' || c.etat === 'echu_sans_suite')) return false;   // « Voir » sans renouvellement : fin ≤ 10 j sans suite OU échu < 7 j sans suite
   return true;
 }
@@ -4809,6 +4810,23 @@ function filtrerContrats() {
   renderContratsFiltered(result);
 }
 
+// Incohérence = PERSONNE active que synchroniser_activite() aurait dû désactiver : aucun contrat
+// sans fin, terminé depuis moins d'un jour, ni à venir. MÊME règle que contrats_incoherences()
+// (compteur) et que le cron — toute modif de l'une se reporte sur les deux autres.
+// Dates comparées en chaînes YYYY-MM-DD locales (ordre lexicographique = chronologique).
+function _personneIncoherente(contrats) {
+  if (!contrats.some(c => c.collab_actif === true)) return false;
+  const d = new Date();
+  const ymd = x => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+  const auj = ymd(d);
+  const hier = ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1));
+  return !contrats.some(c => {
+    const fin = c.date_fin ? String(c.date_fin).slice(0, 10) : null;
+    const debut = String(c.date_debut || '').slice(0, 10);
+    return fin === null || fin >= hier || debut > auj;
+  });
+}
+
 // Regroupe contratsData par collab_id (vue Historique). Personne RETENUE si ≥1 contrat passe
 // le prédicat (règle #4) → on affiche ALORS TOUS ses contrats. Tri interne : date_debut desc,
 // départage est_courant d'abord, date_fin desc (null=en cours en tête), id desc.
@@ -4834,6 +4852,7 @@ function _grouperContratsParCollab(recherche, fStruct, fType) {
   const personnes = [];
   for (const [collabId, contrats] of parCollab) {
     if (!contrats.some(c => _contratPasseFiltres(c, recherche, fStruct, fType))) continue;
+    if (filtreContratsIncoherences && !_personneIncoherente(contrats)) continue;   // vue « Voir » incohérences
     const tries = contrats.slice().sort(cmp);
     personnes.push({
       collabId,
