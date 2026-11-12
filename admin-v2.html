@@ -3216,17 +3216,35 @@ function setEvpFiltre(v, btn) {
 }
 
 // Impression via fenêtre dédiée (patron imprimerJournal) : aucun token au pied de page.
-// Reprend le contenu ACTUELLEMENT affiché (respecte le filtre EVP seuls / Tous).
+// Respecte le filtre EVP seuls / Tous. Mise en page COMPACTE (12/11/2026) : un tableau, une ligne par
+// personne, absences regroupées dans une cellule — l'ancienne version imprimait les cartes de l'écran
+// (une carte par personne) et faisait plusieurs pages pour une trentaine de collaborateurs.
 function imprimerEvp() {
   const esc = _escRegle;
   const titre = document.getElementById('evp-print-titre').textContent || 'Synthèse EVP';
   const soustitre = document.getElementById('evp-soustitre').textContent || '';
-  const contenu = document.getElementById('evp-contenu').innerHTML;
+  const { res, vides } = _evpGroupes();
+  const lignesTab = res.map(({ p, plages, jt, h }) => {
+    const id = [p.matricule_silae ? 'Mat. ' + esc(p.matricule_silae) : '', p.numero_securite_sociale ? esc(_formatNSS(p.numero_securite_sociale)) : '']
+      .filter(Boolean).join(' · ');
+    const abs = plages.map(l => esc(l.type_jour) + ' ' + _jjmm(l.date_debut).slice(0, 5)
+      + (l.date_fin && l.date_fin !== l.date_debut ? '–' + _jjmm(l.date_fin).slice(0, 5) : '')
+      + (l.nb_jours != null ? ' (' + l.nb_jours + 'j)' : '')).join(', ');
+    return '<tr><td><b>' + esc(p.nom_complet || '—') + '</b>' + (id ? '<div class="id">' + id + '</div>' : '') + '</td>'
+      + '<td class="n">' + jt + '</td><td class="n">' + _evpFmtHeures(h) + '</td><td>' + (abs || '—') + '</td></tr>';
+  }).join('');
+  const note = _evpNoteVides(vides);
+  const contenu = '<table><thead><tr><th>Collaborateur</th><th class="n">Jours trav.</th><th class="n">Heures</th><th>Absences</th></tr></thead><tbody>'
+    + (lignesTab || '<tr><td colspan="4">Aucun collaborateur pour ce filtre.</td></tr>') + '</tbody></table>'
+    + (note ? '<div class="note">' + note + '</div>' : '');
   const doc = '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>' + esc(titre) + '</title>'
     + '<style>:root{--texte:#0f1f33;--texte2:#4a5e75;--texte3:#8a9db5;}*{box-sizing:border-box}'
-    + 'body{font-family:system-ui,-apple-system,"DM Sans",sans-serif;color:var(--texte);margin:0;padding:14mm;font-size:13px;line-height:1.5}'
-    + 'h1{font-size:18px;margin:0 0 2px}.sous{color:var(--texte2);font-size:13px;margin-bottom:14px}'
-    + '@media print{body{padding:0}@page{margin:12mm}}</style></head><body>'
+    + 'body{font-family:system-ui,-apple-system,"DM Sans",sans-serif;color:var(--texte);margin:0;padding:12mm;font-size:11px;line-height:1.35}'
+    + 'h1{font-size:15px;margin:0 0 2px}.sous{color:var(--texte2);font-size:11px;margin-bottom:8px}'
+    + 'table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:3px 6px;border-bottom:1px solid #dde4ec;vertical-align:top}'
+    + 'th{font-size:10px;text-transform:uppercase;color:var(--texte2)}.n{text-align:right;white-space:nowrap}'
+    + '.id{color:var(--texte3);font-size:10px}.note{color:var(--texte3);font-size:10px;margin-top:6px}tr{break-inside:avoid}'
+    + '@media print{body{padding:0}@page{margin:10mm}}</style></head><body>'
     + '<h1>' + esc(titre) + '</h1><div class="sous">' + esc(soustitre) + '</div>'
     + contenu
     + '<' + 'script>window.onload=function(){window.print();}<' + '/script></body></html>';
@@ -3250,31 +3268,48 @@ function ouvrirSyntheseEvpArchives() {
   _ouvrirEvp(pid, (document.getElementById('arch-f-structure') || {}).value || null);
 }
 
+// Heures : virgule française, 2 décimales max, sans zéros inutiles (175 -> "175", 107.75 -> "107,75").
+const _evpFmtHeures = n => Number((Number(n) || 0).toFixed(2)).toString().replace('.', ',');
+// Groupes par collaborateur (ordre du SQL), filtre courant appliqué, plages triées.
+// ⚠️ Les collaborateurs SANS aucune heure NI absence sur la période (jours générés mais rien
+// saisi) sont écartés et seulement comptés : ils n'ont rien à déclarer (12 sur 34 en août 2026).
+function _evpGroupes() {
+  const ordre = [], groupes = {};
+  for (const l of (_evpData || [])) {
+    if (!groupes[l.collab_id]) { groupes[l.collab_id] = []; ordre.push(l.collab_id); }
+    groupes[l.collab_id].push(l);
+  }
+  const ORDRE_TYPE = { AT: 0, CP: 1, CS: 2 };
+  const res = []; let vides = 0;
+  for (const cid of ordre) {
+    const g = groupes[cid], p = g[0];
+    const plages = g.filter(l => l.type_jour).sort((a, b) =>
+      ((ORDRE_TYPE[a.type_jour] ?? 9) - (ORDRE_TYPE[b.type_jour] ?? 9)) ||
+      String(a.date_debut || '').localeCompare(String(b.date_debut || '')));
+    const jt = Number(p.nb_jours_travailles) || 0, h = Number(p.nb_heures_total) || 0;
+    if (!plages.length && jt === 0 && h === 0) { vides++; continue; }
+    if (_evpFiltre === 'evp' && !plages.length) continue;   // EVP seuls : masque les collabs sans absence
+    res.push({ p, plages, jt, h });
+  }
+  return { res, vides };
+}
+function _evpNoteVides(n) {
+  return n ? n + ' collaborateur' + (n > 1 ? 's' : '') + ' sans heure ni absence sur la période, non affiché' + (n > 1 ? 's' : '') + '.' : '';
+}
+
 function renderSyntheseEvp() {
   const lignes = _evpData || [];
   const box = document.getElementById('evp-contenu');
   if (!lignes.length) { box.innerHTML = '<div style="text-align:center;color:var(--texte3);padding:40px">Aucun collaborateur pour cette période.</div>'; return; }
   const esc = _escRegle;
-  // Heures : virgule française, 2 décimales max, sans zéros inutiles (175 -> "175", 107.75 -> "107,75").
-  const fmtHeures = n => Number((Number(n) || 0).toFixed(2)).toString().replace('.', ',');
-  // Groupement par collab_id en préservant l'ordre d'arrivée (le SQL ordonne déjà).
-  const ordre = [], groupes = {};
-  for (const l of lignes) {
-    if (!groupes[l.collab_id]) { groupes[l.collab_id] = []; ordre.push(l.collab_id); }
-    groupes[l.collab_id].push(l);
-  }
-  const ORDRE_TYPE = { AT: 0, CP: 1, CS: 2 };
+  const fmtHeures = _evpFmtHeures;
+  const { res, vides } = _evpGroupes();
   let html = '';
-  for (const cid of ordre) {
-    const g = groupes[cid], p = g[0];
-    if (_evpFiltre === 'evp' && !g.some(l => l.type_jour)) continue;   // EVP seuls : masque les collabs sans absence
+  for (const { p, plages } of res) {
     const idParts = [];
     if (p.matricule_silae) idParts.push('Matricule ' + esc(p.matricule_silae));
     if (p.numero_securite_sociale) idParts.push('N° sécu ' + esc(_formatNSS(p.numero_securite_sociale)));
     const idTxt = idParts.length ? ' <span style="color:var(--texte3);font-weight:400;font-size:12px">(' + idParts.join(' · ') + ')</span>' : '';
-    const plages = g.filter(l => l.type_jour).sort((a, b) =>
-      ((ORDRE_TYPE[a.type_jour] ?? 9) - (ORDRE_TYPE[b.type_jour] ?? 9)) ||
-      String(a.date_debut || '').localeCompare(String(b.date_debut || '')));
     let bloc = '<div style="border:1px solid #e8f0f8;border-radius:10px;padding:10px 14px;margin-bottom:10px;background:#fff">';
     bloc += '<div style="font-weight:600">' + esc(p.nom_complet || '—') + idTxt + '</div>';
     for (const l of plages) {
@@ -3286,7 +3321,9 @@ function renderSyntheseEvp() {
     bloc += '</div>';
     html += bloc;
   }
-  box.innerHTML = html || '<div style="text-align:center;color:var(--texte3);padding:40px">Aucun collaborateur avec absence pour ce filtre.</div>';
+  const note = _evpNoteVides(vides);
+  box.innerHTML = (html || '<div style="text-align:center;color:var(--texte3);padding:40px">Aucun collaborateur avec absence pour ce filtre.</div>')
+    + (note ? '<div style="font-size:12px;color:var(--texte3);margin-top:6px">' + note + '</div>' : '');
 }
 
 function setFiltrePaie(val, btn) {
