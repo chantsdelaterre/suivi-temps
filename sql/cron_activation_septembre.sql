@@ -7,7 +7,7 @@
 --
 -- Au 25/08, 23 TESA en cours n'avaient pas de date de fin. Brancher le
 -- cron dans cet état RÉACTIVERAIT des personnes parties depuis un mois
--- (Félix BONNET, Martin WOLFF, Michael KOUAKOU, Aubin MILLECAM…, qui
+-- (au moins quatre collaborateurs, qui
 -- n'ont plus saisi depuis fin juillet). Elles recevraient des jours
 -- vides chaque matin et fausseraient les compteurs.
 --
